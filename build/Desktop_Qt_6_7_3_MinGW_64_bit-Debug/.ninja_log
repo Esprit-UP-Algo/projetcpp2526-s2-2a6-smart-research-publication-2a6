@@ -1,0 +1,18 @@
+# ninja log v6
+65	757	7919345232901280	ResearchPublication_autogen/timestamp	cbc3a16aa181e6c5
+758	3240	7919345234011293	CMakeFiles/ResearchPublication.dir/ResearchPublication_autogen/mocs_compilation.cpp.obj	3eac05bc0cd64e49
+65	757	7919345232901280	ResearchPublication_autogen/mocs_compilation.cpp	cbc3a16aa181e6c5
+763	3340	7919345234061266	CMakeFiles/ResearchPublication.dir/main.cpp.obj	9056fb3656ad78c0
+65	757	7919345232901280	C:/Users/MSI/Desktop/projet C++/ResearchPublication/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/ResearchPublication_autogen/timestamp	cbc3a16aa181e6c5
+65	757	7919345232901280	C:/Users/MSI/Desktop/projet C++/ResearchPublication/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/ResearchPublication_autogen/mocs_compilation.cpp	cbc3a16aa181e6c5
+767	3735	7919345234101293	CMakeFiles/ResearchPublication.dir/mainwindow.cpp.obj	867180deb6291e22
+3735	3888	7919345263775017	ResearchPublication.exe	f4054cf2331af52f
+104	1163	7919315734648827	build.ninja	9e879829a9123e1f
+59	822	7919345621614054	ResearchPublication_autogen/timestamp	cbc3a16aa181e6c5
+59	822	7919345621614054	ResearchPublication_autogen/mocs_compilation.cpp	cbc3a16aa181e6c5
+59	822	7919345621614054	C:/Users/MSI/Desktop/projet C++/ResearchPublication/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/ResearchPublication_autogen/timestamp	cbc3a16aa181e6c5
+59	822	7919345621614054	C:/Users/MSI/Desktop/projet C++/ResearchPublication/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/ResearchPublication_autogen/mocs_compilation.cpp	cbc3a16aa181e6c5
+824	3269	7919345622824055	CMakeFiles/ResearchPublication.dir/ResearchPublication_autogen/mocs_compilation.cpp.obj	3eac05bc0cd64e49
+828	3422	7919345622874046	CMakeFiles/ResearchPublication.dir/main.cpp.obj	9056fb3656ad78c0
+833	4815	7919345622924065	CMakeFiles/ResearchPublication.dir/mainwindow.cpp.obj	867180deb6291e22
+4815	5165	7919345662734292	ResearchPublication.exe	f4054cf2331af52f
