@@ -1131,6 +1131,212 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     stack->addWidget(page3);
 
     // ==========================================================
+    // PAGE 3 : Publication Details View
+    // ==========================================================
+    QWidget* page4 = new QWidget;
+    QVBoxLayout* p4 = new QVBoxLayout(page4);
+    p4->setContentsMargins(22, 18, 22, 18);
+    p4->setSpacing(14);
+
+    p4->addWidget(makeTopBar(st, "Détails de la Publication"));
+
+    QFrame* outer4 = new QFrame;
+    outer4->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }")
+                              .arg(C_PANEL_BG, C_PANEL_BR));
+    QVBoxLayout* outer4L = new QVBoxLayout(outer4);
+    outer4L->setContentsMargins(12,12,12,12);
+    outer4L->setSpacing(12);
+
+    // Header with publication title
+    QFrame* headerCard = softBox();
+    QVBoxLayout* hcL = new QVBoxLayout(headerCard);
+    hcL->setContentsMargins(16,16,16,16);
+
+    QLabel* detailTitle = new QLabel("Machine Learning Applications in Genomics");
+    QFont dtf = detailTitle->font();
+    dtf.setBold(true);
+    dtf.setPointSize(16);
+    detailTitle->setFont(dtf);
+    detailTitle->setStyleSheet("color: rgba(0,0,0,0.80);");
+    detailTitle->setWordWrap(true);
+
+    QLabel* detailSubtitle = new QLabel("PUB001 • Journal Article • Published");
+    detailSubtitle->setStyleSheet("color: rgba(0,0,0,0.50); font-weight: 800; margin-top: 8px;");
+
+    hcL->addWidget(detailTitle);
+    hcL->addWidget(detailSubtitle);
+
+    outer4L->addWidget(headerCard);
+
+    // Main content in two columns
+    QWidget* detailsContent = new QWidget;
+    QHBoxLayout* dcL = new QHBoxLayout(detailsContent);
+    dcL->setContentsMargins(0,0,0,0);
+    dcL->setSpacing(12);
+
+    // Left column - Metadata
+    QFrame* leftDetails = softBox();
+    leftDetails->setFixedWidth(400);
+    QVBoxLayout* ldL = new QVBoxLayout(leftDetails);
+    ldL->setContentsMargins(16,16,16,16);
+    ldL->setSpacing(14);
+
+    auto detailRow = [&](const QString& label, const QString& value, const QColor& color = QColor(0,0,0,180)){
+        QWidget* row = new QWidget;
+        QVBoxLayout* l = new QVBoxLayout(row);
+        l->setContentsMargins(0,0,0,0);
+        l->setSpacing(4);
+
+        QLabel* lbl = new QLabel(label);
+        lbl->setStyleSheet("color: rgba(0,0,0,0.50); font-weight: 800; font-size: 9pt;");
+
+        QLabel* val = new QLabel(value);
+        val->setStyleSheet(QString("color: %1; font-weight: 700; font-size: 11pt;").arg(color.name()));
+        val->setWordWrap(true);
+
+        l->addWidget(lbl);
+        l->addWidget(val);
+        return row;
+    };
+
+    QLabel* metaTitle = new QLabel("📋 Informations");
+    metaTitle->setStyleSheet("color: rgba(0,0,0,0.65); font-weight: 900; font-size: 12pt;");
+    ldL->addWidget(metaTitle);
+
+    ldL->addWidget(detailRow("Auteurs", "Smith J, Doe A, Johnson M"));
+    ldL->addWidget(detailRow("Journal", "Nature Genetics"));
+    ldL->addWidget(detailRow("DOI", "10.1038/ng.2024.001", W_BLUE));
+    ldL->addWidget(detailRow("Date de Publication", "15 Janvier 2024"));
+
+    // Metrics section
+    QFrame* metricsBox = new QFrame;
+    metricsBox->setStyleSheet("QFrame{ background: rgba(46,111,99,0.08); border: 2px solid rgba(46,111,99,0.25); border-radius: 12px; }");
+    QHBoxLayout* mbL = new QHBoxLayout(metricsBox);
+    mbL->setContentsMargins(14,12,14,12);
+    mbL->setSpacing(20);
+
+    auto metricCol = [&](const QString& label, const QString& value){
+        QWidget* col = new QWidget;
+        QVBoxLayout* l = new QVBoxLayout(col);
+        l->setContentsMargins(0,0,0,0);
+        l->setSpacing(2);
+        l->setAlignment(Qt::AlignCenter);
+
+        QLabel* val = new QLabel(value);
+        QFont vf = val->font();
+        vf.setBold(true);
+        vf.setPointSize(18);
+        val->setFont(vf);
+        val->setStyleSheet("color: #2E6F63;");
+        val->setAlignment(Qt::AlignCenter);
+
+        QLabel* lbl = new QLabel(label);
+        lbl->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 800; font-size: 8pt;");
+        lbl->setAlignment(Qt::AlignCenter);
+
+        l->addWidget(val);
+        l->addWidget(lbl);
+        return col;
+    };
+
+    mbL->addWidget(metricCol("Impact Factor", "45.2"));
+
+    QFrame* divider = new QFrame;
+    divider->setFrameShape(QFrame::VLine);
+    divider->setStyleSheet("background: rgba(0,0,0,0.15);");
+    divider->setFixedWidth(2);
+    mbL->addWidget(divider);
+
+    mbL->addWidget(metricCol("Citations", "156"));
+
+    ldL->addWidget(metricsBox);
+    ldL->addWidget(detailRow("Mots-clés", "machine learning, genomics, bioinformatics, AI"));
+    ldL->addStretch(1);
+
+    // Right column - Abstract and Actions
+    QFrame* rightDetails = softBox();
+    QVBoxLayout* rdL = new QVBoxLayout(rightDetails);
+    rdL->setContentsMargins(16,16,16,16);
+    rdL->setSpacing(14);
+
+    QLabel* abstractTitle = new QLabel("📄 Résumé");
+    abstractTitle->setStyleSheet("color: rgba(0,0,0,0.65); font-weight: 900; font-size: 12pt;");
+    rdL->addWidget(abstractTitle);
+
+    QTextEdit* abstractText = new QTextEdit;
+    abstractText->setReadOnly(true);
+    abstractText->setPlainText(
+        "This study presents a comprehensive investigation into the application of machine learning "
+        "techniques for genomic data analysis. We developed novel algorithms that significantly improve "
+        "the accuracy of gene expression prediction and variant calling. Our methodology combines deep "
+        "learning architectures with traditional statistical approaches, achieving state-of-the-art results "
+        "on multiple benchmark datasets.\n\n"
+        "The key contributions include: (1) A new convolutional neural network architecture optimized for "
+        "genomic sequences, (2) An ensemble method that integrates multiple prediction models, and "
+        "(3) Validation on real-world clinical datasets demonstrating 15% improvement over existing methods.\n\n"
+        "These findings have important implications for personalized medicine and clinical diagnostics."
+        );
+    abstractText->setStyleSheet(
+        "QTextEdit { "
+        "background: rgba(255,255,255,0.75); "
+        "border: 1px solid rgba(0,0,0,0.12); "
+        "border-radius: 10px; "
+        "padding: 12px; "
+        "color: rgba(0,0,0,0.75); "
+        "line-height: 1.6; "
+        "}"
+        );
+    rdL->addWidget(abstractText, 1);
+
+    // Action buttons
+    QFrame* actionBox = new QFrame;
+    actionBox->setStyleSheet("QFrame{ background: rgba(255,255,255,0.45); border: 1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
+    QHBoxLayout* abL = new QHBoxLayout(actionBox);
+    abL->setContentsMargins(12,10,12,10);
+    abL->setSpacing(10);
+
+    QPushButton* openDOI = actionBtn("Ouvrir DOI", "rgba(54,92,245,0.15)", "#365CF5",
+                                     st->standardIcon(QStyle::SP_BrowserReload), true);
+    QPushButton* exportBib = actionBtn("Export BibTeX", "rgba(255,255,255,0.72)", C_TEXT_DARK,
+                                       st->standardIcon(QStyle::SP_FileIcon), true);
+    QPushButton* viewCitations = actionBtn("Voir Citations", "rgba(255,255,255,0.72)", C_TEXT_DARK,
+                                           st->standardIcon(QStyle::SP_FileDialogDetailedView), true);
+
+    abL->addWidget(openDOI);
+    abL->addWidget(exportBib);
+    abL->addWidget(viewCitations);
+    abL->addStretch(1);
+
+    rdL->addWidget(actionBox);
+
+    dcL->addWidget(leftDetails);
+    dcL->addWidget(rightDetails, 1);
+
+    outer4L->addWidget(detailsContent, 1);
+
+    p4->addWidget(outer4, 1);
+
+    // Bottom navigation
+    QFrame* bottom4 = new QFrame;
+    bottom4->setFixedHeight(64);
+    bottom4->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* bottom4L = new QHBoxLayout(bottom4);
+    bottom4L->setContentsMargins(14,10,14,10);
+
+    QPushButton* back4 = actionBtn("Retour", "rgba(255,255,255,0.55)", C_TEXT_DARK,
+                                   st->standardIcon(QStyle::SP_ArrowBack), true);
+    QPushButton* editFromDetails = actionBtn("Modifier", "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)",
+                                             st->standardIcon(QStyle::SP_FileDialogContentsView), true);
+
+    bottom4L->addWidget(back4);
+    bottom4L->addStretch(1);
+    bottom4L->addWidget(editFromDetails);
+
+    p4->addWidget(bottom4);
+
+    stack->addWidget(page4);
+
+    // ==========================================================
     // NAVIGATION CONNECTIONS
     // ==========================================================
     connect(btnAdd, &QPushButton::clicked, this, [=](){
@@ -1141,6 +1347,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     connect(btnEdit, &QPushButton::clicked, this, [=](){
         setWindowTitle("Ajouter / Modifier Publication");
         stack->setCurrentIndex(1);
+    });
+
+    connect(btnDetails, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Détails de la Publication");
+        stack->setCurrentIndex(3);
     });
 
     connect(cancelBtn, &QPushButton::clicked, this, [=](){
@@ -1161,6 +1372,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     connect(back3, &QPushButton::clicked, this, [=](){
         setWindowTitle("Gestion des Publications");
         stack->setCurrentIndex(0);
+    });
+
+    connect(back4, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Gestion des Publications");
+        stack->setCurrentIndex(0);
+    });
+
+    connect(editFromDetails, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Ajouter / Modifier Publication");
+        stack->setCurrentIndex(1);
     });
 
     // Start
