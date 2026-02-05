@@ -1,0 +1,7 @@
+build/
+*.exe
+*.o
+*.user
+.qtcreator/
+*.idx
+.qtc_clangd/
