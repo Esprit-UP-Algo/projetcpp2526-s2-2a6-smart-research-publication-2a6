@@ -25,6 +25,8 @@
 #include <QListWidget>
 #include <QLinearGradient>
 #include <QtMath>
+#include <QMap>
+#include <QMessageBox>
 
 #include <cmath>
 #include <algorithm>
@@ -134,7 +136,7 @@ static QWidget* makeBrandWidget()
     h->setSpacing(8);
 
     QLabel* logo = new QLabel;
-    QPixmap px(":/smartvision.png"); // <= DOIT correspondre au .qrc
+    QPixmap px(":/smartvision.png");
     if (!px.isNull())
         logo->setPixmap(px.scaledToHeight(28, Qt::SmoothTransformation));
     logo->setFixedHeight(30);
@@ -168,10 +170,8 @@ static QFrame* makeTopBar(QStyle* st, const QString& titleText, QWidget* parent=
     QHBoxLayout* L = new QHBoxLayout(top);
     L->setContentsMargins(14,10,14,10);
 
-    // LEFT: brand
     L->addWidget(makeBrandWidget(), 0, Qt::AlignLeft);
 
-    // CENTER: title
     QLabel* title = new QLabel(titleText);
     QFont f = title->font(); f.setPointSize(14); f.setBold(true);
     title->setFont(f);
@@ -181,7 +181,6 @@ static QFrame* makeTopBar(QStyle* st, const QString& titleText, QWidget* parent=
     L->addWidget(title, 0, Qt::AlignCenter);
     L->addStretch(1);
 
-    // RIGHT: icons
     QWidget* icons = new QWidget;
     QHBoxLayout* icL = new QHBoxLayout(icons);
     icL->setContentsMargins(0,0,0,0);
@@ -205,11 +204,96 @@ static QFrame* makeTopBar(QStyle* st, const QString& titleText, QWidget* parent=
 }
 
 // ===================== Widget1 table badge delegate =====================
+enum class FTStatus { FullTime=0, PartTime=1, Contract=2, OnLeave=3 };
 
+static QString statusText(FTStatus s)
+{
+    switch (s) {
+    case FTStatus::FullTime: return "Plein";
+    case FTStatus::PartTime: return "Partiel";
+    case FTStatus::Contract: return "Contrat";
+    case FTStatus::OnLeave:  return "Absence";
+    }
+    return "Plein";
+}
 
+static QColor statusColor(FTStatus s)
+{
+    switch (s) {
+    case FTStatus::FullTime: return QColor("#2E6F63");  // green
+    case FTStatus::PartTime: return QColor("#B5672C");  // orange
+    case FTStatus::Contract: return QColor("#7A8B8A");  // gray
+    case FTStatus::OnLeave:  return QColor("#8B2F3C");  // red
+    }
+    return QColor("#2E6F63");
+}
 
+class BadgeDelegate : public QStyledItemDelegate
+{
+public:
+    explicit BadgeDelegate(QObject* parent=nullptr) : QStyledItemDelegate(parent) {}
 
-// ===================== Widget3 gradient row =====================
+    void paint(QPainter *p, const QStyleOptionViewItem &opt, const QModelIndex &idx) const override
+    {
+        QVariant v = idx.data(Qt::UserRole);
+        FTStatus st = FTStatus::FullTime;
+        if (v.isValid()) st = static_cast<FTStatus>(v.toInt());
+
+        QStyledItemDelegate::paint(p, opt, idx);
+
+        p->save();
+        p->setRenderHint(QPainter::Antialiasing, true);
+
+        QRect r = opt.rect.adjusted(8, 6, -8, -6);
+        int h = qMin(r.height(), 28);
+        int w = qMin(r.width(), 120);
+        QRect pill(r.left() + (r.width() - w)/2, r.top() + (r.height()-h)/2, w, h);
+
+        QColor bg = statusColor(st);
+        p->setPen(Qt::NoPen);
+        p->setBrush(bg);
+        p->drawRoundedRect(pill, 14, 14);
+
+        QRect iconCircle(pill.left()+10, pill.top()+6, 16, 16);
+        p->setBrush(QColor(255,255,255,35));
+        p->drawEllipse(iconCircle);
+
+        p->setPen(QPen(Qt::white, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        if (st == FTStatus::FullTime) {
+            QPoint a(iconCircle.left()+4,  iconCircle.top()+9);
+            QPoint b(iconCircle.left()+7,  iconCircle.top()+12);
+            QPoint c(iconCircle.left()+13, iconCircle.top()+5);
+            p->drawLine(a,b); p->drawLine(b,c);
+        } else if (st == FTStatus::PartTime) {
+            QPainterPath path;
+            path.moveTo(iconCircle.center().x(), iconCircle.top()+2);
+            path.lineTo(iconCircle.left()+2, iconCircle.bottom()-2);
+            path.lineTo(iconCircle.right()-2, iconCircle.bottom()-2);
+            path.closeSubpath();
+            p->setPen(QPen(Qt::white, 1.8));
+            p->drawPath(path);
+        } else if (st == FTStatus::Contract) {
+            p->drawLine(QPoint(iconCircle.center().x(), iconCircle.top()+4),
+                        QPoint(iconCircle.center().x(), iconCircle.bottom()-5));
+            p->drawPoint(QPoint(iconCircle.center().x(), iconCircle.bottom()-3));
+        } else {
+            QRect lock(iconCircle.left()+4, iconCircle.top()+7, 8, 7);
+            p->setPen(QPen(Qt::white, 1.8));
+            p->drawRoundedRect(lock, 2, 2);
+            p->drawArc(QRect(iconCircle.left()+4, iconCircle.top()+3, 8, 8), 0*16, 180*16);
+        }
+
+        p->setPen(Qt::white);
+        QFont f = opt.font; f.setBold(true); f.setPointSizeF(f.pointSizeF()-0.5);
+        p->setFont(f);
+        QRect textRect = pill.adjusted(34, 4, -10, -4);
+        p->drawText(textRect, Qt::AlignVCenter|Qt::AlignLeft, statusText(st));
+
+        p->restore();
+    }
+};
+
+// ===================== GradientRowWidget reused for employees =====================
 class GradientRowWidget : public QWidget
 {
 public:
@@ -311,7 +395,7 @@ private:
     bool m_warning;
 };
 
-static QFrame* w3TempQtyBlock(QStyle* st, const QString& temp, const QString& qty)
+static QFrame* infoBlock(QStyle* st, const QString& line1, const QString& line2)
 {
     QFrame* box = new QFrame;
     box->setStyleSheet(QString("QFrame{ background: rgba(255,255,255,0.70); border:1px solid %1; border-radius: 12px; }")
@@ -335,12 +419,12 @@ static QFrame* w3TempQtyBlock(QStyle* st, const QString& temp, const QString& qt
         return row;
     };
 
-    v->addWidget(line(QStyle::SP_BrowserStop, QString("Température : %1").arg(temp)));
-    v->addWidget(line(QStyle::SP_ArrowUp,    QString("Quantité : %1").arg(qty)));
+    v->addWidget(line(QStyle::SP_FileDialogInfoView, line1));
+    v->addWidget(line(QStyle::SP_ArrowUp,            line2));
     return box;
 }
 
-static QFrame* w3BottomLocationBar(QStyle* st, const QString& text)
+static QFrame* bottomBarWithText(QStyle* st, const QString& text)
 {
     QFrame* bar = new QFrame;
     bar->setStyleSheet(QString("QFrame{ background: rgba(255,255,255,0.70); border:1px solid %1; border-radius: 12px; }")
@@ -430,7 +514,7 @@ protected:
         p.setPen(QColor(0,0,0,120));
         QFont f = font(); f.setBold(true); f.setPointSize(10);
         p.setFont(f);
-        p.drawText(inner, Qt::AlignCenter, "🧪");
+        p.drawText(inner, Qt::AlignCenter, "👥");
     }
 
 private:
@@ -456,7 +540,6 @@ protected:
         if (m_bars.isEmpty()) return;
 
         double maxV = 0;
-
         for (auto &b : m_bars) maxV = std::max(maxV, b.value);
         if (maxV <= 0) maxV = 1;
 
@@ -467,9 +550,9 @@ protected:
         p.setPen(QColor(0,0,0,120));
         QFont t = font(); t.setBold(true); t.setPointSize(9);
         p.setFont(t);
-        p.drawText(QRect(r.left()+10, r.top()+4, r.width()-20, 16), Qt::AlignLeft|Qt::AlignVCenter, "Taux");
+        p.drawText(QRect(r.left()+10, r.top()+4, r.width()-20, 16), Qt::AlignLeft|Qt::AlignVCenter, "Publications");
 
-        QList<int> ticks = {100, 90, 50, 30};
+        QList<int> ticks = {100, 80, 50, 20};
         QFont f = font(); f.setPointSize(8); f.setBold(true);
         p.setFont(f);
 
@@ -509,7 +592,7 @@ private:
 };
 
 // ===================== Widget4 helpers =====================
-static QFrame* w4FilterPill(const QString& text)
+static QFrame* filterPill(const QString& text)
 {
     QFrame* f = new QFrame;
     f->setStyleSheet("QFrame{ background: rgba(255,255,255,0.72); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
@@ -528,18 +611,18 @@ static QFrame* w4FilterPill(const QString& text)
     return f;
 }
 
-static void w4SetupRackTable(QTableWidget* rack)
+static void setupAvailabilityGrid(QTableWidget* grid)
 {
-    rack->setRowCount(6);
-    rack->setColumnCount(6);
-    rack->horizontalHeader()->setVisible(false);
-    rack->verticalHeader()->setVisible(false);
-    rack->setShowGrid(true);
-    rack->setGridStyle(Qt::SolidLine);
-    rack->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    rack->setSelectionMode(QAbstractItemView::NoSelection);
+    grid->setRowCount(6);
+    grid->setColumnCount(6);
+    grid->horizontalHeader()->setVisible(false);
+    grid->verticalHeader()->setVisible(false);
+    grid->setShowGrid(true);
+    grid->setGridStyle(Qt::SolidLine);
+    grid->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    grid->setSelectionMode(QAbstractItemView::NoSelection);
 
-    rack->setStyleSheet(R"(
+    grid->setStyleSheet(R"(
         QTableWidget{
             background: rgba(255,255,255,0.65);
             border: 1px solid rgba(0,0,0,0.10);
@@ -553,39 +636,42 @@ static void w4SetupRackTable(QTableWidget* rack)
         }
     )");
 
-    for (int c=0; c<6; ++c) rack->setColumnWidth(c, 52);
-    for (int r=0; r<6; ++r) rack->setRowHeight(r, 34);
+    for (int c=0; c<6; ++c) grid->setColumnWidth(c, 52);
+    for (int r=0; r<6; ++r) grid->setRowHeight(r, 34);
+
+    QStringList dayNames;
+    dayNames << "Lun" << "Mar" << "Mer" << "Jeu" << "Ven" << "Sam";
 
     int val = 1;
     for (int r=0; r<6; ++r){
         for(int c=0; c<6; ++c){
-            QTableWidgetItem* it = new QTableWidgetItem(QString::number(val++));
+            QTableWidgetItem* it = new QTableWidgetItem(QString("%1").arg(val++));
             it->setTextAlignment(Qt::AlignCenter);
-            rack->setItem(r,c,it);
+            grid->setItem(r,c,it);
         }
     }
 
     auto colorRow = [&](int r, const QColor& bg, const QColor& fg){
         for(int c=0;c<6;++c){
-            rack->item(r,c)->setBackground(bg);
-            rack->item(r,c)->setForeground(fg);
+            grid->item(r,c)->setBackground(bg);
+            grid->item(r,c)->setForeground(fg);
         }
     };
     colorRow(0, QColor("#9FBEB9"), QColor(0,0,0,140));
-    colorRow(2, W_GREEN, QColor(255,255,255,230));
+    colorRow(2, QColor("#2E6F63"), QColor(255,255,255,230));
     colorRow(4, QColor("#9FBEB9"), QColor(0,0,0,140));
 
-    rack->item(1,1)->setBackground(W_GREEN);
-    rack->item(1,1)->setForeground(QColor(255,255,255,235));
-    rack->item(3,4)->setBackground(W_GREEN);
-    rack->item(3,4)->setForeground(QColor(255,255,255,235));
+    grid->item(1,1)->setBackground(QColor("#2E6F63"));
+    grid->item(1,1)->setForeground(QColor(255,255,255,235));
+    grid->item(3,4)->setBackground(QColor("#2E6F63"));
+    grid->item(3,4)->setForeground(QColor(255,255,255,235));
 }
 
-static void w4SetupAccountsTable(QTableWidget* t)
+static void setupConstraintsTable(QTableWidget* t)
 {
     t->setColumnCount(4);
     t->setRowCount(4);
-    t->setHorizontalHeaderLabels({"ID", "Poste", "Temps plein", "Laboratoire"});
+    t->setHorizontalHeaderLabels({"CIN","Rôle","Spécialisation","Laboratoire"});
     t->verticalHeader()->setVisible(false);
     t->horizontalHeader()->setStretchLastSection(true);
     t->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -596,78 +682,34 @@ static void w4SetupAccountsTable(QTableWidget* t)
             background: rgba(255,255,255,0.65);
             border: 1px solid %1;
             border-radius: 12px;
+            gridline-color: rgba(0,0,0,0.10);
+        }
+        QHeaderView::section{
+            background: rgba(159,190,185,0.85);
+            color: rgba(0,0,0,0.60);
+            border: none;
+            padding: 8px 10px;
+            font-weight: 900;
+        }
+        QTableWidget::item{
+            padding: 8px 10px;
+            color: rgba(0,0,0,0.65);
+            font-weight: 800;
         }
     )").arg(C_PANEL_BR));
 
-    auto setR = [&](int r,
-                    const QString& id,
-                    const QString& poste,
-                    const QString& temps,
-                    const QString& lab)
-    {
-        t->setItem(r, 0, new QTableWidgetItem(id));
-        t->setItem(r, 1, new QTableWidgetItem(poste));
-        t->setItem(r, 2, new QTableWidgetItem(temps));
-        t->setItem(r, 3, new QTableWidgetItem(lab));
-
-        for (int c = 0; c < 4; ++c)
-            t->item(r, c)->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    auto setR=[&](int r, const QString& cin, const QString& role, const QString& spec, const QString& lab){
+        t->setItem(r,0,new QTableWidgetItem(cin));
+        t->setItem(r,1,new QTableWidgetItem(role));
+        t->setItem(r,2,new QTableWidgetItem(spec));
+        t->setItem(r,3,new QTableWidgetItem(lab));
+        for(int c=0;c<4;++c) t->item(r,c)->setTextAlignment(Qt::AlignLeft|Qt::AlignVCenter);
     };
 
-    setR(0, "001", "Chercheur",   "Oui", "Lab A");
-    setR(1, "002", "Technicien",  "Non", "Lab B");
-    setR(2, "003", "Chercheur",   "Oui", "Lab C");
-    setR(3, "004", "Technicien",  "Oui", "Lab A");
-}
-
-
-static void w4SetupPersonnelTable(QTableWidget* t)
-{
-    t->setColumnCount(5);
-    t->setRowCount(4);
-    t->setHorizontalHeaderLabels({
-        "ID",
-        "Nom",
-        "Rôle",
-        "Temps plein",
-        "Laboratoire"
-    });
-
-    t->verticalHeader()->setVisible(false);
-    t->horizontalHeader()->setStretchLastSection(true);
-    t->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    t->setSelectionMode(QAbstractItemView::NoSelection);
-
-    t->setStyleSheet(QString(R"(
-        QTableWidget{
-            background: rgba(255,255,255,0.65);
-            border: 1px solid %1;
-            border-radius: 12px;
-        }
-    )").arg(C_PANEL_BR));
-
-    auto setR = [&](int r,
-                    const QString& id,
-                    const QString& nom,
-                    const QString& role,
-                    const QString& tempsPlein,
-                    const QString& lab)
-    {
-        t->setItem(r, 0, new QTableWidgetItem(id));
-        t->setItem(r, 1, new QTableWidgetItem(nom));
-        t->setItem(r, 2, new QTableWidgetItem(role));
-        t->setItem(r, 3, new QTableWidgetItem(tempsPlein));
-        t->setItem(r, 4, new QTableWidgetItem(lab));
-
-        for (int c = 0; c < 5; ++c)
-            t->item(r, c)->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    };
-
-    // ✅ chercheurs & techniciens
-    setR(0, "001", "Ahmed Jbeli",    "Chercheur",   "Oui", "Lab B");
-    setR(1, "002", "Omar Touati",    "Chercheur",   "Non", "Lab D");
-    setR(2, "003", "Youssef Chaouch","Technicien", "Oui", "Lab C");
-    setR(3, "004", "Selim Elili",    "Chercheur",   "Oui", "Lab C");
+    setR(0,"AA123456","Chercheur","Biomol","Lab A");
+    setR(1,"BB654321","Technicien","Chimie","Lab B");
+    setR(2,"CC998877","Chercheur","Bioinfo","Lab C");
+    setR(3,"DD112233","Technicien","Général","Lab A");
 }
 
 // ===================== MainWindow =====================
@@ -679,6 +721,8 @@ MainWindow::MainWindow(QWidget *parent)
     QWidget* root = new QWidget(this);
     root->setObjectName("root");
     setCentralWidget(root);
+
+    QStyle* st = style();
 
     root->setStyleSheet(QString(R"(
         #root { background:%1; }
@@ -700,6 +744,7 @@ MainWindow::MainWindow(QWidget *parent)
             font-weight: 800;
         }
         QComboBox::drop-down{ border: 0px; width: 22px; }
+
         QHeaderView::section {
             background: %3;
             color: rgba(0,0,0,0.60);
@@ -711,9 +756,17 @@ MainWindow::MainWindow(QWidget *parent)
             background: transparent;
             border: none;
             gridline-color: rgba(0,0,0,0.10);
+            selection-background-color: rgba(10,95,88,0.18);
+            selection-color: %2;
         }
         QTableWidget::item{ padding: 10px; color: rgba(0,0,0,0.70); }
+
         QTreeWidget{ background: transparent; border: none; }
+        QTreeWidget::item{
+            padding: 7px; margin: 2px 4px; color: rgba(0,0,0,0.55);
+            font-weight: 900; border-radius: 10px;
+        }
+        QTreeWidget::item:selected{ background: rgba(10,95,88,0.20); }
         QListWidget{ background: transparent; border:none; }
     )").arg(C_BG, C_TEXT_DARK, C_TABLE_HDR));
 
@@ -723,79 +776,57 @@ MainWindow::MainWindow(QWidget *parent)
     QStackedWidget* stack = new QStackedWidget;
     rootLayout->addWidget(stack);
 
-    QStyle* st = style();
-
-    // ==========================
-    // PAGE 1: Gestion des Employees
-    // ==========================
+    // ==========================================================
+    // PAGE 0 : Widget 1 - Gestion des Employés
+    // ==========================================================
     QWidget* page1 = new QWidget;
     QVBoxLayout* p1 = new QVBoxLayout(page1);
     p1->setContentsMargins(22, 18, 22, 18);
     p1->setSpacing(14);
 
-    // Top bar
-    p1->addWidget(makeTopBar(st, "Gestion des Employees"));
+    p1->addWidget(makeTopBar(st, "Gestion des Employés"));
 
-    // ==========================
-    // Search + Filters bar
-    // ==========================
     QFrame* bar1 = new QFrame;
     bar1->setFixedHeight(54);
     bar1->setStyleSheet("background: rgba(255,255,255,0.22); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
-
     QHBoxLayout* bar1L = new QHBoxLayout(bar1);
     bar1L->setContentsMargins(14, 8, 14, 8);
     bar1L->setSpacing(10);
 
-    // Search input
     QLineEdit* search = new QLineEdit;
-    search->setPlaceholderText("Rechercher un Employee par son ID");
+    search->setPlaceholderText("Rechercher par CIN, Nom, Prénom, Rôle, Laboratoire…");
     search->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
 
-    // Type ComboBox
-    QComboBox* cbType = new QComboBox;
-    cbType->addItems({"Poste", "Chercheur", "Technicien"});
+    QComboBox* cbRole = new QComboBox; cbRole->addItems({"Rôle", "Chercheur", "Technicien"});
+    QComboBox* cbSpec = new QComboBox; cbSpec->addItems({"Spécialisation", "Biomol", "Bioinfo", "Chimie", "Général"});
+    QComboBox* cbLab  = new QComboBox; cbLab->addItems({"Laboratoire", "Lab A", "Lab B", "Lab C"});
+    QComboBox* cbFT   = new QComboBox; cbFT->addItems({"Temps", "Plein", "Partiel", "Contrat", "Absence"});
 
-    // Temp ComboBox (placeholder example)
-    QComboBox* cbTemp = new QComboBox;
-    cbTemp->addItems({"Temps plein", "Temps partiel"});
-
-    // BSL ComboBox (placeholder example)
-    QComboBox* cbBsl = new QComboBox;
-    cbBsl->addItems({"LabA", "LabB", "LabC"});
-
-    // Filters button
     QPushButton* filters = new QPushButton(st->standardIcon(QStyle::SP_FileDialogDetailedView), "  Filtres");
     filters->setCursor(Qt::PointingHandCursor);
     filters->setStyleSheet(QString(R"(
-    QPushButton{
-        background:%1;
-        color: rgba(255,255,255,0.92);
-        border:1px solid rgba(0,0,0,0.18);
-        border-radius: 12px;
-        padding: 10px 16px;
-        font-weight: 800;
-    }
-    QPushButton:hover{ background: %2; }
-)").arg(C_PRIMARY, C_TOPBAR));
+        QPushButton{
+            background:%1; color: rgba(255,255,255,0.92);
+            border:1px solid rgba(0,0,0,0.18);
+            border-radius: 12px; padding: 10px 16px; font-weight: 800;
+        }
+        QPushButton:hover{ background: %2; }
+    )").arg(C_PRIMARY, C_TOPBAR));
 
-    // Add widgets to layout
-    bar1L->addWidget(search, 1);  // Stretch search box
-    bar1L->addWidget(cbType);
-    bar1L->addWidget(cbTemp);
-    bar1L->addWidget(cbBsl);
+    bar1L->addWidget(search, 1);
+    bar1L->addWidget(cbRole);
+    bar1L->addWidget(cbSpec);
+    bar1L->addWidget(cbLab);
+    bar1L->addWidget(cbFT);
     bar1L->addWidget(filters);
-
-    // Add the bar to main layout
     p1->addWidget(bar1);
-
 
     QFrame* card1 = makeCard();
     QVBoxLayout* card1L = new QVBoxLayout(card1);
     card1L->setContentsMargins(10,10,10,10);
 
-    QTableWidget* table = new QTableWidget(5, 9);
-    table->setHorizontalHeaderLabels({"", "ID", "Nom", "Prenom", "Role", "Specialite", "Qualification", "pubs"});
+    QTableWidget* table = new QTableWidget(6, 12);
+    table->setHorizontalHeaderLabels({"", "Employé ID", "CIN", "Nom", "Prénom", "Rôle", "Spécialisation", "Qualification", "Publications", "Temps", "Laboratoire", "Projet"});
     table->verticalHeader()->setVisible(false);
     table->setShowGrid(true);
     table->setAlternatingRowColors(true);
@@ -804,20 +835,26 @@ MainWindow::MainWindow(QWidget *parent)
     table->setSelectionMode(QAbstractItemView::SingleSelection);
     table->horizontalHeader()->setStretchLastSection(true);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->setItemDelegateForColumn(9, new BadgeDelegate(table)); // "Temps" badge
 
     table->setColumnWidth(0, 36);
-    table->setColumnWidth(1, 110);
-    table->setColumnWidth(2, 120);
-    table->setColumnWidth(3, 170);
+    table->setColumnWidth(1, 100);
+    table->setColumnWidth(2, 110);
+    table->setColumnWidth(3, 120);
     table->setColumnWidth(4, 120);
-    table->setColumnWidth(5, 110);
+    table->setColumnWidth(5, 120);
     table->setColumnWidth(6, 140);
     table->setColumnWidth(7, 140);
-    table->setColumnWidth(8, 90);
+    table->setColumnWidth(8, 110);
+    table->setColumnWidth(9, 120);
+    table->setColumnWidth(10, 110);
+    table->setColumnWidth(11, 140);
 
-    auto setRow = [&](int r, const QString& id, const QString& nom, const QString& prenom,
-                      const QString& role, const QString& specialite, const QString& qualification,
-                      const QString& lab, const QString& bsl)  // <-- Change ExpireStatus -> QString
+    auto setRow=[&](int r, const QString& empId, const QString& cin,
+                      const QString& nom, const QString& prenom,
+                      const QString& role, const QString& spec,
+                      const QString& qualif, const QString& pubs,
+                      FTStatus ft, const QString& lab, const QString& proj)
     {
         QTableWidgetItem* iconItem = new QTableWidgetItem;
         iconItem->setIcon(st->standardIcon(QStyle::SP_ArrowRight));
@@ -826,27 +863,37 @@ MainWindow::MainWindow(QWidget *parent)
 
         auto mk = [&](const QString& t){
             QTableWidgetItem* it = new QTableWidgetItem(t);
-            it->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+            it->setTextAlignment(Qt::AlignLeft|Qt::AlignVCenter);
             return it;
         };
 
-        table->setItem(r, 1, mk(id));
-        table->setItem(r, 2, mk(nom));
-        table->setItem(r, 3, mk(prenom));
-        table->setItem(r, 4, mk(role));
-        table->setItem(r, 5, mk(specialite));
-        table->setItem(r, 6, mk(qualification));
-        table->setItem(r, 7, mk(lab));
+        table->setItem(r, 1, mk(empId));
+        table->setItem(r, 2, mk(cin));
+        table->setItem(r, 3, mk(nom));
+        table->setItem(r, 4, mk(prenom));
+        table->setItem(r, 5, mk(role));
+        table->setItem(r, 6, mk(spec));
+        table->setItem(r, 7, mk(qualif));
+        QTableWidgetItem* p = mk(pubs);
+        p->setTextAlignment(Qt::AlignRight|Qt::AlignVCenter);
+        table->setItem(r, 8, p);
 
-        table->setItem(r, 8, mk(bsl));
+        QTableWidgetItem* badge = new QTableWidgetItem;
+        badge->setData(Qt::UserRole, (int)ft);
+        table->setItem(r, 9, badge);
+
+        table->setItem(r,10, mk(lab));
+        table->setItem(r,11, mk(proj));
+
         table->setRowHeight(r, 46);
     };
 
-    setRow(0, "001", "Ahmed", "Jbeli", "Chercheur", "Biotech", "PhD", "Lab B", "7");
-    setRow(1, "002", "Omar", "Touati", "Chercheur", "Genetics", "Licence", "Lab D", "2");
-    setRow(2, "003", "Youssef", "Chaouch", "Technicien", "Lab Tech", "PhD", "Lab C", "8");
-    setRow(3, "004", "Selim", "Elili", "Chercheur", "Biology", "PhD", "Lab C", "3");
-    setRow(4, "005", "Rayen", "Ltaief", "Technicien", "Chemistry", "Master", "Lab A", "5");
+    setRow(0, "E001", "AA123456", "Ali", "Ben Salem", "Chercheur", "Biomol", "PhD",  "25", FTStatus::FullTime, "Lab A", "Projet GENOME");
+    setRow(1, "E002", "BB654321", "Sara", "Bouaziz", "Technicien", "Chimie",  "BSc",  "5",  FTStatus::PartTime, "Lab B", "—");
+    setRow(2, "E003", "CC998877", "Youssef", "K.",    "Chercheur", "Bioinfo", "PhD",  "12", FTStatus::Contract, "Lab C", "Projet AI-BIO");
+    setRow(3, "E004", "DD112233", "Meriem", "H.",     "Technicien","Général", "BTS",  "2",  FTStatus::FullTime, "Lab A", "—");
+    setRow(4, "E005", "EE667788", "Omar",   "A.",     "Chercheur", "Biomol",  "PhD",  "40", FTStatus::OnLeave,  "Lab B", "Projet PROTEO");
+    setRow(5, "E006", "FF334455", "Nada",   "B.",     "Chercheur", "Chimie",  "MSc",  "10", FTStatus::FullTime, "Lab C", "Projet MATERIA");
 
     card1L->addWidget(table);
     p1->addWidget(card1, 1);
@@ -858,15 +905,16 @@ MainWindow::MainWindow(QWidget *parent)
     bottom1L->setContentsMargins(14,10,14,10);
     bottom1L->setSpacing(12);
 
-    QPushButton* btnAdd   = actionBtn("Ajouter",   "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
-    QPushButton* btnEdit  = actionBtn("Modifier",  "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
-    QPushButton* btnDel   = actionBtn("Supprimer", "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
-    QPushButton* btnDet   = actionBtn("Détails",   "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DesktopIcon), true);
+    QPushButton* btnAdd    = actionBtn("Créer",        "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
+    QPushButton* btnEdit   = actionBtn("Modifier",     "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
+    QPushButton* btnDel    = actionBtn("Supprimer",    "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
+    // Renamed button: Statistiques (was Détails)
+    QPushButton* btnStats  = actionBtn("Statistiques", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_MessageBoxInformation), true);
 
     bottom1L->addWidget(btnAdd);
     bottom1L->addWidget(btnEdit);
     bottom1L->addWidget(btnDel);
-    bottom1L->addWidget(btnDet);
+    bottom1L->addWidget(btnStats);
     bottom1L->addStretch(1);
 
     bottom1L->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_DirIcon)));
@@ -874,7 +922,7 @@ MainWindow::MainWindow(QWidget *parent)
     bottom1L->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_DialogSaveButton)));
     bottom1L->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_BrowserReload)));
 
-    QPushButton* btnMore = new QPushButton(st->standardIcon(QStyle::SP_FileDialogContentsView), "  Détails abriqués");
+    QPushButton* btnMore = new QPushButton(st->standardIcon(QStyle::SP_FileDialogContentsView), "  Affectations & Labs");
     btnMore->setCursor(Qt::PointingHandCursor);
     btnMore->setStyleSheet(R"(
         QPushButton{
@@ -893,15 +941,14 @@ MainWindow::MainWindow(QWidget *parent)
     stack->addWidget(page1);
 
     // ==========================================================
-    // PAGE 1 : Widget 2 - Ajouter / Modifier
+    // PAGE 1 : Widget 2 - Créer / Modifier Employé
     // ==========================================================
     QWidget* page2 = new QWidget;
     QVBoxLayout* p2 = new QVBoxLayout(page2);
     p2->setContentsMargins(22, 18, 22, 18);
     p2->setSpacing(14);
 
-    // ✅ TOPBAR UNIFIÉE (pas de duplication)
-    p2->addWidget(makeTopBar(st, "Ajouter / Modifier Employee"));
+    p2->addWidget(makeTopBar(st, "Créer / Modifier Employé"));
 
     QFrame* outer2 = new QFrame;
     outer2->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
@@ -939,11 +986,11 @@ MainWindow::MainWindow(QWidget *parent)
         left2L->addWidget(b);
     };
 
-    leftAction("Type", QStyle::SP_FileIcon, "DID: RNA");
+    leftAction("Rôle", QStyle::SP_FileIcon, "Chercheur / Technicien");
 
     QToolButton* orgBtn = new QToolButton;
     orgBtn->setIcon(st->standardIcon(QStyle::SP_DirIcon));
-    orgBtn->setText("  Organisme");
+    orgBtn->setText("  Spécialisation");
     orgBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     orgBtn->setCursor(Qt::PointingHandCursor);
     orgBtn->setStyleSheet(R"(
@@ -960,7 +1007,7 @@ MainWindow::MainWindow(QWidget *parent)
     )");
     left2L->addWidget(orgBtn);
 
-    QLabel* colHead = new QLabel("Collection");
+    QLabel* colHead = new QLabel("Affectations");
     colHead->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
     left2L->addWidget(colHead);
 
@@ -985,9 +1032,9 @@ MainWindow::MainWindow(QWidget *parent)
         return b;
     };
 
-    left2L->addWidget(colBtn(QStyle::SP_DriveHDIcon, "Freezer ID"));
-    left2L->addWidget(colBtn(QStyle::SP_FileDialogListView, "Shelf"));
-    left2L->addWidget(colBtn(QStyle::SP_ArrowDown, "Position"));
+    left2L->addWidget(colBtn(QStyle::SP_DriveHDIcon, "Laboratoire"));
+    left2L->addWidget(colBtn(QStyle::SP_FileDialogListView, "Projet"));
+    left2L->addWidget(colBtn(QStyle::SP_ArrowDown, "Temps Plein / Partiel"));
     left2L->addStretch(1);
 
     QFrame* right2 = softBox();
@@ -1005,7 +1052,7 @@ MainWindow::MainWindow(QWidget *parent)
     addDrop->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     addDrop->setStyleSheet("QToolButton{ color: rgba(0,0,0,0.55); font-weight: 900; }");
 
-    QLabel* idLbl = new QLabel("123446");
+    QLabel* idLbl = new QLabel("E007");
     idLbl->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
 
     tinyTopL->addWidget(addDrop);
@@ -1014,60 +1061,60 @@ MainWindow::MainWindow(QWidget *parent)
     tinyTopL->addStretch(1);
     right2L->addWidget(tinyTop);
 
-    auto comboRow = [&](QComboBox* cb){
+    auto comboRow = [&](QWidget* wLeft, QWidget* wRight){
         QFrame* r = softBox();
         QHBoxLayout* l = new QHBoxLayout(r);
         l->setContentsMargins(10,8,10,8);
-        l->addWidget(cb);
+        l->setSpacing(8);
+        l->addWidget(wLeft, 1);
+        l->addWidget(wRight, 1);
         return r;
     };
 
-    QComboBox* fcb1 = new QComboBox;
-    fcb1->addItems({"Technicien", "Chercheur"});
-    QComboBox* fcb2 = new QComboBox; fcb2->addItems({"Biotech","Lab Tech","Biology"});
-    QComboBox* fcb3 = new QComboBox; fcb3->addItems({"PhD","License","Master","jfi"});
-    right2L->addWidget(comboRow(fcb1));
-    right2L->addWidget(comboRow(fcb2));
-    right2L->addWidget(comboRow(fcb3));
+    QLineEdit* cinEdit = new QLineEdit; cinEdit->setPlaceholderText("CIN");
+    QLineEdit* nomEdit = new QLineEdit; nomEdit->setPlaceholderText("Nom");
+    right2L->addWidget(comboRow(cinEdit, nomEdit));
 
+    QLineEdit* prenomEdit = new QLineEdit; prenomEdit->setPlaceholderText("Prénom");
+    QComboBox* roleCb = new QComboBox; roleCb->addItems({"Chercheur","Technicien"});
+    right2L->addWidget(comboRow(prenomEdit, roleCb));
+
+    QComboBox* specCb = new QComboBox; specCb->addItems({"Biomol","Bioinfo","Chimie","Général"});
+    QLineEdit* qualifEdit = new QLineEdit; qualifEdit->setPlaceholderText("Qualification (PhD, MSc…)");
+    right2L->addWidget(comboRow(specCb, qualifEdit));
+
+    QSpinBox* pubs = new QSpinBox; pubs->setRange(0,1000); pubs->setValue(0);
+    pubs->setPrefix("Pub: ");
+    QComboBox* ftCb = new QComboBox; ftCb->addItems({"Plein","Partiel","Contrat","Absence"});
+    right2L->addWidget(comboRow(pubs, ftCb));
+
+    QComboBox* labCb = new QComboBox; labCb->addItems({"Lab A","Lab B","Lab C"});
+    QComboBox* projCb = new QComboBox; projCb->addItems({"—","Projet GENOME","Projet AI-BIO","Projet PROTEO","Projet MATERIA"});
+    right2L->addWidget(comboRow(labCb, projCb));
+
+    QFrame* dateRow = softBox();
+    QHBoxLayout* dateRowL = new QHBoxLayout(dateRow);
+    dateRowL->setContentsMargins(10,8,10,8);
+    dateRowL->setSpacing(8);
 
     QToolButton* cal = new QToolButton; cal->setAutoRaise(true); cal->setIcon(st->standardIcon(QStyle::SP_FileDialogDetailedView));
+    QDateEdit* date = new QDateEdit(QDate::currentDate());
+    date->setCalendarPopup(true);
+    date->setDisplayFormat("MM/dd/yyyy");
+    date->setStyleSheet("QDateEdit{ background: transparent; border:0; font-weight: 900; color: rgba(0,0,0,0.55);} ");
 
     QToolButton* i1 = new QToolButton; i1->setAutoRaise(true); i1->setIcon(st->standardIcon(QStyle::SP_BrowserReload));
     QToolButton* i2 = new QToolButton; i2->setAutoRaise(true); i2->setIcon(st->standardIcon(QStyle::SP_FileDialogListView));
     QToolButton* i3 = new QToolButton; i3->setAutoRaise(true); i3->setIcon(st->standardIcon(QStyle::SP_DialogSaveButton));
 
+    dateRowL->addWidget(cal);
+    dateRowL->addWidget(new QLabel("Date d’embauche: "));
+    dateRowL->addWidget(date, 1);
+    dateRowL->addWidget(i1);
+    dateRowL->addWidget(i2);
+    dateRowL->addWidget(i3);
+    right2L->addWidget(dateRow);
 
-    auto miniRow = [&](QStyle::StandardPixmap sp, const QString& label, QWidget* input){
-        QFrame* r = softBox();
-        QHBoxLayout* l = new QHBoxLayout(r);
-        l->setContentsMargins(10,8,10,8);
-        l->setSpacing(8);
-
-        QToolButton* ic = new QToolButton; ic->setAutoRaise(true); ic->setIcon(st->standardIcon(sp));
-        QLabel* lab = new QLabel(label);
-        lab->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
-
-        QToolButton* a1 = new QToolButton; a1->setAutoRaise(true); a1->setIcon(st->standardIcon(QStyle::SP_ArrowRight));
-        QToolButton* a2 = new QToolButton; a2->setAutoRaise(true); a2->setIcon(st->standardIcon(QStyle::SP_FileDialogContentsView));
-
-        l->addWidget(ic);
-        l->addWidget(lab);
-        l->addStretch(1);
-        l->addWidget(input);
-        l->addWidget(a1);
-        l->addWidget(a2);
-        return r;
-    };
-
-    QComboBox* freezer = new QComboBox; freezer->addItems({"Freezer-02","Freezer-01"});
-    freezer->setFixedWidth(160);
-    QSpinBox* shelf = new QSpinBox; shelf->setRange(1,99); shelf->setValue(3); shelf->setFixedWidth(80);
-    QSpinBox* pos   = new QSpinBox; pos->setRange(1,999); pos->setValue(3); pos->setFixedWidth(80);
-
-    right2L->addWidget(miniRow(QStyle::SP_DriveHDIcon, "Freezer-02", freezer));
-    right2L->addWidget(miniRow(QStyle::SP_FileDialogListView, " ", shelf));
-    right2L->addWidget(miniRow(QStyle::SP_ArrowDown, " ", pos));
     right2L->addStretch(1);
 
     outer2L->addWidget(left2);
@@ -1092,15 +1139,14 @@ MainWindow::MainWindow(QWidget *parent)
     stack->addWidget(page2);
 
     // ==========================================================
-    // PAGE 2 : Widget 3 - Localisation & Stockage
+    // PAGE 2 : Widget 3 - Affectations & Laboratoires
     // ==========================================================
     QWidget* page3 = new QWidget;
     QVBoxLayout* p3 = new QVBoxLayout(page3);
     p3->setContentsMargins(22, 18, 22, 18);
     p3->setSpacing(14);
 
-    // ✅ TOPBAR UNIFIÉE
-    p3->addWidget(makeTopBar(st, "Details"));
+    p3->addWidget(makeTopBar(st, "Affectations & Laboratoires"));
 
     QFrame* outer3 = new QFrame;
     outer3->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
@@ -1119,7 +1165,7 @@ MainWindow::MainWindow(QWidget *parent)
     QHBoxLayout* ddBoxL = new QHBoxLayout(ddBox);
     ddBoxL->setContentsMargins(10,8,10,8);
 
-    QLabel* ddText = new QLabel("autre critere");
+    QLabel* ddText = new QLabel("Laboratoire: Lab A");
     ddText->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
     QToolButton* ddBtn = new QToolButton;
     ddBtn->setAutoRaise(true);
@@ -1133,6 +1179,26 @@ MainWindow::MainWindow(QWidget *parent)
     QTreeWidget* tree3 = new QTreeWidget;
     tree3->setHeaderHidden(true);
     tree3->setIndentation(18);
+
+    auto* tF1 = new QTreeWidgetItem(tree3, QStringList() << "Lab A");
+    auto* tF2 = new QTreeWidgetItem(tree3, QStringList() << "Lab B");
+    auto* tF3 = new QTreeWidgetItem(tree3, QStringList() << "Lab C");
+
+    tF1->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
+    tF2->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
+    tF3->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
+
+    auto* tA = new QTreeWidgetItem(tF2, QStringList() << "Projet AI-BIO");
+    auto* t6 = new QTreeWidgetItem(tF2, QStringList() << "Projet GENOME");
+    auto* tB = new QTreeWidgetItem(tF2, QStringList() << "Projet PROTEO");
+    auto* tR = new QTreeWidgetItem(tF2, QStringList() << "Groupe Techniciens");
+    tA->setIcon(0, st->standardIcon(QStyle::SP_FileIcon));
+    t6->setIcon(0, st->standardIcon(QStyle::SP_FileIcon));
+    tB->setIcon(0, st->standardIcon(QStyle::SP_FileIcon));
+    tR->setIcon(0, st->standardIcon(QStyle::SP_FileDialogInfoView));
+
+    tree3->expandAll();
+    tree3->setCurrentItem(tF2);
 
     left3L->addWidget(ddBox);
     left3L->addWidget(tree3, 1);
@@ -1166,7 +1232,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     header3L->addWidget(details3);
     header3L->addStretch(1);
-    header3L->addWidget(chip("Registrations"));
+    header3L->addWidget(chip("Affectations"));
+    header3L->addWidget(chip("Groupes"));
 
     QFrame* listBox3 = new QFrame;
     listBox3->setStyleSheet("QFrame{ background: rgba(255,255,255,0.55); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
@@ -1184,17 +1251,23 @@ MainWindow::MainWindow(QWidget *parent)
         list3->setItemWidget(it, w);
     };
 
-    addListRow(new GradientRowWidget(st, "Chercheur", "5X",    W_GREEN,  QStyle::SP_FileIcon, false));
-    addListRow(new GradientRowWidget(st, "Technicien",  "0S",    W_GREEN,  QStyle::SP_FileIcon, false));
-    addListRow(new GradientRowWidget(st, "OffDuty",   "0 OK",  W_ORANGE, QStyle::SP_FileIcon, false));
-    addListRow(new GradientRowWidget(st, "Supprimer", "BEA0S", W_RED,    QStyle::SP_FileIcon, true));
+    addListRow(new GradientRowWidget(st, "Ali Ben Salem (Chercheur)", "Pub: 25", W_GREEN,  QStyle::SP_FileIcon, false));
+    addListRow(new GradientRowWidget(st, "Sara Bouaziz (Technicien)", "Partiel", W_ORANGE, QStyle::SP_FileIcon, false));
+    addListRow(new GradientRowWidget(st, "Youssef K. (Chercheur)",    "Contrat", W_GRAY,   QStyle::SP_FileIcon, false));
+    addListRow(new GradientRowWidget(st, "Omar A. (Chercheur)",       "Absence", W_RED,    QStyle::SP_FileIcon, true));
 
     listBox3L->addWidget(list3);
 
-
+    QWidget* bottomInfo3 = new QWidget;
+    QHBoxLayout* bottomInfo3L = new QHBoxLayout(bottomInfo3);
+    bottomInfo3L->setContentsMargins(0,0,0,0);
+    bottomInfo3L->setSpacing(12);
+    bottomInfo3L->addWidget(infoBlock(st, "Lab B: Chercheurs: 3, Techniciens: 2", "Disponibles: 4"));
+    bottomInfo3L->addWidget(bottomBarWithText(st, "Lab B • Projet AI-BIO"), 1);
 
     right3L->addWidget(header3);
     right3L->addWidget(listBox3, 1);
+    right3L->addWidget(bottomInfo3);
 
     outer3L->addWidget(left3);
     outer3L->addWidget(right3, 1);
@@ -1215,15 +1288,14 @@ MainWindow::MainWindow(QWidget *parent)
     stack->addWidget(page3);
 
     // ==========================================================
-    // PAGE 3 : Widget 4 - Rack + Contraintes
+    // PAGE 3 : Widget 4 - Disponibilités & Contraintes
     // ==========================================================
     QWidget* page4 = new QWidget;
     QVBoxLayout* p4 = new QVBoxLayout(page4);
     p4->setContentsMargins(22, 18, 22, 18);
     p4->setSpacing(14);
 
-    // ✅ TOPBAR UNIFIÉE
-    p4->addWidget(makeTopBar(st, "Details"));
+    p4->addWidget(makeTopBar(st, "Disponibilités & Contraintes"));
 
     QFrame* outer4 = new QFrame;
     outer4->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
@@ -1241,7 +1313,7 @@ MainWindow::MainWindow(QWidget *parent)
     dd4->setStyleSheet("QFrame{ background: rgba(255,255,255,0.72); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
     QHBoxLayout* dd4L = new QHBoxLayout(dd4);
     dd4L->setContentsMargins(10,8,10,8);
-    QLabel* dd4T = new QLabel("Freezers 01");
+    QLabel* dd4T = new QLabel("Laboratoires");
     dd4T->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
     QToolButton* dd4B = new QToolButton;
     dd4B->setAutoRaise(true);
@@ -1255,29 +1327,29 @@ MainWindow::MainWindow(QWidget *parent)
     tree4->setHeaderHidden(true);
     tree4->setIndentation(18);
 
-    auto* wf1 = new QTreeWidgetItem(tree4, QStringList() << "Freezer 01");
-    auto* wf2 = new QTreeWidgetItem(tree4, QStringList() << "Freezer 02");
-    auto* wf4 = new QTreeWidgetItem(tree4, QStringList() << "Freezer 04");
-    wf1->setIcon(0, st->standardIcon(QStyle::SP_DriveHDIcon));
-    wf2->setIcon(0, st->standardIcon(QStyle::SP_DriveHDIcon));
-    wf4->setIcon(0, st->standardIcon(QStyle::SP_DriveHDIcon));
+    auto* wf1 = new QTreeWidgetItem(tree4, QStringList() << "Lab A");
+    auto* wf2 = new QTreeWidgetItem(tree4, QStringList() << "Lab B");
+    auto* wf4 = new QTreeWidgetItem(tree4, QStringList() << "Lab C");
+    wf1->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
+    wf2->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
+    wf4->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
 
-    auto* wshA = new QTreeWidgetItem(wf2, QStringList() << "Sheff A");
-    auto* wshB = new QTreeWidgetItem(wf2, QStringList() << "Sheff B");
-    auto* wsh6 = new QTreeWidgetItem(wf2, QStringList() << "Sheff 6");
-    auto* wrm  = new QTreeWidgetItem(wf2, QStringList() << "Room Temp");
-    wshA->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
-    wshB->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
-    wsh6->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
+    auto* wshA = new QTreeWidgetItem(wf2, QStringList() << "Projet AI-BIO");
+    auto* wshB = new QTreeWidgetItem(wf2, QStringList() << "Projet PROTEO");
+    auto* wsh6 = new QTreeWidgetItem(wf2, QStringList() << "Projet GENOME");
+    auto* wrm  = new QTreeWidgetItem(wf2, QStringList() << "Techniciens");
+    wshA->setIcon(0, st->standardIcon(QStyle::SP_FileIcon));
+    wshB->setIcon(0, st->standardIcon(QStyle::SP_FileIcon));
+    wsh6->setIcon(0, st->standardIcon(QStyle::SP_FileIcon));
     wrm ->setIcon(0, st->standardIcon(QStyle::SP_FileDialogInfoView));
 
     tree4->expandAll();
     tree4->setCurrentItem(wf2);
 
-    QFrame* temp4 = w3TempQtyBlock(st, "-80°C", "220");
+    QFrame* temp4 = infoBlock(st, "Lab B • FT: 3 / PT: 2", "Total: 5");
 
-    QPushButton* export4 = actionBtn("Exporte Rapport", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.92)", st->standardIcon(QStyle::SP_DialogSaveButton), true);
-    QPushButton* mark4   = actionBtn("Marquer comme Traité", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DialogApplyButton), true);
+    QPushButton* export4 = actionBtn("Exporter Liste", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.92)", st->standardIcon(QStyle::SP_DialogSaveButton), true);
+    QPushButton* mark4   = actionBtn("Affecter au Projet", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DialogApplyButton), true);
 
     left4L->addWidget(dd4);
     left4L->addWidget(tree4, 1);
@@ -1294,18 +1366,18 @@ MainWindow::MainWindow(QWidget *parent)
     QHBoxLayout* fr = new QHBoxLayout(filtersRow);
     fr->setContentsMargins(0,0,0,0);
     fr->setSpacing(10);
-    fr->addWidget(w4FilterPill("Shelfe"));
-    fr->addWidget(w4FilterPill("Temp"));
-    fr->addWidget(w4FilterPill("BSL-3"));
+    fr->addWidget(filterPill("Rôle"));
+    fr->addWidget(filterPill("Temps"));
+    fr->addWidget(filterPill("Lab"));
     right4L->addWidget(filtersRow);
 
     QFrame* rackCard = new QFrame;
     rackCard->setStyleSheet("QFrame{ background: rgba(255,255,255,0.55); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
     QVBoxLayout* rackCardL = new QVBoxLayout(rackCard);
     rackCardL->setContentsMargins(12,12,12,12);
-    QTableWidget* rack = new QTableWidget;
-    w4SetupRackTable(rack);
-    rackCardL->addWidget(rack);
+    QTableWidget* availability = new QTableWidget;
+    setupAvailabilityGrid(availability);
+    rackCardL->addWidget(availability);
     right4L->addWidget(rackCard);
 
     QFrame* accCard = new QFrame;
@@ -1315,7 +1387,7 @@ MainWindow::MainWindow(QWidget *parent)
     QLabel* accTitle = new QLabel("Contraintes");
     accTitle->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
     QTableWidget* accTable = new QTableWidget;
-    w4SetupAccountsTable(accTable);
+    setupConstraintsTable(accTable);
     accCardL->addWidget(accTitle);
     accCardL->addWidget(accTable);
     right4L->addWidget(accCard, 1);
@@ -1326,8 +1398,8 @@ MainWindow::MainWindow(QWidget *parent)
     w4br->setSpacing(10);
     w4br->addStretch(1);
 
-    QPushButton* btnFolder = actionBtn("3Ca", "rgba(255,255,255,0.72)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DirIcon), true);
-    QPushButton* btnSec    = actionBtn("Sécurité & Alertes", "rgba(255,255,255,0.72)", C_TEXT_DARK, st->standardIcon(QStyle::SP_MessageBoxWarning), true);
+    QPushButton* btnFolder = actionBtn("Lab", "rgba(255,255,255,0.72)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DirIcon), true);
+    QPushButton* btnSec    = actionBtn("Statistiques", "rgba(255,255,255,0.72)", C_TEXT_DARK, st->standardIcon(QStyle::SP_MessageBoxWarning), true);
 
     w4br->addWidget(btnFolder);
     w4br->addWidget(btnSec);
@@ -1352,160 +1424,45 @@ MainWindow::MainWindow(QWidget *parent)
     stack->addWidget(page4);
 
     // ==========================================================
-    // PAGE 4 : Widget 5 - Sécurité & Alertes
+    // PAGE 4 : Statistiques Employés
     // ==========================================================
-    QWidget* page5 = new QWidget;
-    QVBoxLayout* p5 = new QVBoxLayout(page5);
-    p5->setContentsMargins(22, 18, 22, 18);
-    p5->setSpacing(14);
+    QWidget* pageStats = new QWidget;
+    QVBoxLayout* ps = new QVBoxLayout(pageStats);
+    ps->setContentsMargins(22, 18, 22, 18);
+    ps->setSpacing(14);
 
-    // ✅ TOPBAR UNIFIÉE
-    p5->addWidget(makeTopBar(st, "Sécurité & Alertes"));
+    // Topbar
+    ps->addWidget(makeTopBar(st, "Statistiques Employés"));
 
-    QFrame* outer5 = new QFrame;
-    outer5->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
-    QVBoxLayout* outer5L = new QVBoxLayout(outer5);
-    outer5L->setContentsMargins(12,12,12,12);
-    outer5L->setSpacing(12);
+    // Contenu
+    QFrame* outerStats = new QFrame;
+    outerStats->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
+    QVBoxLayout* outerStatsL = new QVBoxLayout(outerStats);
+    outerStatsL->setContentsMargins(12,12,12,12);
+    outerStatsL->setSpacing(12);
 
-    // Filter row
-    QFrame* filterRow = new QFrame;
-    filterRow->setStyleSheet("QFrame{ background: rgba(255,255,255,0.72); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
-    QHBoxLayout* fr5 = new QHBoxLayout(filterRow);
-    fr5->setContentsMargins(10,8,10,8);
-    fr5->setSpacing(10);
-
-    QFrame* expPill = new QFrame;
-    expPill->setStyleSheet("QFrame{ background: rgba(255,255,255,0.90); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
-    QHBoxLayout* epL = new QHBoxLayout(expPill);
-    epL->setContentsMargins(10,6,10,6);
-    epL->setSpacing(8);
-
-    QLabel* expIcon = new QLabel;
-    expIcon->setPixmap(st->standardIcon(QStyle::SP_TrashIcon).pixmap(16,16));
-    QLabel* expTxt = new QLabel("Expiré");
-    expTxt->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
-    QLabel* expBadge = new QLabel("2");
-    expBadge->setAlignment(Qt::AlignCenter);
-    expBadge->setFixedSize(24,20);
-    expBadge->setStyleSheet("QLabel{ background:#8B2F3C; color:white; border-radius:10px; font-weight:900;}");
-
-    epL->addWidget(expIcon);
-    epL->addWidget(expTxt);
-    epL->addWidget(expBadge);
-
-    auto dropPill = [&](const QString& t){
-        QFrame* p = new QFrame;
-        p->setStyleSheet("QFrame{ background: rgba(255,255,255,0.90); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
-        QHBoxLayout* l = new QHBoxLayout(p);
-        l->setContentsMargins(10,6,10,6);
-        QLabel* tx = new QLabel(t);
-        tx->setStyleSheet("color: rgba(0,0,0,0.55); font-weight:900;");
-        QToolButton* dd = new QToolButton;
-        dd->setAutoRaise(true);
-        dd->setIcon(st->standardIcon(QStyle::SP_ArrowDown));
-        dd->setCursor(Qt::PointingHandCursor);
-        l->addWidget(tx);
-        l->addStretch(1);
-        l->addWidget(dd);
-        return p;
-    };
-
-    fr5->addWidget(expPill);
-    fr5->addWidget(dropPill("Bientôt Expiré"), 1);
-    fr5->addWidget(dropPill("Stock Bas"), 1);
-
-    outer5L->addWidget(filterRow);
-
-    // Alerts table
-    QFrame* alertCard = new QFrame;
-    alertCard->setStyleSheet("QFrame{ background: rgba(255,255,255,0.55); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
-    QVBoxLayout* alertL = new QVBoxLayout(alertCard);
-    alertL->setContentsMargins(12,12,12,12);
-
-    QTableWidget* alertTable = new QTableWidget(4, 5);
-    alertTable->setHorizontalHeaderLabels({"Sample ID","Type","Organisme","Expiry date","BSL"});
-    alertTable->verticalHeader()->setVisible(false);
-    alertTable->horizontalHeader()->setStretchLastSection(true);
-    alertTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    alertTable->setSelectionMode(QAbstractItemView::NoSelection);
-    alertTable->setStyleSheet(R"(
-        QHeaderView::section{
-            background: rgba(159,190,185,0.85);
-            color: rgba(0,0,0,0.60);
-            border: none;
-            padding: 8px 10px;
-            font-weight: 900;
-        }
-        QTableWidget::item{
-            padding: 8px 10px;
-            color: rgba(0,0,0,0.65);
-            font-weight: 800;
-        }
-    )");
-
-    auto setA=[&](int r, const QString& sid, const QString& type, const QString& org, const QString& date, const QString& bsl){
-        alertTable->setItem(r,0,new QTableWidgetItem(sid));
-        alertTable->setItem(r,1,new QTableWidgetItem(type));
-        alertTable->setItem(r,2,new QTableWidgetItem(org));
-        alertTable->setItem(r,3,new QTableWidgetItem(date));
-        alertTable->setItem(r,4,new QTableWidgetItem(bsl));
-        for(int c=0;c<5;++c) alertTable->item(r,c)->setTextAlignment(Qt::AlignLeft|Qt::AlignVCenter);
-    };
-
-    setA(0,"DNA","DNA","E. coli","04/20/2024","BSL-1");
-    setA(1,"DNA","RNA","E. coli","05/01/2024","BSL-2");
-    setA(2,"DNA","DNA","E. coli","04/20/2024","BSL-2");
-    setA(3,"DNA","DNA","E. coli","04/20/2024","BSL-2");
-
-    alertL->addWidget(alertTable);
-    outer5L->addWidget(alertCard);
-
-    // action bar
-    QFrame* actBar = new QFrame;
-    actBar->setStyleSheet("QFrame{ background: rgba(255,255,255,0.35); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
-    QHBoxLayout* actL = new QHBoxLayout(actBar);
-    actL->setContentsMargins(12,10,12,10);
-    actL->setSpacing(12);
-
-    QPushButton* expReport = actionBtn("Exporter Rapport", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.92)", st->standardIcon(QStyle::SP_DialogSaveButton), true);
-    QPushButton* markTreat = actionBtn("Marquer comme Traité", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.92)", st->standardIcon(QStyle::SP_DialogApplyButton), true);
-    QPushButton* cossiBox  = actionBtn("Cossibox", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DriveFDIcon), true);
-
-    actL->addWidget(expReport);
-    actL->addWidget(markTreat);
-    actL->addStretch(1);
-    actL->addWidget(cossiBox);
-
-    outer5L->addWidget(actBar);
-
-    // bottom dashboard (donut + legend + bar chart)
+    // Carte des graphiques
     QFrame* dash = new QFrame;
     dash->setStyleSheet("QFrame{ background: rgba(255,255,255,0.55); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
     QHBoxLayout* dashL = new QHBoxLayout(dash);
     dashL->setContentsMargins(12,12,12,12);
     dashL->setSpacing(12);
 
+    // Donut (rôles)
     QFrame* donutCard = softBox();
     QVBoxLayout* dcL = new QVBoxLayout(donutCard);
     dcL->setContentsMargins(12,12,12,12);
-    QLabel* totalLbl = new QLabel("Total Échantillons: 180");
+    QLabel* totalLbl = new QLabel("Total Employés:");
     totalLbl->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
-    DonutChart* donut = new DonutChart;
-    donut->setData({
-        {89, QColor("#9FBEB9"), "OK"},
-        {20, W_GREEN, "Valid"},
-        {8,  W_ORANGE, "Bientôt"},
-        {10, W_RED, "Expiré"}
-    });
+    DonutChart* donutStats = new DonutChart;
     dcL->addWidget(totalLbl);
-    dcL->addWidget(donut, 1);
+    dcL->addWidget(donutStats, 1);
 
+    // Légende
     QFrame* legendCard = softBox();
     QVBoxLayout* lgL = new QVBoxLayout(legendCard);
     lgL->setContentsMargins(12,12,12,12);
     lgL->setSpacing(10);
-
     auto legendRow=[&](const QColor& c, const QString& t){
         QWidget* row = new QWidget;
         QHBoxLayout* h = new QHBoxLayout(row);
@@ -1521,72 +1478,131 @@ MainWindow::MainWindow(QWidget *parent)
         h->addStretch(1);
         return row;
     };
-
-    lgL->addWidget(legendRow(W_GREEN, "Vert"));
-    lgL->addWidget(legendRow(W_ORANGE, "Bientôt expiré"));
-    lgL->addWidget(legendRow(W_RED, "Créasté"));
-    lgL->addWidget(legendRow(QColor("#9FBEB9"), "Chitiques"));
+    lgL->addWidget(legendRow(W_GREEN, "Chercheurs"));
+    lgL->addWidget(legendRow(QColor("#9FBEB9"), "Techniciens"));
+    lgL->addWidget(legendRow(W_ORANGE, "Temps partiel"));
+    lgL->addWidget(legendRow(W_RED, "Absents"));
     lgL->addStretch(1);
 
+    // Bar chart (spécialisations)
     QFrame* barCard = softBox();
     QVBoxLayout* bcL = new QVBoxLayout(barCard);
     bcL->setContentsMargins(12,12,12,12);
-    BarChart* bars = new BarChart;
-    bars->setData({
-        {100,"T30"},
-        {80, "T20"},
-        {60, "T10"},
-        {50, "T0"}
-    });
-    bcL->addWidget(bars, 1);
+    BarChart* barStats = new BarChart;
+    bcL->addWidget(barStats, 1);
 
     dashL->addWidget(donutCard, 1);
     dashL->addWidget(legendCard, 1);
     dashL->addWidget(barCard, 1);
 
-    outer5L->addWidget(dash);
+    outerStatsL->addWidget(dash);
+    ps->addWidget(outerStats, 1);
 
-    p5->addWidget(outer5, 1);
+    // Bouton retour
+    QFrame* bottomStats = new QFrame;
+    bottomStats->setFixedHeight(64);
+    bottomStats->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* bottomStatsL = new QHBoxLayout(bottomStats);
+    bottomStatsL->setContentsMargins(14,10,14,10);
+    QPushButton* backStats = actionBtn("Retour", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ArrowBack), true);
+    bottomStatsL->addWidget(backStats);
+    bottomStatsL->addStretch(1);
+    ps->addWidget(bottomStats);
 
-    QFrame* bottom5 = new QFrame;
-    bottom5->setFixedHeight(64);
-    bottom5->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
-    QHBoxLayout* bottom5L = new QHBoxLayout(bottom5);
-    bottom5L->setContentsMargins(14,10,14,10);
+    // Ajout au stack (index 4)
+    stack->addWidget(pageStats);
 
-    QPushButton* back5 = actionBtn("Retour", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ArrowBack), true);
-    bottom5L->addWidget(back5);
-    bottom5L->addStretch(1);
+    // Fonction de mise à jour des graphiques depuis le tableau
+    auto updateStatsFromTable = [=](){
+        QMap<QString,int> roleCount;
+        QMap<QString,int> specCount;
+        int total = table->rowCount();
 
-    p5->addWidget(bottom5);
-    stack->addWidget(page5);
+        for (int r=0; r<table->rowCount(); ++r) {
+            const QString role = table->item(r, 5)->text(); // colonne Rôle
+            const QString spec = table->item(r, 6)->text(); // colonne Spécialisation
+            roleCount[role] += 1;
+            specCount[spec] += 1;
+        }
+
+        totalLbl->setText(QString("Total Employés: %1").arg(total));
+
+        // Construire le donut (rôles)
+        QList<DonutChart::Slice> slices;
+        auto colorForRole = [&](const QString& role)->QColor{
+            if (role == "Chercheur")  return W_GREEN;
+            if (role == "Technicien") return QColor("#9FBEB9");
+            return QColor("#7A8B8A");
+        };
+        for (auto it = roleCount.constBegin(); it != roleCount.constEnd(); ++it) {
+            slices.push_back({(double)it.value(), colorForRole(it.key()), it.key()});
+        }
+        donutStats->setData(slices);
+
+        // Construire la barre (spécialisations)
+        QList<BarChart::Bar> bars;
+        for (auto it = specCount.constBegin(); it != specCount.constEnd(); ++it) {
+            bars.push_back({(double)it.value(), it.key()});
+        }
+        barStats->setData(bars);
+    };
 
     // ==========================================================
     // NAVIGATION
     // ==========================================================
-    connect(btnAdd,  &QPushButton::clicked, this, [=]{ setWindowTitle("Ajouter / Modifier Employee"); stack->setCurrentIndex(1); });
-    connect(btnEdit, &QPushButton::clicked, this, [=]{ setWindowTitle("Ajouter / Modifier Employee"); stack->setCurrentIndex(1); });
+    connect(btnAdd,  &QPushButton::clicked, this, [=]{ setWindowTitle("Créer / Modifier Employé"); stack->setCurrentIndex(1); });
+    connect(btnEdit, &QPushButton::clicked, this, [=]{ setWindowTitle("Créer / Modifier Employé"); stack->setCurrentIndex(1); });
 
-    connect(cancelBtn, &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Employees"); stack->setCurrentIndex(0); });
-    connect(saveBtn,   &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Employees"); stack->setCurrentIndex(0); });
+    connect(cancelBtn, &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Employés"); stack->setCurrentIndex(0); });
+    connect(saveBtn,   &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Employés"); stack->setCurrentIndex(0); });
 
-    connect(btnMore, &QPushButton::clicked, this, [=]{ setWindowTitle("Details"); stack->setCurrentIndex(2); });
+    connect(btnMore, &QPushButton::clicked, this, [=]{ setWindowTitle("Affectations & Laboratoires"); stack->setCurrentIndex(2); });
 
-    connect(back3, &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Employees"); stack->setCurrentIndex(0); });
+    connect(back3, &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Employés"); stack->setCurrentIndex(0); });
 
-    connect(details3, &QPushButton::clicked, this, [=]{ setWindowTitle("Details"); stack->setCurrentIndex(3); });
+    connect(details3, &QPushButton::clicked, this, [=]{ setWindowTitle("Disponibilités & Contraintes"); stack->setCurrentIndex(3); });
 
-    connect(back4, &QPushButton::clicked, this, [=]{ setWindowTitle("Details"); stack->setCurrentIndex(2); });
+    connect(back4, &QPushButton::clicked, this, [=]{ setWindowTitle("Affectations & Laboratoires"); stack->setCurrentIndex(2); });
 
-    connect(btnSec, &QPushButton::clicked, this, [=]{ setWindowTitle("Sécurité & Alertes"); stack->setCurrentIndex(4); });
+    // New behavior: btnStats goes to Statistiques page and updates charts
+    connect(btnStats, &QPushButton::clicked, this, [=]{
+        setWindowTitle("Statistiques Employés");
+        stack->setCurrentIndex(4);
+        updateStatsFromTable();
+    });
 
-    connect(back5, &QPushButton::clicked, this, [=]{ setWindowTitle("Details"); stack->setCurrentIndex(3); });
+    // Also from the Disponibilités page shortcut button
+    connect(btnSec, &QPushButton::clicked, this, [=]{
+        setWindowTitle("Statistiques Employés");
+        stack->setCurrentIndex(4);
+        updateStatsFromTable();
+    });
+
+    // Retour depuis statistiques
+    connect(backStats, &QPushButton::clicked, this, [=]{
+        setWindowTitle("Gestion des Employés");
+        stack->setCurrentIndex(0);
+    });
+
+    // Supprimer with stat refresh
+    connect(btnDel, &QPushButton::clicked, this, [=]{
+        int row = table->currentRow();
+        if (row < 0) {
+            QMessageBox::information(this, "Suppression", "Sélectionnez un employé dans la liste.");
+            return;
+        }
+        const QString empId = table->item(row, 1)->text();
+        auto ret = QMessageBox::question(this, "Confirmer la suppression",
+                                         QString("Supprimer l’employé %1 ?").arg(empId),
+                                         QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (ret == QMessageBox::Yes) {
+            table->removeRow(row);
+            updateStatsFromTable();
+            // TODO: supprimer aussi côté modèle/base de données
+        }
+    });
 
     // start
-    setWindowTitle("Gestion des Employees");
+    setWindowTitle("Gestion des Employés");
     stack->setCurrentIndex(0);
-}
-MainWindow::~MainWindow()
-{
-    // nothing needed here usually; Qt cleans up child widgets automatically
 }
