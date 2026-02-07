@@ -1,5 +1,6 @@
 // ===================== biosimple.cpp (UN SEUL FICHIER - BioSimple + Gestion Projet - 3 Widgets) =====================
 #include "biosimple.h"
+#include <QTextEdit>
 
 #include <QPainterPath>
 #include <QDialog>
@@ -66,6 +67,19 @@ static const int BIO_STATS = 4;
 static const int PROJ_LIST  = 5; // Widget 1
 static const int PROJ_FORM  = 6; // Widget 2
 static const int PROJ_STATS = 7; // Widget 3
+
+// Expériences / Protocoles (3 widgets/pages)
+static const int EXP_LIST  = 8;  // Widget 1
+static const int EXP_FORM  = 9;  // Widget 2
+static const int EXP_STATS = 10; // Widget 3
+
+// Publications (4 pages)
+
+// ===================== Publications (4 pages) =====================
+static const int PUB_LIST    = 11;  // Page 1 : Liste / Gestion
+static const int PUB_FORM    = 12;  // Page 2 : Ajouter / Modifier
+static const int PUB_STATS   = 13;  // Page 3 : Statistiques
+static const int PUB_DETAILS = 14;  // Page 4 : Détails
 
 // ===================== UI responsive margin =====================
 static int uiMargin(QWidget* w)
@@ -367,25 +381,37 @@ static QWidget* makeHeaderBlock(QStyle* st,
 // ===================== Connexion modules (BioSimple / Gestion Projet) =====================
 static void connectModulesSwitch(MainWindow* self, QStackedWidget* stack, const ModulesBar& mb)
 {
-    // On garde seulement 2 modules actifs: BioSimple et Gestion Projet
+    // Modules activés dans ce fichier: BioSimple + Gestion Projet + Expériences/Protocoles
     QObject::connect(mb.bBioSimple, &QPushButton::clicked, self, [=](){
         self->setWindowTitle("Gestion des Échantillons");
         stack->setCurrentIndex(BIO_LIST);
     });
+
     QObject::connect(mb.bProjet, &QPushButton::clicked, self, [=](){
         self->setWindowTitle("Gestion Projet");
         stack->setCurrentIndex(PROJ_LIST);
     });
 
-    // Les autres: message (optionnel)
+    QObject::connect(mb.bExp, &QPushButton::clicked, self, [=](){
+        self->setWindowTitle("Expériences & Protocoles");
+        stack->setCurrentIndex(EXP_LIST);
+    });
+
+    // Les autres modules: non activés
     auto notImpl = [=](const QString& name){
-        QMessageBox::information(self, "Module", QString("Module \"%1\" non activé dans ce fichier.").arg(name));
+        QMessageBox::information(self, "Module",
+                                 QString("Module \"%1\" non activé dans ce fichier.").arg(name));
     };
-    QObject::connect(mb.bEmployee, &QPushButton::clicked, self, [=]{ notImpl("Employee"); });
-    QObject::connect(mb.bPublication, &QPushButton::clicked, self, [=]{ notImpl("Publication"); });
-    QObject::connect(mb.bEquipement, &QPushButton::clicked, self, [=]{ notImpl("Équipement"); });
-    QObject::connect(mb.bExp, &QPushButton::clicked, self, [=]{ notImpl("Expériences / Protocoles"); });
+
+    QObject::connect(mb.bEmployee,    &QPushButton::clicked, self, [=]{ notImpl("Employés"); });
+    QObject::connect(mb.bPublication, &QPushButton::clicked, self, [=](){
+        self->setWindowTitle("Publications");
+        stack->setCurrentIndex(PUB_LIST);
+    });
+
+    QObject::connect(mb.bEquipement,  &QPushButton::clicked, self, [=]{ notImpl("Équipements"); });
 }
+
 
 // ===================== Widget1 badge delegate (BioSimple) =====================
 enum class ExpireStatus { Ok=0, Soon=1, Expired=2, Bsl=3 };
@@ -2164,7 +2190,681 @@ MainWindow::MainWindow(QWidget *parent)
     gp3->addWidget(outP3, 1);
 
     stack->addWidget(proj3);
+    // ==========================================================
+    // =================  EXPERIENCES / PROTOCOLES  =============
+    // ==========================================================
 
+    // ==========================================================
+    // PAGE 8 : Expériences & Protocoles - Widget 1 (LISTE)
+    // ==========================================================
+    QWidget* exp1 = new QWidget;
+    QVBoxLayout* ep1 = new QVBoxLayout(exp1);
+    ep1->setContentsMargins(22, 18, 22, 18);
+    ep1->setSpacing(14);
+
+    ModulesBar barExpList;
+    ep1->addWidget(makeHeaderBlock(st, "Expériences & Protocoles", ModuleTab::ExperiencesProtocoles, &barExpList));
+    connectModulesSwitch(this, stack, barExpList);
+
+    QFrame* eBar = new QFrame;
+    eBar->setFixedHeight(54);
+    eBar->setStyleSheet("background: rgba(255,255,255,0.22); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* eBarL = new QHBoxLayout(eBar);
+    eBarL->setContentsMargins(14, 8, 14, 8);
+    eBarL->setSpacing(10);
+
+    QLineEdit* eSearch = new QLineEdit;
+    eSearch->setPlaceholderText("Rechercher (ID, expérience, protocole, responsable, statut...)");
+    eSearch->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
+
+    QComboBox* eStatut = new QComboBox;
+    eStatut->addItems({"Statut", "Planifiée", "En cours", "Terminée", "Suspendue"});
+
+    QComboBox* eBsl = new QComboBox;
+    eBsl->addItems({"BSL", "BSL-1", "BSL-2", "BSL-3"});
+
+    QPushButton* eFilters = new QPushButton(st->standardIcon(QStyle::SP_FileDialogDetailedView), "  Filtres");
+    eFilters->setCursor(Qt::PointingHandCursor);
+    eFilters->setStyleSheet(QString(R"(
+    QPushButton{
+        background:%1; color: rgba(255,255,255,0.92);
+        border:1px solid rgba(0,0,0,0.18);
+        border-radius: 12px; padding: 10px 16px; font-weight: 800;
+    }
+    QPushButton:hover{ background: %2; }
+)").arg(C_PRIMARY, C_TOPBAR));
+
+    eBarL->addWidget(eSearch, 1);
+    eBarL->addWidget(eStatut);
+    eBarL->addWidget(eBsl);
+    eBarL->addWidget(eFilters);
+    ep1->addWidget(eBar);
+
+    QFrame* expCard = makeCard();
+    QVBoxLayout* expCardL = new QVBoxLayout(expCard);
+    expCardL->setContentsMargins(10,10,10,10);
+
+    QTableWidget* expTable = new QTableWidget(6, 7);
+    expTable->setHorizontalHeaderLabels({"ID", "Expérience", "Protocole", "Responsable", "Date", "Statut", "BSL"});
+    expTable->verticalHeader()->setVisible(false);
+    expTable->horizontalHeader()->setStretchLastSection(true);
+    expTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    expTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    expTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+
+    auto putE = [&](int r,int c,const QString& v){
+        QTableWidgetItem* it = new QTableWidgetItem(v);
+        it->setTextAlignment(Qt::AlignLeft|Qt::AlignVCenter);
+        expTable->setItem(r,c,it);
+    };
+
+    putE(0,0,"E-001"); putE(0,1,"Culture cellulaire"); putE(0,2,"PROTO-CC-01"); putE(0,3,"Dr. Amal");  putE(0,4,"07/02/2026"); putE(0,5,"En cours");   putE(0,6,"BSL-2");
+    putE(1,0,"E-002"); putE(1,1,"Extraction ADN");     putE(1,2,"PROTO-DNA-03");putE(1,3,"Mme. Sara"); putE(1,4,"05/02/2026"); putE(1,5,"Terminée"); putE(1,6,"BSL-1");
+    putE(2,0,"E-003"); putE(2,1,"PCR temps réel");     putE(2,2,"PROTO-PCR-07");putE(2,3,"Dr. Nader"); putE(2,4,"10/02/2026"); putE(2,5,"Planifiée");putE(2,6,"BSL-2");
+    putE(3,0,"E-004"); putE(3,1,"Séquençage");         putE(3,2,"PROTO-SEQ-02");putE(3,3,"Dr. Hichem");putE(3,4,"28/01/2026"); putE(3,5,"Suspendue");putE(3,6,"BSL-3");
+    putE(4,0,"E-005"); putE(4,1,"Dosage protéique");   putE(4,2,"PROTO-PROT-01");putE(4,3,"M. Karim"); putE(4,4,"02/02/2026"); putE(4,5,"En cours");  putE(4,6,"BSL-1");
+    putE(5,0,"E-006"); putE(5,1,"Stérilité");          putE(5,2,"PROTO-STER-04");putE(5,3,"Dr. Amal");  putE(5,4,"01/02/2026"); putE(5,5,"Terminée"); putE(5,6,"BSL-2");
+
+    for(int r=0;r<expTable->rowCount();++r) expTable->setRowHeight(r, 46);
+
+    expCardL->addWidget(expTable);
+    ep1->addWidget(expCard, 1);
+
+    QFrame* expBottom = new QFrame;
+    expBottom->setFixedHeight(64);
+    expBottom->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* expBottomL = new QHBoxLayout(expBottom);
+    expBottomL->setContentsMargins(14,10,14,10);
+    expBottomL->setSpacing(12);
+
+    QPushButton* expAdd   = actionBtn("Ajouter",      "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
+    QPushButton* expEdit  = actionBtn("Modifier",     "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
+    QPushButton* expDel   = actionBtn("Supprimer",    "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
+    QPushButton* expStats = actionBtn("Statistiques", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ComputerIcon), true);
+
+    QObject::connect(expDel, &QPushButton::clicked, this, [=](){
+        int r = expTable->currentRow();
+        if (r < 0) {
+            QMessageBox::information(this, "Information", "Veuillez sélectionner une ligne à supprimer.");
+            return;
+        }
+        QString resume = QString("ID : %1 | Expérience : %2 | Protocole : %3")
+                             .arg(expTable->item(r,0)->text(), expTable->item(r,1)->text(), expTable->item(r,2)->text());
+        ConfirmDeleteDialog confirm(style(), resume, this);
+        if (confirm.exec() == QDialog::Accepted) expTable->removeRow(r);
+    });
+
+    expBottomL->addWidget(expAdd);
+    expBottomL->addWidget(expEdit);
+    expBottomL->addWidget(expDel);
+    expBottomL->addWidget(expStats);
+    expBottomL->addStretch(1);
+
+    ep1->addWidget(expBottom);
+    stack->addWidget(exp1);
+    // ==========================================================
+    // PAGE 9 : Expériences & Protocoles - Widget 2 (AJOUT/MODIF)
+    // ==========================================================
+    QWidget* exp2 = new QWidget;
+    QVBoxLayout* ep2 = new QVBoxLayout(exp2);
+    ep2->setContentsMargins(22, 18, 22, 18);
+    ep2->setSpacing(14);
+
+    ModulesBar barExpForm;
+    ep2->addWidget(makeHeaderBlock(st, "Ajouter / Modifier une expérience", ModuleTab::ExperiencesProtocoles, &barExpForm));
+    connectModulesSwitch(this, stack, barExpForm);
+
+    QFrame* outE2 = new QFrame;
+    outE2->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
+    QHBoxLayout* outE2L = new QHBoxLayout(outE2);
+    outE2L->setContentsMargins(12,12,12,12);
+    outE2L->setSpacing(12);
+
+    auto expTitle = [&](const QString& t){
+        QLabel* lab = new QLabel(t);
+        lab->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+        return lab;
+    };
+    auto expRow = [&](QStyle::StandardPixmap sp, const QString& label, QWidget* input){
+        QFrame* r = softBox();
+        QHBoxLayout* l = new QHBoxLayout(r);
+        l->setContentsMargins(10,8,10,8);
+        l->setSpacing(10);
+
+        QToolButton* ic = new QToolButton;
+        ic->setAutoRaise(true);
+        ic->setIcon(st->standardIcon(sp));
+
+        QLabel* lab = new QLabel(label);
+        lab->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+
+        l->addWidget(ic);
+        l->addWidget(lab);
+        l->addStretch(1);
+        l->addWidget(input);
+        return r;
+    };
+
+    QFrame* e2Left = softBox();
+    e2Left->setFixedWidth(420);
+    QVBoxLayout* e2LeftL = new QVBoxLayout(e2Left);
+    e2LeftL->setContentsMargins(12,12,12,12);
+    e2LeftL->setSpacing(10);
+
+    QLineEdit* eId = new QLineEdit;
+    eId->setPlaceholderText("E-XXX");
+    eId->setFixedWidth(160);
+
+    QLineEdit* eName = new QLineEdit;
+    eName->setPlaceholderText("Nom de l’expérience");
+
+    QLineEdit* eProto = new QLineEdit;
+    eProto->setPlaceholderText("Code du protocole (ex: PROTO-PCR-07)");
+
+    QComboBox* eStatus = new QComboBox;
+    eStatus->addItems({"Statut", "Planifiée", "En cours", "Terminée", "Suspendue"});
+    eStatus->setFixedWidth(200);
+
+    QComboBox* eBsl2 = new QComboBox;
+    eBsl2->addItems({"BSL", "BSL-1", "BSL-2", "BSL-3"});
+    eBsl2->setFixedWidth(200);
+
+    QDateEdit* eDate = new QDateEdit(QDate::currentDate());
+    eDate->setCalendarPopup(true);
+    eDate->setDisplayFormat("dd/MM/yyyy");
+    eDate->setStyleSheet("QDateEdit{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 900; }");
+
+    e2LeftL->addWidget(expTitle("Informations"));
+    e2LeftL->addWidget(expRow(QStyle::SP_FileIcon, "ID", eId));
+    e2LeftL->addWidget(expRow(QStyle::SP_DirIcon,  "Expérience", eName));
+    e2LeftL->addWidget(expRow(QStyle::SP_FileDialogDetailedView, "Protocole", eProto));
+    e2LeftL->addWidget(expRow(QStyle::SP_FileDialogInfoView, "Date", eDate));
+    e2LeftL->addWidget(expRow(QStyle::SP_MessageBoxInformation, "Statut", eStatus));
+    e2LeftL->addWidget(expRow(QStyle::SP_MessageBoxWarning, "Niveau BSL", eBsl2));
+    e2LeftL->addStretch(1);
+
+    QFrame* e2Right = softBox();
+    QVBoxLayout* e2RightL = new QVBoxLayout(e2Right);
+    e2RightL->setContentsMargins(12,12,12,12);
+    e2RightL->setSpacing(10);
+
+    QLineEdit* eOwner = new QLineEdit;
+    eOwner->setPlaceholderText("Responsable");
+
+    QSpinBox* eDuree = new QSpinBox;
+    eDuree->setRange(0, 9999);
+    eDuree->setValue(0);
+    eDuree->setSuffix(" min");
+    eDuree->setFixedWidth(180);
+    eDuree->setStyleSheet("QSpinBox{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 900; }");
+
+    QLineEdit* eLieu = new QLineEdit;
+    eLieu->setPlaceholderText("Lieu / Salle / Paillasse");
+
+    QTextEdit* eNotes = new QTextEdit;
+    eNotes->setPlaceholderText("Notes / étapes / observations (traçabilité)");
+    eNotes->setStyleSheet("QTextEdit{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 800; }");
+
+    e2RightL->addWidget(expTitle("Traçabilité"));
+    e2RightL->addWidget(expRow(QStyle::SP_DirHomeIcon, "Responsable", eOwner));
+    e2RightL->addWidget(expRow(QStyle::SP_ArrowUp, "Durée", eDuree));
+    e2RightL->addWidget(expRow(QStyle::SP_DriveHDIcon, "Lieu", eLieu));
+    e2RightL->addWidget(eNotes, 1);
+
+    outE2L->addWidget(e2Left);
+    outE2L->addWidget(e2Right, 1);
+    ep2->addWidget(outE2, 1);
+
+    QFrame* e2Bottom = new QFrame;
+    e2Bottom->setFixedHeight(64);
+    e2Bottom->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* e2BottomL = new QHBoxLayout(e2Bottom);
+    e2BottomL->setContentsMargins(14,10,14,10);
+    e2BottomL->setSpacing(12);
+
+    QPushButton* expSave   = actionBtn("Enregistrer", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogSaveButton), true);
+    QPushButton* expCancel = actionBtn("Annuler",     "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DialogCancelButton), true);
+
+    e2BottomL->addWidget(expSave);
+    e2BottomL->addWidget(expCancel);
+    e2BottomL->addStretch(1);
+
+    ep2->addWidget(e2Bottom);
+    stack->addWidget(exp2);
+    // ==========================================================
+    // PAGE 10 : Expériences & Protocoles - Widget 3 (STATISTIQUES)
+    // ==========================================================
+    QWidget* exp3 = new QWidget;
+    QVBoxLayout* ep3 = new QVBoxLayout(exp3);
+    ep3->setContentsMargins(22, 18, 22, 18);
+    ep3->setSpacing(14);
+
+    ModulesBar barExpStats;
+    ep3->addWidget(makeHeaderBlock(st, "Statistiques Expériences", ModuleTab::ExperiencesProtocoles, &barExpStats));
+    connectModulesSwitch(this, stack, barExpStats);
+
+    QFrame* outE3 = new QFrame;
+    outE3->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
+    QVBoxLayout* outE3L = new QVBoxLayout(outE3);
+    outE3L->setContentsMargins(12,12,12,12);
+    outE3L->setSpacing(12);
+
+    QFrame* actE3 = new QFrame;
+    actE3->setStyleSheet("QFrame{ background: rgba(255,255,255,0.35); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
+    QHBoxLayout* actE3L = new QHBoxLayout(actE3);
+    actE3L->setContentsMargins(12,10,12,10);
+
+    QLabel* he = new QLabel("Aperçu : statut & volume mensuel");
+    he->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+
+    QPushButton* exportE3 = actionBtn("Exporter", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.92)", st->standardIcon(QStyle::SP_DialogSaveButton), true);
+
+    actE3L->addWidget(he);
+    actE3L->addStretch(1);
+    actE3L->addWidget(exportE3);
+    outE3L->addWidget(actE3);
+
+    QFrame* dashE3 = new QFrame;
+    dashE3->setStyleSheet("QFrame{ background: rgba(255,255,255,0.55); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
+    QHBoxLayout* dashE3L = new QHBoxLayout(dashE3);
+    dashE3L->setContentsMargins(12,12,12,12);
+    dashE3L->setSpacing(12);
+
+    QFrame* pieE = softBox();
+    QVBoxLayout* pieEL = new QVBoxLayout(pieE);
+    pieEL->setContentsMargins(12,12,12,12);
+    pieEL->setSpacing(10);
+
+    QLabel* pieET = new QLabel("Répartition des expériences par statut");
+    pieET->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+
+    DonutChart* donutE = new DonutChart;
+    donutE->setData({
+        {4, W_GREEN,  "En cours"},
+        {3, W_ORANGE, "Planifiée"},
+        {2, W_RED,    "Suspendue"},
+        {5, QColor("#9FBEB9"), "Terminée"}
+    });
+
+    pieEL->addWidget(pieET);
+    pieEL->addWidget(donutE, 1);
+
+    QFrame* barE = softBox();
+    QVBoxLayout* barEL = new QVBoxLayout(barE);
+    barEL->setContentsMargins(12,12,12,12);
+    barEL->setSpacing(10);
+
+    QLabel* barET = new QLabel("Nombre d’expériences par mois");
+    barET->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+
+    BarChart* barsE = new BarChart;
+    barsE->setData({
+        {6, "Jan"}, {8, "Fév"}, {9, "Mar"}, {7, "Avr"},
+        {10,"Mai"}, {5, "Juin"}, {11,"Juil"}, {6, "Août"},
+        {8, "Sep"}, {12,"Oct"}, {9, "Nov"}, {7, "Déc"}
+    });
+
+    barEL->addWidget(barET);
+    barEL->addWidget(barsE, 1);
+
+    dashE3L->addWidget(pieE, 1);
+    dashE3L->addWidget(barE, 2);
+
+    outE3L->addWidget(dashE3, 1);
+
+    QFrame* e3Bottom = new QFrame;
+    e3Bottom->setFixedHeight(64);
+    e3Bottom->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* e3BottomL = new QHBoxLayout(e3Bottom);
+    e3BottomL->setContentsMargins(14,10,14,10);
+
+    QPushButton* expBackStats = actionBtn("Retour", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ArrowBack), true);
+    e3BottomL->addWidget(expBackStats);
+    e3BottomL->addStretch(1);
+
+    outE3L->addWidget(e3Bottom);
+    ep3->addWidget(outE3, 1);
+
+    stack->addWidget(exp3);
+
+    // ==========================================================
+    // ======================  PUBLICATIONS  =====================
+    // ==========================================================
+
+    // ==========================================================
+    // PAGE 11 : Publications - LISTE (PUB_LIST)
+    // ==========================================================
+    // PAGE 11 : Publications - LISTE (PUB_LIST)
+    // ==========================================================
+    QWidget* pub1 = new QWidget;
+    QVBoxLayout* pb1 = new QVBoxLayout(pub1);
+    pb1->setContentsMargins(22, 18, 22, 18);
+    pb1->setSpacing(14);
+
+    ModulesBar barPubList;
+    pb1->addWidget(makeHeaderBlock(st, "Publications", ModuleTab::Publication, &barPubList));
+    connectModulesSwitch(this, stack, barPubList);
+
+    // Barre de recherche / filtres
+    QFrame* pubBar = new QFrame;
+    pubBar->setFixedHeight(54);
+    pubBar->setStyleSheet("background: rgba(255,255,255,0.22); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* pubBarL = new QHBoxLayout(pubBar);
+    pubBarL->setContentsMargins(14, 8, 14, 8);
+    pubBarL->setSpacing(10);
+
+    QLineEdit* pubSearch = new QLineEdit;
+    pubSearch->setPlaceholderText("Rechercher (titre, auteur, journal, année, DOI...)");
+    pubSearch->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
+
+    QComboBox* pubType = new QComboBox;
+    pubType->addItems({"Type", "Article", "Conférence", "Poster", "Thèse"});
+
+    QComboBox* pubYear = new QComboBox;
+    pubYear->addItems({"Année", "2026", "2025", "2024", "2023", "2022"});
+
+    QPushButton* pubFilters = new QPushButton(st->standardIcon(QStyle::SP_FileDialogDetailedView), "  Filtres");
+    pubFilters->setCursor(Qt::PointingHandCursor);
+    pubFilters->setStyleSheet(QString(R"(
+QPushButton{
+    background:%1; color: rgba(255,255,255,0.92);
+    border:1px solid rgba(0,0,0,0.18);
+    border-radius: 12px; padding: 10px 16px; font-weight: 800;
+}
+QPushButton:hover{ background: %2; }
+)").arg(C_PRIMARY, C_TOPBAR));
+
+    pubBarL->addWidget(pubSearch, 1);
+    pubBarL->addWidget(pubType);
+    pubBarL->addWidget(pubYear);
+    pubBarL->addWidget(pubFilters);
+    pb1->addWidget(pubBar);
+
+    // Table
+    QFrame* pubCard = makeCard();
+    QVBoxLayout* pubCardL = new QVBoxLayout(pubCard);
+    pubCardL->setContentsMargins(10,10,10,10);
+
+    QTableWidget* pubTable = new QTableWidget(6, 7);
+    pubTable->setHorizontalHeaderLabels({"ID","Titre","Auteurs","Journal/Conf.","Année","DOI","Statut"});
+    pubTable->verticalHeader()->setVisible(false);
+    pubTable->horizontalHeader()->setStretchLastSection(true);
+    pubTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    pubTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    pubTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+
+    auto putPUB = [&](int r,int c,const QString& v){
+        QTableWidgetItem* it = new QTableWidgetItem(v);
+        it->setTextAlignment(Qt::AlignLeft|Qt::AlignVCenter);
+        pubTable->setItem(r,c,it);
+    };
+
+    putPUB(0,0,"PUB-001"); putPUB(0,1,"Analyse génomique des souches"); putPUB(0,2,"A. Ben Ali; S. Trabelsi"); putPUB(0,3,"Nature Methods"); putPUB(0,4,"2026"); putPUB(0,5,"10.1000/xyz001"); putPUB(0,6,"Soumise");
+    putPUB(1,0,"PUB-002"); putPUB(1,1,"PCR temps réel : optimisation"); putPUB(1,2,"H. Chaachou; M. Karim"); putPUB(1,3,"BioTech Conf"); putPUB(1,4,"2025"); putPUB(1,5,"10.1000/xyz002"); putPUB(1,6,"Acceptée");
+    putPUB(2,0,"PUB-003"); putPUB(2,1,"Culture cellulaire avancée"); putPUB(2,2,"Dr. Amal; Dr. Nader"); putPUB(2,3,"Cell Reports"); putPUB(2,4,"2025"); putPUB(2,5,"10.1000/xyz003"); putPUB(2,6,"Publiée");
+    putPUB(3,0,"PUB-004"); putPUB(3,1,"Traçabilité scientifique en labo"); putPUB(3,2,"S. Sara; H. Hichem"); putPUB(3,3,"Lab Quality"); putPUB(3,4,"2024"); putPUB(3,5,"10.1000/xyz004"); putPUB(3,6,"Brouillon");
+    putPUB(4,0,"PUB-005"); putPUB(4,1,"Séquençage : protocole comparatif"); putPUB(4,2,"A. Ben Ali; K. Yassmine"); putPUB(4,3,"Genomics Journal"); putPUB(4,4,"2024"); putPUB(4,5,"10.1000/xyz005"); putPUB(4,6,"Soumise");
+    putPUB(5,0,"PUB-006"); putPUB(5,1,"Dosage protéique : étude"); putPUB(5,2,"M. Karim; Dr. Amal"); putPUB(5,3,"Protein Conf"); putPUB(5,4,"2023"); putPUB(5,5,"10.1000/xyz006"); putPUB(5,6,"Rejetée");
+
+    for(int r=0;r<pubTable->rowCount();++r) pubTable->setRowHeight(r, 46);
+
+    pubCardL->addWidget(pubTable);
+    pb1->addWidget(pubCard, 1);
+
+    // Bottom actions (Ajouter / Modifier / Stats / Retour optionnel)
+    QFrame* pubBottom = new QFrame;
+    pubBottom->setFixedHeight(64);
+    pubBottom->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* pubBottomL = new QHBoxLayout(pubBottom);
+    pubBottomL->setContentsMargins(14,10,14,10);
+    pubBottomL->setSpacing(12);
+
+    QPushButton* pubAdd   = actionBtn("Ajouter",      "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
+    QPushButton* pubEdit  = actionBtn("Modifier",     "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
+    QPushButton* pubDel   = actionBtn("Supprimer",    "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
+    QPushButton* pubStats = actionBtn("Statistiques", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ComputerIcon), true);
+
+    QObject::connect(pubDel, &QPushButton::clicked, this, [=](){
+        int r = pubTable->currentRow();
+        if (r < 0) {
+            QMessageBox::information(this, "Information", "Veuillez sélectionner une publication à supprimer.");
+            return;
+        }
+        QString resume = QString("ID : %1 | Titre : %2 | Année : %3")
+                             .arg(pubTable->item(r,0)->text(),
+                                  pubTable->item(r,1)->text(),
+                                  pubTable->item(r,4)->text());
+        ConfirmDeleteDialog confirm(style(), resume, this);
+        if (confirm.exec() == QDialog::Accepted) pubTable->removeRow(r);
+    });
+
+    pubBottomL->addWidget(pubAdd);
+    pubBottomL->addWidget(pubEdit);
+    pubBottomL->addWidget(pubDel);
+    pubBottomL->addWidget(pubStats);
+    pubBottomL->addStretch(1);
+
+    pb1->addWidget(pubBottom);
+    stack->addWidget(pub1);
+
+    // ==========================================================
+    // PAGE 12 : Publications - AJOUT / MODIF (PUB_FORM)
+    // ==========================================================
+    QWidget* pub2 = new QWidget;
+    QVBoxLayout* pb2 = new QVBoxLayout(pub2);
+    pb2->setContentsMargins(22, 18, 22, 18);
+    pb2->setSpacing(14);
+
+    ModulesBar barPubForm;
+    pb2->addWidget(makeHeaderBlock(st, "Ajouter / Modifier une publication", ModuleTab::Publication, &barPubForm));
+    connectModulesSwitch(this, stack, barPubForm);
+
+    QFrame* outPUB2 = new QFrame;
+    outPUB2->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
+    QHBoxLayout* outPUB2L = new QHBoxLayout(outPUB2);
+    outPUB2L->setContentsMargins(12,12,12,12);
+    outPUB2L->setSpacing(12);
+
+    auto pubTitle = [&](const QString& t){
+        QLabel* lab = new QLabel(t);
+        lab->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+        return lab;
+    };
+    auto pubRow = [&](QStyle::StandardPixmap sp, const QString& label, QWidget* input){
+        QFrame* r = softBox();
+        QHBoxLayout* l = new QHBoxLayout(r);
+        l->setContentsMargins(10,8,10,8);
+        l->setSpacing(10);
+
+        QToolButton* ic = new QToolButton;
+        ic->setAutoRaise(true);
+        ic->setIcon(st->standardIcon(sp));
+
+        QLabel* lab = new QLabel(label);
+        lab->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+
+        l->addWidget(ic);
+        l->addWidget(lab);
+        l->addStretch(1);
+        l->addWidget(input);
+        return r;
+    };
+
+    QFrame* pub2Left = softBox();
+    pub2Left->setFixedWidth(430);
+    QVBoxLayout* pub2LeftL = new QVBoxLayout(pub2Left);
+    pub2LeftL->setContentsMargins(12,12,12,12);
+    pub2LeftL->setSpacing(10);
+
+    QLineEdit* lePubId = new QLineEdit;
+    lePubId->setPlaceholderText("PUB-XXX");
+    lePubId->setFixedWidth(180);
+
+    QLineEdit* leTitle = new QLineEdit;
+    leTitle->setPlaceholderText("Titre de la publication");
+
+    QLineEdit* leAuthors = new QLineEdit;
+    leAuthors->setPlaceholderText("Auteurs (séparés par ; )");
+
+    QComboBox* cbPubType = new QComboBox;
+    cbPubType->addItems({"Type", "Article", "Conférence", "Poster", "Thèse"});
+    cbPubType->setFixedWidth(220);
+
+    QSpinBox* sbYear = new QSpinBox;
+    sbYear->setRange(1950, 2100);
+    sbYear->setValue(QDate::currentDate().year());
+    sbYear->setFixedWidth(180);
+    sbYear->setStyleSheet("QSpinBox{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 900; }");
+
+    pub2LeftL->addWidget(pubTitle("Informations"));
+    pub2LeftL->addWidget(pubRow(QStyle::SP_FileIcon, "ID", lePubId));
+    pub2LeftL->addWidget(pubRow(QStyle::SP_FileDialogDetailedView, "Titre", leTitle));
+    pub2LeftL->addWidget(pubRow(QStyle::SP_DirIcon, "Auteurs", leAuthors));
+    pub2LeftL->addWidget(pubRow(QStyle::SP_ComputerIcon, "Type", cbPubType));
+    pub2LeftL->addWidget(pubRow(QStyle::SP_FileDialogInfoView, "Année", sbYear));
+    pub2LeftL->addStretch(1);
+
+    QFrame* pub2Right = softBox();
+    QVBoxLayout* pub2RightL = new QVBoxLayout(pub2Right);
+    pub2RightL->setContentsMargins(12,12,12,12);
+    pub2RightL->setSpacing(10);
+
+    QLineEdit* leJournal = new QLineEdit;
+    leJournal->setPlaceholderText("Journal / Conférence");
+
+    QLineEdit* leDOI = new QLineEdit;
+    leDOI->setPlaceholderText("DOI (ex: 10.1000/xyz)");
+
+    QComboBox* cbStatus = new QComboBox;
+    cbStatus->addItems({"Statut", "Brouillon", "Soumise", "Acceptée", "Publiée", "Rejetée"});
+    cbStatus->setFixedWidth(220);
+
+    QTextEdit* teAbstract = new QTextEdit;
+    teAbstract->setPlaceholderText("Résumé / Notes / Mots-clés (traçabilité scientifique)");
+    teAbstract->setStyleSheet("QTextEdit{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 800; }");
+
+    pub2RightL->addWidget(pubTitle("Détails"));
+    pub2RightL->addWidget(pubRow(QStyle::SP_DirHomeIcon, "Journal/Conf.", leJournal));
+    pub2RightL->addWidget(pubRow(QStyle::SP_FileDialogContentsView, "DOI", leDOI));
+    pub2RightL->addWidget(pubRow(QStyle::SP_MessageBoxInformation, "Statut", cbStatus));
+    pub2RightL->addWidget(teAbstract, 1);
+
+    outPUB2L->addWidget(pub2Left);
+    outPUB2L->addWidget(pub2Right, 1);
+    pb2->addWidget(outPUB2, 1);
+
+    // Bottom : Save / Annuler
+    QFrame* pub2Bottom = new QFrame;
+    pub2Bottom->setFixedHeight(64);
+    pub2Bottom->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* pub2BottomL = new QHBoxLayout(pub2Bottom);
+    pub2BottomL->setContentsMargins(14,10,14,10);
+    pub2BottomL->setSpacing(12);
+
+    QPushButton* pubSave   = actionBtn("Enregistrer", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogSaveButton), true);
+    QPushButton* pubCancel = actionBtn("Annuler",     "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DialogCancelButton), true);
+
+    pub2BottomL->addWidget(pubSave);
+    pub2BottomL->addWidget(pubCancel);
+    pub2BottomL->addStretch(1);
+
+    pb2->addWidget(pub2Bottom);
+    stack->addWidget(pub2);
+
+    // ==========================================================
+    // PAGE 13 : Publications - STATISTIQUES (PUB_STATS)
+    // ==========================================================
+    QWidget* pub3 = new QWidget;
+    QVBoxLayout* pb3 = new QVBoxLayout(pub3);
+    pb3->setContentsMargins(22, 18, 22, 18);
+    pb3->setSpacing(14);
+
+    ModulesBar barPubStats;
+    pb3->addWidget(makeHeaderBlock(st, "Statistiques Publications", ModuleTab::Publication, &barPubStats));
+    connectModulesSwitch(this, stack, barPubStats);
+
+    QFrame* outPUB3 = new QFrame;
+    outPUB3->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
+    QVBoxLayout* outPUB3L = new QVBoxLayout(outPUB3);
+    outPUB3L->setContentsMargins(12,12,12,12);
+    outPUB3L->setSpacing(12);
+
+    QFrame* actPUB3 = new QFrame;
+    actPUB3->setStyleSheet("QFrame{ background: rgba(255,255,255,0.35); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
+    QHBoxLayout* actPUB3L = new QHBoxLayout(actPUB3);
+    actPUB3L->setContentsMargins(12,10,12,10);
+
+    QLabel* hpPUB = new QLabel("Aperçu : statut & publications par année");
+    hpPUB->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+
+    QPushButton* exportPUB = actionBtn("Exporter", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.92)", st->standardIcon(QStyle::SP_DialogSaveButton), true);
+
+    actPUB3L->addWidget(hpPUB);
+    actPUB3L->addStretch(1);
+    actPUB3L->addWidget(exportPUB);
+    outPUB3L->addWidget(actPUB3);
+
+    QFrame* dashPUB = new QFrame;
+    dashPUB->setStyleSheet("QFrame{ background: rgba(255,255,255,0.55); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
+    QHBoxLayout* dashPUBL = new QHBoxLayout(dashPUB);
+    dashPUBL->setContentsMargins(12,12,12,12);
+    dashPUBL->setSpacing(12);
+
+    QFrame* piePUB = softBox();
+    QVBoxLayout* piePUBL = new QVBoxLayout(piePUB);
+    piePUBL->setContentsMargins(12,12,12,12);
+    piePUBL->setSpacing(10);
+
+    QLabel* piePUBT = new QLabel("Répartition des publications par statut");
+    piePUBT->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+
+    DonutChart* donutPUB = new DonutChart;
+    donutPUB->setData({
+        {3, W_GREEN,  "Publiée"},
+        {2, W_ORANGE, "Acceptée"},
+        {2, QColor("#9FBEB9"), "Soumise"},
+        {1, W_RED,    "Rejetée"}
+    });
+
+    piePUBL->addWidget(piePUBT);
+    piePUBL->addWidget(donutPUB, 1);
+
+    QFrame* barPUB = softBox();
+    QVBoxLayout* barPUBL = new QVBoxLayout(barPUB);
+    barPUBL->setContentsMargins(12,12,12,12);
+    barPUBL->setSpacing(10);
+
+    QLabel* barPUBT = new QLabel("Publications par année");
+    barPUBT->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+
+    BarChart* barsPUB = new BarChart;
+    barsPUB->setData({
+        {1, "2022"}, {2, "2023"}, {3, "2024"}, {4, "2025"}, {2, "2026"}
+    });
+
+    barPUBL->addWidget(barPUBT);
+    barPUBL->addWidget(barsPUB, 1);
+
+    dashPUBL->addWidget(piePUB, 1);
+    dashPUBL->addWidget(barPUB, 2);
+
+    outPUB3L->addWidget(dashPUB, 1);
+
+    // Bottom : Retour
+    QFrame* pub3Bottom = new QFrame;
+    pub3Bottom->setFixedHeight(64);
+    pub3Bottom->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* pub3BottomL = new QHBoxLayout(pub3Bottom);
+    pub3BottomL->setContentsMargins(14,10,14,10);
+
+    QPushButton* pub3Back = actionBtn("Retour", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ArrowBack), true);
+    pub3BottomL->addWidget(pub3Back);
+    pub3BottomL->addStretch(1);
+
+    outPUB3L->addWidget(pub3Bottom);
+    pb3->addWidget(outPUB3, 1);
+
+    stack->addWidget(pub3);
     // ==========================================================
     // ✅ Marges adaptatives (initial)
     // ==========================================================
@@ -2238,6 +2938,71 @@ MainWindow::MainWindow(QWidget *parent)
     QObject::connect(exportP3, &QPushButton::clicked, this, [=](){
         QMessageBox::information(this, "Export", "Export statistiques Projet (à connecter à PDF/Excel).");
     });
+    // ==========================================================
+    // NAVIGATION Expériences / Protocoles (3 widgets)
+    // ==========================================================
+    QObject::connect(expAdd, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Ajouter / Modifier une expérience");
+        stack->setCurrentIndex(EXP_FORM);
+    });
+    QObject::connect(expEdit, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Ajouter / Modifier une expérience");
+        stack->setCurrentIndex(EXP_FORM);
+    });
+    QObject::connect(expCancel, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Expériences & Protocoles");
+        stack->setCurrentIndex(EXP_LIST);
+    });
+    QObject::connect(expSave, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Expériences & Protocoles");
+        stack->setCurrentIndex(EXP_LIST);
+        QMessageBox::information(this, "Expérience", "Enregistrement (à connecter à la base de données).");
+    });
+    QObject::connect(expStats, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Statistiques Expériences");
+        stack->setCurrentIndex(EXP_STATS);
+    });
+    QObject::connect(expBackStats, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Expériences & Protocoles");
+        stack->setCurrentIndex(EXP_LIST);
+    });
+
+    // Export (démo)
+    QObject::connect(exportE3, &QPushButton::clicked, this, [=](){
+        QMessageBox::information(this, "Export", "Export statistiques Expériences (à connecter à PDF/Excel).");
+    });
+    // ===================== NAVIGATION PUBLICATION =====================
+
+    // LIST -> FORM
+    QObject::connect(pubAdd, &QPushButton::clicked, this, [=](){
+        stack->setCurrentIndex(PUB_FORM);
+    });
+    QObject::connect(pubEdit, &QPushButton::clicked, this, [=](){
+        if (pubTable->currentRow() < 0) {
+            QMessageBox::information(this, "Information", "Sélectionnez une publication à modifier.");
+            return;
+        }
+        stack->setCurrentIndex(PUB_FORM);
+    });
+
+    // LIST -> STATS
+    QObject::connect(pubStats, &QPushButton::clicked, this, [=](){
+        stack->setCurrentIndex(PUB_STATS);
+    });
+
+    // FORM -> LIST
+    QObject::connect(pubCancel, &QPushButton::clicked, this, [=](){
+        stack->setCurrentIndex(PUB_LIST);
+    });
+    QObject::connect(pubSave, &QPushButton::clicked, this, [=](){
+        // (démo) : tu peux ajouter ici l’insertion dans pubTable si tu veux
+        stack->setCurrentIndex(PUB_LIST);
+    });
+
+    // STATS -> LIST
+
+
+
 
     setWindowTitle("Gestion des Échantillons");
     stack->setCurrentIndex(BIO_LIST);
