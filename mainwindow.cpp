@@ -1,5 +1,9 @@
+// ===================== mainwindow.cpp (COMPLET & CORRIGÉ - FR + STATISTIQUES) =====================
 #include "mainwindow.h"
+
 #include <QPainterPath>
+#include <QDialog>
+#include <QMessageBox>
 
 #include <QApplication>
 #include <QWidget>
@@ -29,7 +33,7 @@
 #include <cmath>
 #include <algorithm>
 
-// ===================== COLORS =====================
+// ===================== COULEURS =====================
 static const QString C_TOPBAR     = "#12443B";
 static const QString C_PRIMARY    = "#0A5F58";
 static const QString C_BG         = "#A3CAD3";
@@ -47,6 +51,14 @@ static const QColor  W_GREEN      = QColor("#2E6F63");
 static const QColor  W_ORANGE     = QColor("#B5672C");
 static const QColor  W_RED        = QColor("#8B2F3C");
 static const QColor  W_GRAY       = QColor("#7A8B8A");
+
+static int uiMargin(QWidget* w)
+{
+    int W = w->width();
+    if (W < 1100) return 6;    // petit écran
+    if (W < 1400) return 10;   // écran moyen
+    return 14;                 // grand écran
+}
 
 // ===================== Helpers =====================
 static QFrame* makeCard(QWidget* parent=nullptr)
@@ -131,18 +143,29 @@ static QWidget* makeBrandWidget()
     QWidget* w = new QWidget;
     QHBoxLayout* h = new QHBoxLayout(w);
     h->setContentsMargins(0,0,0,0);
-    h->setSpacing(8);
+    h->setSpacing(10);
+    h->setAlignment(Qt::AlignVCenter);
 
     QLabel* logo = new QLabel;
-    QPixmap px(":/smartvision.png"); // <= DOIT correspondre au .qrc
+    logo->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    logo->setContentsMargins(0, 4, 0, 0);
+
+    QPixmap px(":image/smartvision.png");
     if (!px.isNull())
-        logo->setPixmap(px.scaledToHeight(28, Qt::SmoothTransformation));
-    logo->setFixedHeight(30);
+        logo->setPixmap(px.scaled(36, 36, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+
+    QLabel* name = new QLabel("SmartVision");
+    QFont nf = name->font();
+    nf.setBold(true);
+    nf.setPointSize(11);
+    name->setFont(nf);
+    name->setStyleSheet(QString("color:%1; letter-spacing: 0.6px;").arg(C_BEIGE));
+    name->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
 
     auto dot = [&](const QColor& c){
         QFrame* d = new QFrame;
-        d->setFixedSize(8,8);
-        d->setStyleSheet(QString("background:%1; border-radius:4px;").arg(c.name()));
+        d->setFixedSize(6,6);
+        d->setStyleSheet(QString("background:%1; border-radius:3px;").arg(c.name()));
         return d;
     };
 
@@ -150,11 +173,14 @@ static QWidget* makeBrandWidget()
     QHBoxLayout* dh = new QHBoxLayout(dots);
     dh->setContentsMargins(0,0,0,0);
     dh->setSpacing(6);
+    dh->setAlignment(Qt::AlignVCenter);
+
     dh->addWidget(dot(QColor("#C6B29A")));
     dh->addWidget(dot(QColor("#8FD3E8")));
     dh->addWidget(dot(QColor("#C6B29A")));
 
     h->addWidget(logo);
+    h->addWidget(name);
     h->addWidget(dots);
     return w;
 }
@@ -168,10 +194,8 @@ static QFrame* makeTopBar(QStyle* st, const QString& titleText, QWidget* parent=
     QHBoxLayout* L = new QHBoxLayout(top);
     L->setContentsMargins(14,10,14,10);
 
-    // LEFT: brand
     L->addWidget(makeBrandWidget(), 0, Qt::AlignLeft);
 
-    // CENTER: title
     QLabel* title = new QLabel(titleText);
     QFont f = title->font(); f.setPointSize(14); f.setBold(true);
     title->setFont(f);
@@ -181,14 +205,13 @@ static QFrame* makeTopBar(QStyle* st, const QString& titleText, QWidget* parent=
     L->addWidget(title, 0, Qt::AlignCenter);
     L->addStretch(1);
 
-    // RIGHT: icons
     QWidget* icons = new QWidget;
     QHBoxLayout* icL = new QHBoxLayout(icons);
     icL->setContentsMargins(0,0,0,0);
     icL->setSpacing(4);
 
-    QToolButton* bHome = topIconBtn(st, QStyle::SP_DirHomeIcon, "Home");
-    QToolButton* bInfo = topIconBtn(st, QStyle::SP_MessageBoxInformation, "Info");
+    QToolButton* bHome = topIconBtn(st, QStyle::SP_DirHomeIcon, "Accueil");
+    QToolButton* bInfo = topIconBtn(st, QStyle::SP_MessageBoxInformation, "Informations");
     QToolButton* bClose= topIconBtn(st, QStyle::SP_TitleBarCloseButton, "Fermer");
 
     QObject::connect(bClose, &QToolButton::clicked, top, [=](){
@@ -204,14 +227,14 @@ static QFrame* makeTopBar(QStyle* st, const QString& titleText, QWidget* parent=
     return top;
 }
 
-// ===================== Widget1 table badge delegate =====================
+// ===================== Widget1 badge delegate =====================
 enum class ExpireStatus { Ok=0, Soon=1, Expired=2, Bsl=3 };
 
 static QString statusText(ExpireStatus s)
 {
     switch (s) {
     case ExpireStatus::Ok:      return "OK";
-    case ExpireStatus::Soon:    return "Bient\nExpiré";
+    case ExpireStatus::Soon:    return "Bientôt\nexpiré";
     case ExpireStatus::Expired: return "Expiré";
     case ExpireStatus::Bsl:     return "BSL";
     }
@@ -247,7 +270,7 @@ public:
 
         QRect r = opt.rect.adjusted(8, 6, -8, -6);
         int h = qMin(r.height(), 28);
-        int w = qMin(r.width(), 120);
+        int w = qMin(r.width(), 140);
         QRect pill(r.left() + (r.width() - w)/2, r.top() + (r.height()-h)/2, w, h);
 
         QColor bg = statusColor(st);
@@ -399,8 +422,7 @@ private:
 static QFrame* w3TempQtyBlock(QStyle* st, const QString& temp, const QString& qty)
 {
     QFrame* box = new QFrame;
-    box->setStyleSheet(QString("QFrame{ background: rgba(255,255,255,0.70); border:1px solid %1; border-radius: 12px; }")
-                           .arg(C_PANEL_BR));
+    box->setStyleSheet(QString("QFrame{ background: rgba(255,255,255,0.70); border:1px solid %1; border-radius: 12px; }").arg(C_PANEL_BR));
     QVBoxLayout* v = new QVBoxLayout(box);
     v->setContentsMargins(12,10,12,10);
     v->setSpacing(8);
@@ -428,8 +450,7 @@ static QFrame* w3TempQtyBlock(QStyle* st, const QString& temp, const QString& qt
 static QFrame* w3BottomLocationBar(QStyle* st, const QString& text)
 {
     QFrame* bar = new QFrame;
-    bar->setStyleSheet(QString("QFrame{ background: rgba(255,255,255,0.70); border:1px solid %1; border-radius: 12px; }")
-                           .arg(C_PANEL_BR));
+    bar->setStyleSheet(QString("QFrame{ background: rgba(255,255,255,0.70); border:1px solid %1; border-radius: 12px; }").arg(C_PANEL_BR));
     QHBoxLayout* h = new QHBoxLayout(bar);
     h->setContentsMargins(10,8,10,8);
     h->setSpacing(10);
@@ -460,11 +481,11 @@ static QFrame* w3BottomLocationBar(QStyle* st, const QString& text)
     return bar;
 }
 
-// ===================== Widget5 charts =====================
+// ===================== Widget STATISTIQUES (Graphiques) =====================
 class DonutChart : public QWidget {
 public:
     struct Slice { double value; QColor color; QString label; };
-    explicit DonutChart(QWidget* parent=nullptr) : QWidget(parent) { setMinimumHeight(170); }
+    explicit DonutChart(QWidget* parent=nullptr) : QWidget(parent) { setMinimumHeight(180); }
     void setData(const QList<Slice>& s) { m_slices = s; update(); }
 
 protected:
@@ -525,7 +546,7 @@ private:
 class BarChart : public QWidget {
 public:
     struct Bar { double value; QString label; };
-    explicit BarChart(QWidget* parent=nullptr) : QWidget(parent) { setMinimumHeight(170); }
+    explicit BarChart(QWidget* parent=nullptr) : QWidget(parent) { setMinimumHeight(180); }
     void setData(const QList<Bar>& b) { m_bars = b; update(); }
 
 protected:
@@ -544,30 +565,35 @@ protected:
         for (auto &b : m_bars) maxV = std::max(maxV, b.value);
         if (maxV <= 0) maxV = 1;
 
-        int leftPad = 34;
-        int bottomPad = 28;
+        int leftPad = 40;
+        int bottomPad = 30;
         QRect plot = r.adjusted(leftPad, 18, -10, -bottomPad);
 
         p.setPen(QColor(0,0,0,120));
         QFont t = font(); t.setBold(true); t.setPointSize(9);
         p.setFont(t);
-        p.drawText(QRect(r.left()+10, r.top()+4, r.width()-20, 16), Qt::AlignLeft|Qt::AlignVCenter, "Taux");
+        p.drawText(QRect(r.left()+10, r.top()-2, r.width()-20, 16),
+                   Qt::AlignLeft|Qt::AlignVCenter, "Nombre");
 
-        QList<int> ticks = {100, 90, 50, 30};
         QFont f = font(); f.setPointSize(8); f.setBold(true);
         p.setFont(f);
 
-        for (int tick : ticks) {
-            double y = plot.bottom() - (tick / maxV) * plot.height();
+        int tickCount = 4;
+        for (int i=0;i<=tickCount;i++){
+            double frac = (double)i / (double)tickCount;
+            double val = maxV * (1.0 - frac);
+            int y = (int)(plot.top() + frac * plot.height());
             p.setPen(QColor(0,0,0,90));
-            p.drawText(QRect(r.left(), (int)y-8, leftPad-6, 16), Qt::AlignRight|Qt::AlignVCenter, QString::number(tick));
+            p.drawText(QRect(r.left(), y-8, leftPad-6, 16),
+                       Qt::AlignRight|Qt::AlignVCenter, QString::number((int)std::round(val)));
             p.setPen(QColor(0,0,0,25));
-            p.drawLine(plot.left(), (int)y, plot.right(), (int)y);
+            p.drawLine(plot.left(), y, plot.right(), y);
         }
 
         int n = m_bars.size();
-        int gap = 10;
+        int gap = 8;
         int bw = (plot.width() - gap*(n-1)) / n;
+        if (bw < 6) bw = 6;
 
         for (int i=0; i<n; ++i) {
             double v = m_bars[i].value;
@@ -669,7 +695,7 @@ static void w4SetupAccountsTable(QTableWidget* t)
 {
     t->setColumnCount(4);
     t->setRowCount(4);
-    t->setHorizontalHeaderLabels({"Sample ID","Type","Temp","BSL"});
+    t->setHorizontalHeaderLabels({"ID","Type","Température","BSL"});
     t->verticalHeader()->setVisible(false);
     t->horizontalHeader()->setStretchLastSection(true);
     t->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -706,9 +732,225 @@ static void w4SetupAccountsTable(QTableWidget* t)
 
     setR(0,"123456","DNA","-50°C","BSL-1");
     setR(1,"123458","DNA","-20°C","BSL-2");
-    setR(2,"123458","RNA","-20°C","BSL-3");
-    setR(3,"123456","RNA","-60°C","BSL-3");
+    setR(2,"123459","RNA","-20°C","BSL-3");
+    setR(3,"123460","RNA","-60°C","BSL-3");
 }
+
+// ===================== Dialog: Delete list with buttons =====================
+class DeleteDialog : public QDialog
+{
+public:
+    DeleteDialog(QStyle* st, QWidget* parent=nullptr)
+        : QDialog(parent), m_style(st)
+    {
+        setWindowTitle("Supprimer des échantillons");
+        resize(800, 420);
+        setModal(true);
+
+        QVBoxLayout* root = new QVBoxLayout(this);
+        root->setContentsMargins(14,14,14,14);
+        root->setSpacing(12);
+
+        QLabel* title = new QLabel("Liste des échantillons");
+        QFont tf = title->font(); tf.setBold(true); tf.setPointSize(12);
+        title->setFont(tf);
+        title->setStyleSheet("color: rgba(0,0,0,0.65);");
+        root->addWidget(title);
+
+        table = new QTableWidget(0, 5, this);
+        table->setHorizontalHeaderLabels({"Type","Organisme","Stockage","Expiration","Action"});
+        table->verticalHeader()->setVisible(false);
+        table->horizontalHeader()->setStretchLastSection(true);
+        table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        table->setSelectionMode(QAbstractItemView::NoSelection);
+
+        table->setStyleSheet(R"(
+            QHeaderView::section{
+                background: rgba(159,190,185,0.85);
+                padding: 8px;
+                font-weight: 900;
+            }
+            QTableWidget{
+                background: rgba(255,255,255,0.75);
+                border: 1px solid rgba(0,0,0,0.12);
+                border-radius: 12px;
+            }
+            QTableWidget::item{
+                padding: 8px;
+                font-weight: 800;
+                color: rgba(0,0,0,0.65);
+            }
+        )");
+
+        root->addWidget(table, 1);
+
+        QPushButton* closeBtn = new QPushButton("Fermer");
+        closeBtn->setCursor(Qt::PointingHandCursor);
+        closeBtn->setStyleSheet("QPushButton{ padding:10px 18px; border-radius:10px; font-weight:900; }");
+        QObject::connect(closeBtn, &QPushButton::clicked, this, &QDialog::accept);
+        root->addWidget(closeBtn, 0, Qt::AlignRight);
+
+        // exemples
+        addRow("DNA","E. coli","-80°C","16/05/2024");
+        addRow("RNA","Humain","-20°C","01/05/2024");
+        addRow("Protéine","Levure","-20°C","20/04/2024");
+        addRow("DNA","Souris","Temp. ambiante","24/04/2024");
+    }
+
+private:
+    QStyle* m_style = nullptr;
+    QTableWidget* table = nullptr;
+
+    void addRow(const QString& type,
+                const QString& org,
+                const QString& storage,
+                const QString& expiry)
+    {
+        int r = table->rowCount();
+        table->insertRow(r);
+
+        table->setItem(r,0,new QTableWidgetItem(type));
+        table->setItem(r,1,new QTableWidgetItem(org));
+        table->setItem(r,2,new QTableWidgetItem(storage));
+        table->setItem(r,3,new QTableWidgetItem(expiry));
+
+        for (int c=0;c<4;++c)
+            table->item(r,c)->setTextAlignment(Qt::AlignLeft|Qt::AlignVCenter);
+
+        QPushButton* del = new QPushButton("Supprimer");
+        del->setCursor(Qt::PointingHandCursor);
+        del->setStyleSheet("QPushButton{ color:#B14A4A; font-weight:900; padding:6px 12px; }");
+
+        QObject::connect(del, &QPushButton::clicked, this, [this, del](){
+            int row = -1;
+            for (int i=0; i<table->rowCount(); ++i) {
+                if (table->cellWidget(i,4) == del) { row = i; break; }
+            }
+            if (row < 0) return;
+
+            auto rep = QMessageBox::question(
+                this,
+                "Confirmation",
+                "Voulez-vous supprimer cet échantillon ?",
+                QMessageBox::Yes | QMessageBox::No
+                );
+            if (rep == QMessageBox::Yes) {
+                table->removeRow(row);
+            }
+        });
+
+        table->setCellWidget(r, 4, del);
+        table->setRowHeight(r, 42);
+    }
+};
+
+// ===================== Dialog: Confirm delete (design) =====================
+class ConfirmDeleteDialog : public QDialog
+{
+public:
+    ConfirmDeleteDialog(QStyle* st, const QString& lineText, QWidget* parent=nullptr)
+        : QDialog(parent)
+    {
+        setModal(true);
+        setWindowTitle("Confirmation");
+        setFixedSize(520, 220);
+        setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+
+        setStyleSheet(QString(R"(
+            QDialog{
+                background: %1;
+                border: 1px solid %2;
+                border-radius: 14px;
+            }
+            QLabel{ color: rgba(0,0,0,0.70); }
+        )").arg(C_PANEL_BG, C_PANEL_BR));
+
+        QVBoxLayout* root = new QVBoxLayout(this);
+        root->setContentsMargins(16,16,16,16);
+        root->setSpacing(12);
+
+        QFrame* head = new QFrame;
+        head->setFixedHeight(46);
+        head->setStyleSheet(QString("background:%1; border-radius: 12px;").arg(C_TOPBAR));
+        QHBoxLayout* hl = new QHBoxLayout(head);
+        hl->setContentsMargins(12,8,12,8);
+
+        QLabel* ic = new QLabel;
+        ic->setPixmap(st->standardIcon(QStyle::SP_MessageBoxWarning).pixmap(18,18));
+
+        QLabel* t = new QLabel("Supprimer l’échantillon ?");
+        QFont ft = t->font(); ft.setBold(true); ft.setPointSize(11);
+        t->setFont(ft);
+        t->setStyleSheet(QString("color:%1;").arg(C_BEIGE));
+
+        hl->addWidget(ic);
+        hl->addSpacing(8);
+        hl->addWidget(t);
+        hl->addStretch(1);
+
+        root->addWidget(head);
+
+        QFrame* body = new QFrame;
+        body->setStyleSheet("QFrame{ background: rgba(255,255,255,0.70); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
+        QVBoxLayout* bl = new QVBoxLayout(body);
+        bl->setContentsMargins(14,12,14,12);
+        bl->setSpacing(8);
+
+        QLabel* msg = new QLabel("Voulez-vous vraiment supprimer la ligne sélectionnée ?");
+        msg->setStyleSheet("color: rgba(0,0,0,0.62); font-weight: 900;");
+        msg->setWordWrap(true);
+
+        QLabel* details = new QLabel(lineText);
+        details->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 800;");
+        details->setWordWrap(true);
+
+        bl->addWidget(msg);
+        bl->addWidget(details);
+
+        root->addWidget(body, 1);
+
+        QHBoxLayout* btns = new QHBoxLayout;
+        btns->setContentsMargins(0,0,0,0);
+        btns->setSpacing(10);
+        btns->addStretch(1);
+
+        QPushButton* cancel = new QPushButton(st->standardIcon(QStyle::SP_DialogCancelButton), "  Annuler");
+        cancel->setCursor(Qt::PointingHandCursor);
+        cancel->setStyleSheet(QString(R"(
+            QPushButton{
+                background: rgba(255,255,255,0.65);
+                border: 1px solid rgba(0,0,0,0.12);
+                border-radius: 12px;
+                padding: 10px 14px;
+                font-weight: 900;
+                color: %1;
+            }
+            QPushButton:hover{ background: rgba(255,255,255,0.80); }
+        )").arg(C_TEXT_DARK));
+
+        QPushButton* del = new QPushButton(st->standardIcon(QStyle::SP_TrashIcon), "  Supprimer");
+        del->setCursor(Qt::PointingHandCursor);
+        del->setStyleSheet(R"(
+            QPushButton{
+                background: rgba(177,74,74,0.85);
+                border: 1px solid rgba(0,0,0,0.12);
+                border-radius: 12px;
+                padding: 10px 14px;
+                font-weight: 900;
+                color: white;
+            }
+            QPushButton:hover{ background: rgba(177,74,74,0.95); }
+        )");
+
+        QObject::connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
+        QObject::connect(del, &QPushButton::clicked, this, &QDialog::accept);
+
+        btns->addWidget(cancel);
+        btns->addWidget(del);
+
+        root->addLayout(btns);
+    }
+};
 
 // ===================== MainWindow =====================
 MainWindow::MainWindow(QWidget *parent)
@@ -792,14 +1034,14 @@ MainWindow::MainWindow(QWidget *parent)
     bar1L->setSpacing(10);
 
     QLineEdit* search = new QLineEdit;
-    search->setPlaceholderText("Rechercher den ID ,  Sample,  Q54, D/éctiamen, Tutors…");
+    search->setPlaceholderText("Rechercher (ID, type, organisme, stockage, BSL...)");
     search->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
 
-    QComboBox* cbType = new QComboBox; cbType->addItems({"Type", "DNA", "RNA", "Protein"});
-    QComboBox* cbTemp = new QComboBox; cbTemp->addItems({"Temp", "-80°C", "-20°C", "Room Temp"});
-    QComboBox* cbBsl  = new QComboBox; cbBsl->addItems({"BS-L", "BSL-1", "BSL-2", "BSL-3"});
+    QComboBox* cbType = new QComboBox; cbType->addItems({"Type", "DNA", "RNA", "Protéine"});
+    QComboBox* cbTemp = new QComboBox; cbTemp->addItems({"Température", "-80°C", "-20°C", "Temp. ambiante"});
+    QComboBox* cbBsl  = new QComboBox; cbBsl->addItems({"BSL", "BSL-1", "BSL-2", "BSL-3"});
 
-    QPushButton* filters = new QPushButton(st->standardIcon(QStyle::SP_FileDialogDetailedView), "  Filtros");
+    QPushButton* filters = new QPushButton(st->standardIcon(QStyle::SP_FileDialogDetailedView), "  Filtres");
     filters->setCursor(Qt::PointingHandCursor);
     filters->setStyleSheet(QString(R"(
         QPushButton{
@@ -821,8 +1063,8 @@ MainWindow::MainWindow(QWidget *parent)
     QVBoxLayout* card1L = new QVBoxLayout(card1);
     card1L->setContentsMargins(10,10,10,10);
 
-    QTableWidget* table = new QTableWidget(5, 9);
-    table->setHorizontalHeaderLabels({"", "Sample ID", "Type", "Organisme", "Storage", "Quantité", "Expiry date", "Expire", "BSL"});
+    QTableWidget* table = new QTableWidget(5, 8);
+    table->setHorizontalHeaderLabels({"", "Type", "Organisme", "Stockage", "Quantité", "Date d'expiration", "Statut", "BSL"});
     table->verticalHeader()->setVisible(false);
     table->setShowGrid(true);
     table->setAlternatingRowColors(true);
@@ -831,21 +1073,25 @@ MainWindow::MainWindow(QWidget *parent)
     table->setSelectionMode(QAbstractItemView::SingleSelection);
     table->horizontalHeader()->setStretchLastSection(true);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    table->setItemDelegateForColumn(7, new BadgeDelegate(table));
+    table->setItemDelegateForColumn(6, new BadgeDelegate(table));
 
     table->setColumnWidth(0, 36);
     table->setColumnWidth(1, 110);
     table->setColumnWidth(2, 120);
     table->setColumnWidth(3, 170);
     table->setColumnWidth(4, 120);
-    table->setColumnWidth(5, 110);
-    table->setColumnWidth(6, 140);
-    table->setColumnWidth(7, 140);
-    table->setColumnWidth(8, 90);
+    table->setColumnWidth(5, 140);
+    table->setColumnWidth(6, 150);
+    table->setColumnWidth(7, 90);
 
-    auto setRow=[&](int r, const QString& id, const QString& type,
-                      const QString& org, const QString& storage, const QString& qty,
-                      const QString& date, ExpireStatus stt, const QString& bsl)
+    auto setRow=[&](int r,
+                      const QString& type,
+                      const QString& org,
+                      const QString& storage,
+                      const QString& qty,
+                      const QString& date,
+                      ExpireStatus stt,
+                      const QString& bsl)
     {
         QTableWidgetItem* iconItem = new QTableWidgetItem;
         iconItem->setIcon(st->standardIcon(QStyle::SP_ArrowRight));
@@ -858,28 +1104,29 @@ MainWindow::MainWindow(QWidget *parent)
             return it;
         };
 
-        table->setItem(r, 1, mk(id));
-        table->setItem(r, 2, mk(type));
-        table->setItem(r, 3, mk(org));
-        table->setItem(r, 4, mk(storage));
+        table->setItem(r, 1, mk(type));
+        table->setItem(r, 2, mk(org));
+        table->setItem(r, 3, mk(storage));
+
         QTableWidgetItem* q = mk(qty);
         q->setTextAlignment(Qt::AlignRight|Qt::AlignVCenter);
-        table->setItem(r, 5, q);
-        table->setItem(r, 6, mk(date));
+        table->setItem(r, 4, q);
+
+        table->setItem(r, 5, mk(date));
 
         QTableWidgetItem* badge = new QTableWidgetItem;
         badge->setData(Qt::UserRole, (int)stt);
-        table->setItem(r, 7, badge);
+        table->setItem(r, 6, badge);
 
-        table->setItem(r, 8, mk(bsl));
+        table->setItem(r, 7, mk(bsl));
         table->setRowHeight(r, 46);
     };
 
-    setRow(0, "123456", "DNA",     "E. coli", "-80°C",     "150", "05/16/2024", ExpireStatus::Ok,      "BSL-1");
-    setRow(1, "123458", "RNA",     "Human",   "-20°C",     "75",  "05/01/2024", ExpireStatus::Soon,    "BSL-2");
-    setRow(2, "123457", "Protein", "Yeast",   "-20°C",     "40",  "04/20/2024", ExpireStatus::Expired, "BSL-3");
-    setRow(3, "123458", "DNA",     "Mouse",   "Room Temp", "5",   "04/24/2024", ExpireStatus::Ok,      "BSL-2");
-    setRow(4, "123456", "DNA",     "Human",   "-80°C",     "200", "02/20/2024", ExpireStatus::Bsl,     "BSL-3");
+    setRow(0,  "DNA",      "E. coli", "-80°C",           "150", "16/05/2024", ExpireStatus::Ok,      "BSL-1");
+    setRow(1,  "RNA",      "Humain",  "-20°C",            "75", "01/05/2024", ExpireStatus::Soon,    "BSL-2");
+    setRow(2,  "Protéine", "Levure",  "-20°C",            "40", "20/04/2024", ExpireStatus::Expired, "BSL-3");
+    setRow(3,  "DNA",      "Souris",  "Temp. ambiante",    "5", "24/04/2024", ExpireStatus::Ok,      "BSL-2");
+    setRow(4,  "DNA",      "Humain",  "-80°C",           "200", "20/02/2024", ExpireStatus::Bsl,     "BSL-3");
 
     card1L->addWidget(table);
     p1->addWidget(card1, 1);
@@ -891,15 +1138,66 @@ MainWindow::MainWindow(QWidget *parent)
     bottom1L->setContentsMargins(14,10,14,10);
     bottom1L->setSpacing(12);
 
-    QPushButton* btnAdd   = actionBtn("Ajouter",   "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
-    QPushButton* btnEdit  = actionBtn("Modifier",  "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
-    QPushButton* btnDel   = actionBtn("Supprimer", "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
-    QPushButton* btnDet   = actionBtn("Détails",   "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DesktopIcon), true);
+    QPushButton* btnAdd   = actionBtn("Ajouter",      "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
+    QPushButton* btnEdit  = actionBtn("Modifier",     "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
+    QPushButton* btnDel   = actionBtn("Supprimer",    "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
+
+    // ✅ CHANGÉ: Détails -> Statistiques (ouvre la page Statistiques)
+    QPushButton* btnStats = actionBtn("Statistiques", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ComputerIcon), true);
+
+    QObject::connect(btnDel, &QPushButton::clicked, this, [=](){
+        int r = table->currentRow();
+
+        if (r < 0) {
+            QDialog dlg(this);
+            dlg.setModal(true);
+            dlg.setWindowTitle("Information");
+            dlg.setFixedSize(420, 170);
+            dlg.setStyleSheet(QString("QDialog{ background:%1; border:1px solid %2; border-radius:14px; }")
+                                  .arg(C_PANEL_BG, C_PANEL_BR));
+
+            QVBoxLayout* L = new QVBoxLayout(&dlg);
+            L->setContentsMargins(14,14,14,14);
+            L->setSpacing(12);
+
+            QLabel* t = new QLabel("Veuillez sélectionner une ligne à supprimer.");
+            t->setStyleSheet("color: rgba(0,0,0,0.65); font-weight:900;");
+            t->setWordWrap(true);
+
+            QPushButton* ok = new QPushButton("OK");
+            ok->setCursor(Qt::PointingHandCursor);
+            ok->setStyleSheet("QPushButton{ background: rgba(10,95,88,0.45); color:white; font-weight:900; border-radius:12px; padding:10px 16px; }"
+                              "QPushButton:hover{ background: rgba(18,68,59,0.95);}");
+
+            QObject::connect(ok, &QPushButton::clicked, &dlg, &QDialog::accept);
+
+            L->addWidget(t);
+            L->addStretch(1);
+            L->addWidget(ok, 0, Qt::AlignRight);
+
+            dlg.exec();
+            return;
+        }
+
+        auto cell = [&](int c)->QString{
+            QTableWidgetItem* it = table->item(r, c);
+            return it ? it->text() : "";
+        };
+
+        QString resume = QString("Type : %1   |   Organisme : %2   |   Stockage : %3   |   Expiration : %4")
+                             .arg(cell(1), cell(2), cell(3), cell(5));
+
+        ConfirmDeleteDialog confirm(style(), resume, this);
+
+        if (confirm.exec() == QDialog::Accepted) {
+            table->removeRow(r);
+        }
+    });
 
     bottom1L->addWidget(btnAdd);
     bottom1L->addWidget(btnEdit);
     bottom1L->addWidget(btnDel);
-    bottom1L->addWidget(btnDet);
+    bottom1L->addWidget(btnStats);
     bottom1L->addStretch(1);
 
     bottom1L->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_DirIcon)));
@@ -907,7 +1205,7 @@ MainWindow::MainWindow(QWidget *parent)
     bottom1L->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_DialogSaveButton)));
     bottom1L->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_BrowserReload)));
 
-    QPushButton* btnMore = new QPushButton(st->standardIcon(QStyle::SP_FileDialogContentsView), "  Détails abriqués");
+    QPushButton* btnMore = new QPushButton(st->standardIcon(QStyle::SP_FileDialogContentsView), "  Localisation & Stockage");
     btnMore->setCursor(Qt::PointingHandCursor);
     btnMore->setStyleSheet(R"(
         QPushButton{
@@ -933,94 +1231,107 @@ MainWindow::MainWindow(QWidget *parent)
     p2->setContentsMargins(22, 18, 22, 18);
     p2->setSpacing(14);
 
-    // ✅ TOPBAR UNIFIÉE (pas de duplication)
-    p2->addWidget(makeTopBar(st, "Ajouter / Modifier Echantillon"));
+    p2->addWidget(makeTopBar(st, "Ajouter / Modifier un échantillon"));
 
     QFrame* outer2 = new QFrame;
-    outer2->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
+    outer2->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }")
+                              .arg(C_PANEL_BG, C_PANEL_BR));
     QHBoxLayout* outer2L = new QHBoxLayout(outer2);
     outer2L->setContentsMargins(12,12,12,12);
     outer2L->setSpacing(12);
 
     QFrame* left2 = softBox();
-    left2->setFixedWidth(280);
+    left2->setFixedWidth(360);
     QVBoxLayout* left2L = new QVBoxLayout(left2);
-    left2L->setContentsMargins(10,10,10,10);
+    left2L->setContentsMargins(12,12,12,12);
     left2L->setSpacing(10);
 
-    auto leftAction = [&](const QString& title, QStyle::StandardPixmap sp, const QString& text){
-        QLabel* head = new QLabel(title);
-        head->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
-        QToolButton* b = new QToolButton;
-        b->setIcon(st->standardIcon(sp));
-        b->setText("  " + text);
-        b->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-        b->setCursor(Qt::PointingHandCursor);
-        b->setStyleSheet(R"(
-            QToolButton{
-                background: rgba(255,255,255,0.70);
-                border: 1px solid rgba(0,0,0,0.12);
-                border-radius: 12px;
-                padding: 10px 12px;
-                text-align: left;
-                color: rgba(0,0,0,0.60);
-                font-weight: 800;
-            }
-            QToolButton:hover{ background: rgba(255,255,255,0.85); }
-        )");
-        left2L->addWidget(head);
-        left2L->addWidget(b);
+    auto sectionTitle = [&](const QString& t){
+        QLabel* lab = new QLabel(t);
+        lab->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+        return lab;
     };
 
-    leftAction("Type", QStyle::SP_FileIcon, "DID: RNA");
+    auto formRow = [&](QStyle::StandardPixmap sp, const QString& label, QWidget* input){
+        QFrame* r = softBox();
+        QHBoxLayout* l = new QHBoxLayout(r);
+        l->setContentsMargins(10,8,10,8);
+        l->setSpacing(10);
 
-    QToolButton* orgBtn = new QToolButton;
-    orgBtn->setIcon(st->standardIcon(QStyle::SP_DirIcon));
-    orgBtn->setText("  Organisme");
-    orgBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    orgBtn->setCursor(Qt::PointingHandCursor);
-    orgBtn->setStyleSheet(R"(
-        QToolButton{
-            background: rgba(255,255,255,0.70);
-            border: 1px solid rgba(0,0,0,0.12);
-            border-radius: 12px;
-            padding: 10px 12px;
-            text-align: left;
-            color: rgba(0,0,0,0.60);
-            font-weight: 800;
-        }
-        QToolButton:hover{ background: rgba(255,255,255,0.85); }
-    )");
-    left2L->addWidget(orgBtn);
+        QToolButton* ic = new QToolButton;
+        ic->setAutoRaise(true);
+        ic->setIcon(st->standardIcon(sp));
 
-    QLabel* colHead = new QLabel("Collection");
-    colHead->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
-    left2L->addWidget(colHead);
+        QLabel* lab = new QLabel(label);
+        lab->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
 
-    auto colBtn = [&](QStyle::StandardPixmap sp, const QString& txt){
-        QToolButton* b = new QToolButton;
-        b->setIcon(st->standardIcon(sp));
-        b->setText("  " + txt);
-        b->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-        b->setCursor(Qt::PointingHandCursor);
-        b->setStyleSheet(R"(
-            QToolButton{
-                background: rgba(255,255,255,0.70);
-                border: 1px solid rgba(0,0,0,0.12);
-                border-radius: 12px;
-                padding: 10px 12px;
-                text-align: left;
-                color: rgba(0,0,0,0.60);
-                font-weight: 800;
-            }
-            QToolButton:hover{ background: rgba(255,255,255,0.85); }
-        )");
-        return b;
+        l->addWidget(ic);
+        l->addWidget(lab);
+        l->addStretch(1);
+        l->addWidget(input);
+        return r;
     };
 
-    left2L->addWidget(colBtn(QStyle::SP_DriveHDIcon, "Freezer ID"));
-    left2L->addWidget(colBtn(QStyle::SP_FileDialogListView, "Shelf"));
-    left2L->addWidget(colBtn(QStyle::SP_ArrowDown, "Position"));
+    auto blueDateRow = [&](const QString& label, const QDate& defDate){
+        QFrame* r = new QFrame;
+        r->setStyleSheet(
+            "QFrame{ background: rgba(255,255,255,0.80);"
+            "border: 2px solid rgba(54,92,245,0.70);"
+            "border-radius: 12px; }"
+            );
+        QHBoxLayout* l = new QHBoxLayout(r);
+        l->setContentsMargins(10,8,10,8);
+        l->setSpacing(10);
+
+        QLabel* lab = new QLabel(label);
+        lab->setStyleSheet("color: rgba(54,92,245,0.95); font-weight: 900;");
+
+        QToolButton* cal = new QToolButton;
+        cal->setAutoRaise(true);
+        cal->setIcon(st->standardIcon(QStyle::SP_FileDialogDetailedView));
+        cal->setStyleSheet("QToolButton{ color: rgba(54,92,245,1); }");
+
+        QDateEdit* d = new QDateEdit(defDate);
+        d->setCalendarPopup(true);
+        d->setDisplayFormat("dd/MM/yyyy");
+        d->setStyleSheet(
+            "QDateEdit{ background: transparent; border:0;"
+            "color: rgba(54,92,245,0.95); font-weight: 900; }"
+            );
+
+        l->addWidget(cal);
+        l->addWidget(lab);
+        l->addStretch(1);
+        l->addWidget(d);
+        return r;
+    };
+
+    left2L->addWidget(sectionTitle("Collection"));
+    QLineEdit* leCollection = new QLineEdit;
+    leCollection->setPlaceholderText("Nom de la collection");
+    left2L->addWidget(formRow(QStyle::SP_DirIcon, "Collection", leCollection));
+
+    left2L->addWidget(sectionTitle("Dates"));
+    left2L->addWidget(blueDateRow("Date de collecte", QDate::currentDate()));
+    left2L->addWidget(blueDateRow("Date d'expiration", QDate::currentDate().addDays(30)));
+
+    QSpinBox* qty = new QSpinBox;
+    qty->setRange(0, 999999);
+    qty->setValue(0);
+    qty->setFixedWidth(120);
+    qty->setStyleSheet("QSpinBox{ background: transparent; border:0; font-weight:900; color: rgba(0,0,0,0.60); }");
+    left2L->addWidget(formRow(QStyle::SP_ArrowUp, "Quantité", qty));
+
+    QComboBox* cbTemp2 = new QComboBox;
+    cbTemp2->addItems({"Température", "-80°C", "-20°C", "Temp. ambiante"});
+    cbTemp2->setFixedWidth(170);
+    left2L->addWidget(formRow(QStyle::SP_BrowserStop, "Température", cbTemp2));
+
+    QComboBox* cbDanger = new QComboBox;
+    cbDanger->addItems({"Niveau de danger", "BSL-1", "BSL-2", "BSL-3"});
+    cbDanger->setFixedWidth(170);
+    left2L->addWidget(formRow(QStyle::SP_MessageBoxWarning, "Niveau de danger", cbDanger));
+
     left2L->addStretch(1);
 
     QFrame* right2 = softBox();
@@ -1028,92 +1339,37 @@ MainWindow::MainWindow(QWidget *parent)
     right2L->setContentsMargins(12,12,12,12);
     right2L->setSpacing(10);
 
-    QFrame* tinyTop = softBox();
-    QHBoxLayout* tinyTopL = new QHBoxLayout(tinyTop);
-    tinyTopL->setContentsMargins(12,8,12,8);
+    right2L->addWidget(sectionTitle("Données"));
 
-    QToolButton* addDrop = new QToolButton;
-    addDrop->setIcon(st->standardIcon(QStyle::SP_DialogYesButton));
-    addDrop->setText("Ajouter");
-    addDrop->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    addDrop->setStyleSheet("QToolButton{ color: rgba(0,0,0,0.55); font-weight: 900; }");
+    QComboBox* cbType2 = new QComboBox;
+    cbType2->addItems({"Type", "DNA", "RNA", "Protéine"});
+    cbType2->setFixedWidth(200);
+    right2L->addWidget(formRow(QStyle::SP_FileIcon, "Type", cbType2));
 
-    QLabel* idLbl = new QLabel("123446");
-    idLbl->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+    QComboBox* cbOrg2 = new QComboBox;
+    cbOrg2->addItems({"Organisme", "Humain", "Souris", "Levure", "E. coli"});
+    cbOrg2->setFixedWidth(200);
+    right2L->addWidget(formRow(QStyle::SP_DirIcon, "Organisme", cbOrg2));
 
-    tinyTopL->addWidget(addDrop);
-    tinyTopL->addSpacing(10);
-    tinyTopL->addWidget(idLbl);
-    tinyTopL->addStretch(1);
-    right2L->addWidget(tinyTop);
+    QComboBox* cbFreezer2 = new QComboBox;
+    cbFreezer2->addItems({"Congélateur", "Congélateur-01", "Congélateur-02", "Congélateur-03"});
+    cbFreezer2->setFixedWidth(200);
+    right2L->addWidget(formRow(QStyle::SP_DriveHDIcon, "Congélateur", cbFreezer2));
 
-    auto comboRow = [&](QComboBox* cb){
-        QFrame* r = softBox();
-        QHBoxLayout* l = new QHBoxLayout(r);
-        l->setContentsMargins(10,8,10,8);
-        l->addWidget(cb);
-        return r;
-    };
+    QSpinBox* sbShelf2 = new QSpinBox;
+    sbShelf2->setRange(1, 99);
+    sbShelf2->setValue(1);
+    sbShelf2->setFixedWidth(120);
+    sbShelf2->setStyleSheet("QSpinBox{ background: transparent; border:0; font-weight:900; color: rgba(0,0,0,0.60); }");
+    right2L->addWidget(formRow(QStyle::SP_FileDialogListView, "Étagère", sbShelf2));
 
-    QComboBox* fcb1 = new QComboBox; fcb1->addItems({"DNA","RNA","Protein"});
-    QComboBox* fcb2 = new QComboBox; fcb2->addItems({"DNA","RNA","Protein"});
-    QComboBox* fcb3 = new QComboBox; fcb3->addItems({"Teade","Human","Mouse","Yeast"});
-    right2L->addWidget(comboRow(fcb1));
-    right2L->addWidget(comboRow(fcb2));
-    right2L->addWidget(comboRow(fcb3));
+    QSpinBox* sbPos2 = new QSpinBox;
+    sbPos2->setRange(1, 999);
+    sbPos2->setValue(1);
+    sbPos2->setFixedWidth(120);
+    sbPos2->setStyleSheet("QSpinBox{ background: transparent; border:0; font-weight:900; color: rgba(0,0,0,0.60); }");
+    right2L->addWidget(formRow(QStyle::SP_ArrowDown, "Position", sbPos2));
 
-    QFrame* dateRow = softBox();
-    QHBoxLayout* dateRowL = new QHBoxLayout(dateRow);
-    dateRowL->setContentsMargins(10,8,10,8);
-    dateRowL->setSpacing(8);
-
-    QToolButton* cal = new QToolButton; cal->setAutoRaise(true); cal->setIcon(st->standardIcon(QStyle::SP_FileDialogDetailedView));
-    QDateEdit* date = new QDateEdit(QDate(2024,5,4));
-    date->setCalendarPopup(true);
-    date->setDisplayFormat("MM/d/yyyy");
-    date->setStyleSheet("QDateEdit{ background: transparent; border:0; font-weight: 900; color: rgba(0,0,0,0.55);} ");
-
-    QToolButton* i1 = new QToolButton; i1->setAutoRaise(true); i1->setIcon(st->standardIcon(QStyle::SP_BrowserReload));
-    QToolButton* i2 = new QToolButton; i2->setAutoRaise(true); i2->setIcon(st->standardIcon(QStyle::SP_FileDialogListView));
-    QToolButton* i3 = new QToolButton; i3->setAutoRaise(true); i3->setIcon(st->standardIcon(QStyle::SP_DialogSaveButton));
-
-    dateRowL->addWidget(cal);
-    dateRowL->addWidget(date, 1);
-    dateRowL->addWidget(i1);
-    dateRowL->addWidget(i2);
-    dateRowL->addWidget(i3);
-    right2L->addWidget(dateRow);
-
-    auto miniRow = [&](QStyle::StandardPixmap sp, const QString& label, QWidget* input){
-        QFrame* r = softBox();
-        QHBoxLayout* l = new QHBoxLayout(r);
-        l->setContentsMargins(10,8,10,8);
-        l->setSpacing(8);
-
-        QToolButton* ic = new QToolButton; ic->setAutoRaise(true); ic->setIcon(st->standardIcon(sp));
-        QLabel* lab = new QLabel(label);
-        lab->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
-
-        QToolButton* a1 = new QToolButton; a1->setAutoRaise(true); a1->setIcon(st->standardIcon(QStyle::SP_ArrowRight));
-        QToolButton* a2 = new QToolButton; a2->setAutoRaise(true); a2->setIcon(st->standardIcon(QStyle::SP_FileDialogContentsView));
-
-        l->addWidget(ic);
-        l->addWidget(lab);
-        l->addStretch(1);
-        l->addWidget(input);
-        l->addWidget(a1);
-        l->addWidget(a2);
-        return r;
-    };
-
-    QComboBox* freezer = new QComboBox; freezer->addItems({"Freezer-02","Freezer-01"});
-    freezer->setFixedWidth(160);
-    QSpinBox* shelf = new QSpinBox; shelf->setRange(1,99); shelf->setValue(3); shelf->setFixedWidth(80);
-    QSpinBox* pos   = new QSpinBox; pos->setRange(1,999); pos->setValue(3); pos->setFixedWidth(80);
-
-    right2L->addWidget(miniRow(QStyle::SP_DriveHDIcon, "Freezer-02", freezer));
-    right2L->addWidget(miniRow(QStyle::SP_FileDialogListView, " ", shelf));
-    right2L->addWidget(miniRow(QStyle::SP_ArrowDown, " ", pos));
     right2L->addStretch(1);
 
     outer2L->addWidget(left2);
@@ -1145,7 +1401,6 @@ MainWindow::MainWindow(QWidget *parent)
     p3->setContentsMargins(22, 18, 22, 18);
     p3->setSpacing(14);
 
-    // ✅ TOPBAR UNIFIÉE
     p3->addWidget(makeTopBar(st, "Localisation & Stockage"));
 
     QFrame* outer3 = new QFrame;
@@ -1165,7 +1420,7 @@ MainWindow::MainWindow(QWidget *parent)
     QHBoxLayout* ddBoxL = new QHBoxLayout(ddBox);
     ddBoxL->setContentsMargins(10,8,10,8);
 
-    QLabel* ddText = new QLabel("Freezer 01");
+    QLabel* ddText = new QLabel("Congélateur 01");
     ddText->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
     QToolButton* ddBtn = new QToolButton;
     ddBtn->setAutoRaise(true);
@@ -1180,18 +1435,18 @@ MainWindow::MainWindow(QWidget *parent)
     tree3->setHeaderHidden(true);
     tree3->setIndentation(18);
 
-    auto* tF1 = new QTreeWidgetItem(tree3, QStringList() << "Freezer 01");
-    auto* tF2 = new QTreeWidgetItem(tree3, QStringList() << "Freezer 02");
-    auto* tF3 = new QTreeWidgetItem(tree3, QStringList() << "Freezer 03");
+    auto* tF1 = new QTreeWidgetItem(tree3, QStringList() << "Congélateur 01");
+    auto* tF2 = new QTreeWidgetItem(tree3, QStringList() << "Congélateur 02");
+    auto* tF3 = new QTreeWidgetItem(tree3, QStringList() << "Congélateur 03");
 
     tF1->setIcon(0, st->standardIcon(QStyle::SP_DriveHDIcon));
     tF2->setIcon(0, st->standardIcon(QStyle::SP_DriveHDIcon));
     tF3->setIcon(0, st->standardIcon(QStyle::SP_DriveHDIcon));
 
-    auto* tA = new QTreeWidgetItem(tF2, QStringList() << "Sheff A");
-    auto* t6 = new QTreeWidgetItem(tF2, QStringList() << "Sheff 6");
-    auto* tB = new QTreeWidgetItem(tF2, QStringList() << "Sheff B");
-    auto* tR = new QTreeWidgetItem(tF2, QStringList() << "Room Temp");
+    auto* tA = new QTreeWidgetItem(tF2, QStringList() << "Étagère A");
+    auto* t6 = new QTreeWidgetItem(tF2, QStringList() << "Étagère 6");
+    auto* tB = new QTreeWidgetItem(tF2, QStringList() << "Étagère B");
+    auto* tR = new QTreeWidgetItem(tF2, QStringList() << "Temp. ambiante");
     tA->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
     t6->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
     tB->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
@@ -1232,8 +1487,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     header3L->addWidget(details3);
     header3L->addStretch(1);
-    header3L->addWidget(chip("Régistrations"));
-    header3L->addWidget(chip("Exital Eémitte"));
+    header3L->addWidget(chip("Enregistrements"));
+    header3L->addWidget(chip("Événements"));
 
     QFrame* listBox3 = new QFrame;
     listBox3->setStyleSheet("QFrame{ background: rgba(255,255,255,0.55); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
@@ -1251,10 +1506,10 @@ MainWindow::MainWindow(QWidget *parent)
         list3->setItemWidget(it, w);
     };
 
-    addListRow(new GradientRowWidget(st, "Rochaser", "5X",    W_GREEN,  QStyle::SP_FileIcon, false));
-    addListRow(new GradientRowWidget(st, "Focaser",  "0S",    W_GREEN,  QStyle::SP_FileIcon, false));
-    addListRow(new GradientRowWidget(st, "Yornir",   "0 OK",  W_ORANGE, QStyle::SP_FileIcon, false));
-    addListRow(new GradientRowWidget(st, "Yornitet", "BEA0S", W_RED,    QStyle::SP_FileIcon, true));
+    addListRow(new GradientRowWidget(st, "Échantillon A", "5×",   W_GREEN,  QStyle::SP_FileIcon, false));
+    addListRow(new GradientRowWidget(st, "Échantillon B", "0×",   W_GREEN,  QStyle::SP_FileIcon, false));
+    addListRow(new GradientRowWidget(st, "Échantillon C", "OK",   W_ORANGE, QStyle::SP_FileIcon, false));
+    addListRow(new GradientRowWidget(st, "Échantillon D", "BSL",  W_RED,    QStyle::SP_FileIcon, true));
 
     listBox3L->addWidget(list3);
 
@@ -1263,7 +1518,7 @@ MainWindow::MainWindow(QWidget *parent)
     bottomInfo3L->setContentsMargins(0,0,0,0);
     bottomInfo3L->setSpacing(12);
     bottomInfo3L->addWidget(w3TempQtyBlock(st, "-80°C", "220"));
-    bottomInfo3L->addWidget(w3BottomLocationBar(st, "Freezer 02, Hea"), 1);
+    bottomInfo3L->addWidget(w3BottomLocationBar(st, "Congélateur 02, Étagère A"), 1);
 
     right3L->addWidget(header3);
     right3L->addWidget(listBox3, 1);
@@ -1295,7 +1550,6 @@ MainWindow::MainWindow(QWidget *parent)
     p4->setContentsMargins(22, 18, 22, 18);
     p4->setSpacing(14);
 
-    // ✅ TOPBAR UNIFIÉE
     p4->addWidget(makeTopBar(st, "Localisation & Stockage"));
 
     QFrame* outer4 = new QFrame;
@@ -1314,7 +1568,7 @@ MainWindow::MainWindow(QWidget *parent)
     dd4->setStyleSheet("QFrame{ background: rgba(255,255,255,0.72); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
     QHBoxLayout* dd4L = new QHBoxLayout(dd4);
     dd4L->setContentsMargins(10,8,10,8);
-    QLabel* dd4T = new QLabel("Freezers 01");
+    QLabel* dd4T = new QLabel("Congélateur 01");
     dd4T->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
     QToolButton* dd4B = new QToolButton;
     dd4B->setAutoRaise(true);
@@ -1328,17 +1582,17 @@ MainWindow::MainWindow(QWidget *parent)
     tree4->setHeaderHidden(true);
     tree4->setIndentation(18);
 
-    auto* wf1 = new QTreeWidgetItem(tree4, QStringList() << "Freezer 01");
-    auto* wf2 = new QTreeWidgetItem(tree4, QStringList() << "Freezer 02");
-    auto* wf4 = new QTreeWidgetItem(tree4, QStringList() << "Freezer 04");
+    auto* wf1 = new QTreeWidgetItem(tree4, QStringList() << "Congélateur 01");
+    auto* wf2 = new QTreeWidgetItem(tree4, QStringList() << "Congélateur 02");
+    auto* wf4 = new QTreeWidgetItem(tree4, QStringList() << "Congélateur 04");
     wf1->setIcon(0, st->standardIcon(QStyle::SP_DriveHDIcon));
     wf2->setIcon(0, st->standardIcon(QStyle::SP_DriveHDIcon));
     wf4->setIcon(0, st->standardIcon(QStyle::SP_DriveHDIcon));
 
-    auto* wshA = new QTreeWidgetItem(wf2, QStringList() << "Sheff A");
-    auto* wshB = new QTreeWidgetItem(wf2, QStringList() << "Sheff B");
-    auto* wsh6 = new QTreeWidgetItem(wf2, QStringList() << "Sheff 6");
-    auto* wrm  = new QTreeWidgetItem(wf2, QStringList() << "Room Temp");
+    auto* wshA = new QTreeWidgetItem(wf2, QStringList() << "Étagère A");
+    auto* wshB = new QTreeWidgetItem(wf2, QStringList() << "Étagère B");
+    auto* wsh6 = new QTreeWidgetItem(wf2, QStringList() << "Étagère 6");
+    auto* wrm  = new QTreeWidgetItem(wf2, QStringList() << "Temp. ambiante");
     wshA->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
     wshB->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
     wsh6->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
@@ -1349,8 +1603,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     QFrame* temp4 = w3TempQtyBlock(st, "-80°C", "220");
 
-    QPushButton* export4 = actionBtn("Exporte Rapport", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.92)", st->standardIcon(QStyle::SP_DialogSaveButton), true);
-    QPushButton* mark4   = actionBtn("Marquer comme Traité", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DialogApplyButton), true);
+    QPushButton* export4 = actionBtn("Exporter le rapport", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.92)", st->standardIcon(QStyle::SP_DialogSaveButton), true);
+    QPushButton* mark4   = actionBtn("Marquer comme traité", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DialogApplyButton), true);
 
     left4L->addWidget(dd4);
     left4L->addWidget(tree4, 1);
@@ -1367,8 +1621,8 @@ MainWindow::MainWindow(QWidget *parent)
     QHBoxLayout* fr = new QHBoxLayout(filtersRow);
     fr->setContentsMargins(0,0,0,0);
     fr->setSpacing(10);
-    fr->addWidget(w4FilterPill("Shelfe"));
-    fr->addWidget(w4FilterPill("Temp"));
+    fr->addWidget(w4FilterPill("Étagère"));
+    fr->addWidget(w4FilterPill("Température"));
     fr->addWidget(w4FilterPill("BSL-3"));
     right4L->addWidget(filtersRow);
 
@@ -1399,8 +1653,8 @@ MainWindow::MainWindow(QWidget *parent)
     w4br->setSpacing(10);
     w4br->addStretch(1);
 
-    QPushButton* btnFolder = actionBtn("3Ca", "rgba(255,255,255,0.72)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DirIcon), true);
-    QPushButton* btnSec    = actionBtn("Sécurité & Alertes", "rgba(255,255,255,0.72)", C_TEXT_DARK, st->standardIcon(QStyle::SP_MessageBoxWarning), true);
+    QPushButton* btnFolder = actionBtn("Dossier", "rgba(255,255,255,0.72)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DirIcon), true);
+    QPushButton* btnSec    = actionBtn("Statistiques", "rgba(255,255,255,0.72)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ComputerIcon), true);
 
     w4br->addWidget(btnFolder);
     w4br->addWidget(btnSec);
@@ -1425,15 +1679,16 @@ MainWindow::MainWindow(QWidget *parent)
     stack->addWidget(page4);
 
     // ==========================================================
-    // PAGE 4 : Widget 5 - Sécurité & Alertes
+    // PAGE 4 : STATISTIQUES (2 graphes demandés)
+    //   1) Camembert: Répartition par type d’échantillon
+    //   2) Histogramme: Nombre d’échantillons collectés par mois
     // ==========================================================
     QWidget* page5 = new QWidget;
     QVBoxLayout* p5 = new QVBoxLayout(page5);
     p5->setContentsMargins(22, 18, 22, 18);
     p5->setSpacing(14);
 
-    // ✅ TOPBAR UNIFIÉE
-    p5->addWidget(makeTopBar(st, "Sécurité & Alertes"));
+    p5->addWidget(makeTopBar(st, "Statistiques"));
 
     QFrame* outer5 = new QFrame;
     outer5->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
@@ -1441,143 +1696,59 @@ MainWindow::MainWindow(QWidget *parent)
     outer5L->setContentsMargins(12,12,12,12);
     outer5L->setSpacing(12);
 
-    // Filter row
-    QFrame* filterRow = new QFrame;
-    filterRow->setStyleSheet("QFrame{ background: rgba(255,255,255,0.72); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
-    QHBoxLayout* fr5 = new QHBoxLayout(filterRow);
-    fr5->setContentsMargins(10,8,10,8);
-    fr5->setSpacing(10);
-
-    QFrame* expPill = new QFrame;
-    expPill->setStyleSheet("QFrame{ background: rgba(255,255,255,0.90); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
-    QHBoxLayout* epL = new QHBoxLayout(expPill);
-    epL->setContentsMargins(10,6,10,6);
-    epL->setSpacing(8);
-
-    QLabel* expIcon = new QLabel;
-    expIcon->setPixmap(st->standardIcon(QStyle::SP_TrashIcon).pixmap(16,16));
-    QLabel* expTxt = new QLabel("Expiré");
-    expTxt->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
-    QLabel* expBadge = new QLabel("2");
-    expBadge->setAlignment(Qt::AlignCenter);
-    expBadge->setFixedSize(24,20);
-    expBadge->setStyleSheet("QLabel{ background:#8B2F3C; color:white; border-radius:10px; font-weight:900;}");
-
-    epL->addWidget(expIcon);
-    epL->addWidget(expTxt);
-    epL->addWidget(expBadge);
-
-    auto dropPill = [&](const QString& t){
-        QFrame* p = new QFrame;
-        p->setStyleSheet("QFrame{ background: rgba(255,255,255,0.90); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
-        QHBoxLayout* l = new QHBoxLayout(p);
-        l->setContentsMargins(10,6,10,6);
-        QLabel* tx = new QLabel(t);
-        tx->setStyleSheet("color: rgba(0,0,0,0.55); font-weight:900;");
-        QToolButton* dd = new QToolButton;
-        dd->setAutoRaise(true);
-        dd->setIcon(st->standardIcon(QStyle::SP_ArrowDown));
-        dd->setCursor(Qt::PointingHandCursor);
-        l->addWidget(tx);
-        l->addStretch(1);
-        l->addWidget(dd);
-        return p;
-    };
-
-    fr5->addWidget(expPill);
-    fr5->addWidget(dropPill("Bientôt Expiré"), 1);
-    fr5->addWidget(dropPill("Stock Bas"), 1);
-
-    outer5L->addWidget(filterRow);
-
-    // Alerts table
-    QFrame* alertCard = new QFrame;
-    alertCard->setStyleSheet("QFrame{ background: rgba(255,255,255,0.55); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
-    QVBoxLayout* alertL = new QVBoxLayout(alertCard);
-    alertL->setContentsMargins(12,12,12,12);
-
-    QTableWidget* alertTable = new QTableWidget(4, 5);
-    alertTable->setHorizontalHeaderLabels({"Sample ID","Type","Organisme","Expiry date","BSL"});
-    alertTable->verticalHeader()->setVisible(false);
-    alertTable->horizontalHeader()->setStretchLastSection(true);
-    alertTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    alertTable->setSelectionMode(QAbstractItemView::NoSelection);
-    alertTable->setStyleSheet(R"(
-        QHeaderView::section{
-            background: rgba(159,190,185,0.85);
-            color: rgba(0,0,0,0.60);
-            border: none;
-            padding: 8px 10px;
-            font-weight: 900;
-        }
-        QTableWidget::item{
-            padding: 8px 10px;
-            color: rgba(0,0,0,0.65);
-            font-weight: 800;
-        }
-    )");
-
-    auto setA=[&](int r, const QString& sid, const QString& type, const QString& org, const QString& date, const QString& bsl){
-        alertTable->setItem(r,0,new QTableWidgetItem(sid));
-        alertTable->setItem(r,1,new QTableWidgetItem(type));
-        alertTable->setItem(r,2,new QTableWidgetItem(org));
-        alertTable->setItem(r,3,new QTableWidgetItem(date));
-        alertTable->setItem(r,4,new QTableWidgetItem(bsl));
-        for(int c=0;c<5;++c) alertTable->item(r,c)->setTextAlignment(Qt::AlignLeft|Qt::AlignVCenter);
-    };
-
-    setA(0,"DNA","DNA","E. coli","04/20/2024","BSL-1");
-    setA(1,"DNA","RNA","E. coli","05/01/2024","BSL-2");
-    setA(2,"DNA","DNA","E. coli","04/20/2024","BSL-2");
-    setA(3,"DNA","DNA","E. coli","04/20/2024","BSL-2");
-
-    alertL->addWidget(alertTable);
-    outer5L->addWidget(alertCard);
-
-    // action bar
+    // Barre d’action simple (optionnel)
     QFrame* actBar = new QFrame;
     actBar->setStyleSheet("QFrame{ background: rgba(255,255,255,0.35); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
     QHBoxLayout* actL = new QHBoxLayout(actBar);
     actL->setContentsMargins(12,10,12,10);
     actL->setSpacing(12);
 
-    QPushButton* expReport = actionBtn("Exporter Rapport", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.92)", st->standardIcon(QStyle::SP_DialogSaveButton), true);
-    QPushButton* markTreat = actionBtn("Marquer comme Traité", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.92)", st->standardIcon(QStyle::SP_DialogApplyButton), true);
-    QPushButton* cossiBox  = actionBtn("Cossibox", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DriveFDIcon), true);
+    QLabel* hint = new QLabel("Aperçu des indicateurs clés");
+    hint->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
 
-    actL->addWidget(expReport);
-    actL->addWidget(markTreat);
+    QPushButton* exportStats = actionBtn("Exporter", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.92)", st->standardIcon(QStyle::SP_DialogSaveButton), true);
+
+    actL->addWidget(hint);
     actL->addStretch(1);
-    actL->addWidget(cossiBox);
-
+    actL->addWidget(exportStats);
     outer5L->addWidget(actBar);
 
-    // bottom dashboard (donut + legend + bar chart)
+    // Dashboard (3 colonnes)
     QFrame* dash = new QFrame;
     dash->setStyleSheet("QFrame{ background: rgba(255,255,255,0.55); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
     QHBoxLayout* dashL = new QHBoxLayout(dash);
     dashL->setContentsMargins(12,12,12,12);
     dashL->setSpacing(12);
 
-    QFrame* donutCard = softBox();
-    QVBoxLayout* dcL = new QVBoxLayout(donutCard);
-    dcL->setContentsMargins(12,12,12,12);
-    QLabel* totalLbl = new QLabel("Total Échantillons: 180");
-    totalLbl->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
-    DonutChart* donut = new DonutChart;
-    donut->setData({
-        {89, QColor("#9FBEB9"), "OK"},
-        {20, W_GREEN, "Valid"},
-        {8,  W_ORANGE, "Bientôt"},
-        {10, W_RED, "Expiré"}
-    });
-    dcL->addWidget(totalLbl);
-    dcL->addWidget(donut, 1);
+    // --- Camembert: répartition par type ---
+    QFrame* pieCard = softBox();
+    QVBoxLayout* pcL = new QVBoxLayout(pieCard);
+    pcL->setContentsMargins(12,12,12,12);
+    pcL->setSpacing(10);
 
+    QLabel* pieTitle = new QLabel("Répartition par type d’échantillon");
+    pieTitle->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+
+    DonutChart* pie = new DonutChart;
+    // Exemple de données (à remplacer par tes vraies stats)
+    pie->setData({
+        {95,  QColor("#9FBEB9"), "DNA"},
+        {55,  W_GREEN,           "RNA"},
+        {30,  W_ORANGE,          "Protéine"}
+    });
+
+    pcL->addWidget(pieTitle);
+    pcL->addWidget(pie, 1);
+
+    // --- Légende (type) ---
     QFrame* legendCard = softBox();
     QVBoxLayout* lgL = new QVBoxLayout(legendCard);
     lgL->setContentsMargins(12,12,12,12);
     lgL->setSpacing(10);
+
+    QLabel* lgTitle = new QLabel("Légende");
+    lgTitle->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+    lgL->addWidget(lgTitle);
 
     auto legendRow=[&](const QColor& c, const QString& t){
         QWidget* row = new QWidget;
@@ -1595,30 +1766,36 @@ MainWindow::MainWindow(QWidget *parent)
         return row;
     };
 
-    lgL->addWidget(legendRow(W_GREEN, "Vert"));
-    lgL->addWidget(legendRow(W_ORANGE, "Bientôt expiré"));
-    lgL->addWidget(legendRow(W_RED, "Créasté"));
-    lgL->addWidget(legendRow(QColor("#9FBEB9"), "Chitiques"));
+    lgL->addWidget(legendRow(QColor("#9FBEB9"), "DNA"));
+    lgL->addWidget(legendRow(W_GREEN,          "RNA"));
+    lgL->addWidget(legendRow(W_ORANGE,         "Protéine"));
     lgL->addStretch(1);
 
+    // --- Histogramme: nombre collecté par mois ---
     QFrame* barCard = softBox();
     QVBoxLayout* bcL = new QVBoxLayout(barCard);
     bcL->setContentsMargins(12,12,12,12);
+    bcL->setSpacing(10);
+
+    QLabel* barTitle = new QLabel("Nombre d’échantillons collectés par mois");
+    barTitle->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+
     BarChart* bars = new BarChart;
+    // Exemple de données (12 mois). Remplace par tes vraies stats.
     bars->setData({
-        {100,"T30"},
-        {80, "T20"},
-        {60, "T10"},
-        {50, "T0"}
+        {12, "Jan"}, {18, "Fév"}, {22, "Mar"}, {15, "Avr"},
+        {28, "Mai"}, {20, "Juin"}, {26, "Juil"}, {19, "Août"},
+        {24, "Sep"}, {30, "Oct"}, {27, "Nov"}, {21, "Déc"}
     });
+
+    bcL->addWidget(barTitle);
     bcL->addWidget(bars, 1);
 
-    dashL->addWidget(donutCard, 1);
+    dashL->addWidget(pieCard, 1);
     dashL->addWidget(legendCard, 1);
-    dashL->addWidget(barCard, 1);
+    dashL->addWidget(barCard, 2);
 
     outer5L->addWidget(dash);
-
     p5->addWidget(outer5, 1);
 
     QFrame* bottom5 = new QFrame;
@@ -1634,28 +1811,35 @@ MainWindow::MainWindow(QWidget *parent)
     p5->addWidget(bottom5);
     stack->addWidget(page5);
 
+    // ✅ Appliquer les marges adaptatives
+    p1->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
+    p2->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
+    p3->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
+    p4->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
+    p5->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
+
     // ==========================================================
     // NAVIGATION
     // ==========================================================
-    connect(btnAdd,  &QPushButton::clicked, this, [=]{ setWindowTitle("Ajouter / Modifier Echantillon"); stack->setCurrentIndex(1); });
-    connect(btnEdit, &QPushButton::clicked, this, [=]{ setWindowTitle("Ajouter / Modifier Echantillon"); stack->setCurrentIndex(1); });
+    QObject::connect(btnAdd,  &QPushButton::clicked, this, [=]{ setWindowTitle("Ajouter / Modifier un échantillon"); stack->setCurrentIndex(1); });
+    QObject::connect(btnEdit, &QPushButton::clicked, this, [=]{ setWindowTitle("Ajouter / Modifier un échantillon"); stack->setCurrentIndex(1); });
 
-    connect(cancelBtn, &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(0); });
-    connect(saveBtn,   &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(0); });
+    QObject::connect(cancelBtn, &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(0); });
+    QObject::connect(saveBtn,   &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(0); });
 
-    connect(btnMore, &QPushButton::clicked, this, [=]{ setWindowTitle("Localisation & Stockage"); stack->setCurrentIndex(2); });
+    QObject::connect(btnMore, &QPushButton::clicked, this, [=]{ setWindowTitle("Localisation & Stockage"); stack->setCurrentIndex(2); });
+    QObject::connect(back3,   &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(0); });
 
-    connect(back3, &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(0); });
+    QObject::connect(details3, &QPushButton::clicked, this, [=]{ setWindowTitle("Localisation & Stockage"); stack->setCurrentIndex(3); });
+    QObject::connect(back4,    &QPushButton::clicked, this, [=]{ setWindowTitle("Localisation & Stockage"); stack->setCurrentIndex(2); });
 
-    connect(details3, &QPushButton::clicked, this, [=]{ setWindowTitle("Localisation & Stockage"); stack->setCurrentIndex(3); });
+    // ✅ Accès aux statistiques depuis page4 + depuis le bouton du bas page1
+    QObject::connect(btnSec,   &QPushButton::clicked, this, [=]{ setWindowTitle("Statistiques"); stack->setCurrentIndex(4); });
+    QObject::connect(btnStats, &QPushButton::clicked, this, [=]{ setWindowTitle("Statistiques"); stack->setCurrentIndex(4); });
 
-    connect(back4, &QPushButton::clicked, this, [=]{ setWindowTitle("Localisation & Stockage"); stack->setCurrentIndex(2); });
+    // ✅ Retour statistiques -> gestion
+    QObject::connect(back5,  &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(0); });
 
-    connect(btnSec, &QPushButton::clicked, this, [=]{ setWindowTitle("Sécurité & Alertes"); stack->setCurrentIndex(4); });
-
-    connect(back5, &QPushButton::clicked, this, [=]{ setWindowTitle("Localisation & Stockage"); stack->setCurrentIndex(3); });
-
-    // start
     setWindowTitle("Gestion des Échantillons");
     stack->setCurrentIndex(0);
 }
