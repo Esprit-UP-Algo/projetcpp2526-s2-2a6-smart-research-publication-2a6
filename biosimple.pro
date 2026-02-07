@@ -15,8 +15,6 @@ SOURCES += \
 HEADERS += \
     biosimple.h
 
-FORMS += \
-    biosimple.ui
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin
