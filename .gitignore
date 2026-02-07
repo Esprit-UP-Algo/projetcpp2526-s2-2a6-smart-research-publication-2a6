@@ -85,3 +85,10 @@ build/
 .qtc_clangd/
 *.pro.user
 *.qmake.stash
+
+# Qt Creator internal folder
+.qtcreator/
+
+# Explicit Qt build folders
+build-*/
+build*/
