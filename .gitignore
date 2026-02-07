@@ -80,3 +80,8 @@ CMakeLists.txt.user*
 .rcc/
 .uic/
 /build*/
+# ===== Qt / Qt Creator =====
+build/
+.qtc_clangd/
+*.pro.user
+*.qmake.stash
