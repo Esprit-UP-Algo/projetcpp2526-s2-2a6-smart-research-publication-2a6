@@ -1,5 +1,5 @@
 // ===================== mainwindow.cpp (COMPLET & CORRIGÉ - FR + STATISTIQUES) =====================
-#include "mainwindow.h"
+#include "biosimple.h"
 
 #include <QPainterPath>
 #include <QDialog>
