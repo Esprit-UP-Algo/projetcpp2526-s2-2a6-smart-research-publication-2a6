@@ -32,6 +32,7 @@
 #include <QListWidget>
 #include <QLinearGradient>
 #include <QScrollArea>
+#include <QMap>
 #include <QtMath>
 
 #include <cmath>
@@ -84,6 +85,18 @@ static const int EQUIP_LIST    = 14; // Page 1 : Liste / Gestion
 static const int EQUIP_FORM    = 15; // Page 2 : Ajouter / Modifier
 static const int EQUIP_LOC     = 16; // Page 3 : Localisation
 static const int EQUIP_DETAILS = 17; // Page 4 : Détails
+
+// Employés (5 pages)
+static const int EMP_LIST  = 18; // Page 1 : Liste / Gestion
+static const int EMP_FORM  = 19; // Page 2 : Créer / Modifier
+static const int EMP_AFF   = 20; // Page 3 : Affectations & Labs
+static const int EMP_AVAIL = 21; // Page 4 : Disponibilités
+static const int EMP_STATS = 22; // Page 5 : Statistiques
+
+// Détails (pages additionnelles)
+static const int PUB_DETAILS  = 23;
+static const int EXP_DETAILS  = 24;
+static const int PROJ_DETAILS = 25;
 
 // ===================== UI responsive margin =====================
 // Returns adaptive margins based on window width.
@@ -204,7 +217,12 @@ static QFrame* makeBigLogoPanel()
     QLabel* logo = new QLabel;
     logo->setAlignment(Qt::AlignCenter);
 
-    QPixmap px(":/image/smartvision.png"); // vérifie ton chemin qrc
+    QPixmap px;
+    if (!px.load(":/image/smartvision.png")) {
+        if (!px.load(":/smartvision.png")) {
+            px.load("smartvision.png");
+        }
+    }
 
     if (!px.isNull())
     {
@@ -419,7 +437,10 @@ static void connectModulesSwitch(MainWindow* self, QStackedWidget* stack, const 
                                  QString("Module \"%1\" non activé dans ce fichier.").arg(name));
     };
 
-    QObject::connect(mb.bEmployee,    &QPushButton::clicked, self, [=]{ notImpl("Employés"); });
+    QObject::connect(mb.bEmployee,    &QPushButton::clicked, self, [=](){
+        self->setWindowTitle("Gestion des Employés");
+        stack->setCurrentIndex(EMP_LIST);
+    });
     QObject::connect(mb.bPublication, &QPushButton::clicked, self, [=](){
         self->setWindowTitle("Publications");
         stack->setCurrentIndex(PUB_LIST);
@@ -603,6 +624,96 @@ public:
         p->setFont(f);
         QRect textRect = pill.adjusted(34, 4, -10, -4);
         p->drawText(textRect, Qt::AlignVCenter|Qt::AlignLeft, equipmentStatusText(st));
+
+        p->restore();
+    }
+};
+
+// ===================== Employés badge delegate =====================
+enum class FTStatus { FullTime=0, PartTime=1, Contract=2, OnLeave=3 };
+
+static QString empStatusText(FTStatus s)
+{
+    switch (s) {
+    case FTStatus::FullTime: return "Plein";
+    case FTStatus::PartTime: return "Partiel";
+    case FTStatus::Contract: return "Contrat";
+    case FTStatus::OnLeave:  return "Absence";
+    }
+    return "Plein";
+}
+
+static QColor empStatusColor(FTStatus s)
+{
+    switch (s) {
+    case FTStatus::FullTime: return QColor("#2E6F63");
+    case FTStatus::PartTime: return QColor("#B5672C");
+    case FTStatus::Contract: return QColor("#7A8B8A");
+    case FTStatus::OnLeave:  return QColor("#8B2F3C");
+    }
+    return QColor("#2E6F63");
+}
+
+class EmployeeBadgeDelegate : public QStyledItemDelegate
+{
+public:
+    explicit EmployeeBadgeDelegate(QObject* parent=nullptr) : QStyledItemDelegate(parent) {}
+
+    void paint(QPainter *p, const QStyleOptionViewItem &opt, const QModelIndex &idx) const override
+    {
+        QVariant v = idx.data(Qt::UserRole);
+        FTStatus st = FTStatus::FullTime;
+        if (v.isValid()) st = static_cast<FTStatus>(v.toInt());
+
+        QStyledItemDelegate::paint(p, opt, idx);
+
+        p->save();
+        p->setRenderHint(QPainter::Antialiasing, true);
+
+        QRect r = opt.rect.adjusted(8, 6, -8, -6);
+        int h = qMin(r.height(), 28);
+        int w = qMin(r.width(), 120);
+        QRect pill(r.left() + (r.width() - w)/2, r.top() + (r.height()-h)/2, w, h);
+
+        QColor bg = empStatusColor(st);
+        p->setPen(Qt::NoPen);
+        p->setBrush(bg);
+        p->drawRoundedRect(pill, 14, 14);
+
+        QRect iconCircle(pill.left()+10, pill.top()+6, 16, 16);
+        p->setBrush(QColor(255,255,255,35));
+        p->drawEllipse(iconCircle);
+
+        p->setPen(QPen(Qt::white, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        if (st == FTStatus::FullTime) {
+            QPoint a(iconCircle.left()+4,  iconCircle.top()+9);
+            QPoint b(iconCircle.left()+7,  iconCircle.top()+12);
+            QPoint c(iconCircle.left()+13, iconCircle.top()+5);
+            p->drawLine(a,b); p->drawLine(b,c);
+        } else if (st == FTStatus::PartTime) {
+            QPainterPath path;
+            path.moveTo(iconCircle.center().x(), iconCircle.top()+2);
+            path.lineTo(iconCircle.left()+2, iconCircle.bottom()-2);
+            path.lineTo(iconCircle.right()-2, iconCircle.bottom()-2);
+            path.closeSubpath();
+            p->setPen(QPen(Qt::white, 1.8));
+            p->drawPath(path);
+        } else if (st == FTStatus::Contract) {
+            p->drawLine(QPoint(iconCircle.center().x(), iconCircle.top()+4),
+                        QPoint(iconCircle.center().x(), iconCircle.bottom()-5));
+            p->drawPoint(QPoint(iconCircle.center().x(), iconCircle.bottom()-3));
+        } else {
+            QRect lock(iconCircle.left()+4, iconCircle.top()+7, 8, 7);
+            p->setPen(QPen(Qt::white, 1.8));
+            p->drawRoundedRect(lock, 2, 2);
+            p->drawArc(QRect(iconCircle.left()+4, iconCircle.top()+3, 8, 8), 0*16, 180*16);
+        }
+
+        p->setPen(Qt::white);
+        QFont f = opt.font; f.setBold(true); f.setPointSizeF(f.pointSizeF()-0.5);
+        p->setFont(f);
+        QRect textRect = pill.adjusted(34, 4, -10, -4);
+        p->drawText(textRect, Qt::AlignVCenter|Qt::AlignLeft, empStatusText(st));
 
         p->restore();
     }
@@ -1121,6 +1232,188 @@ static void w4SetupAccountsTable(QTableWidget* t)
     setR(1,"123458","DNA","-20°C","BSL-2");
     setR(2,"123459","RNA","-20°C","BSL-3");
     setR(3,"123460","RNA","-60°C","BSL-3");
+}
+
+// ===================== Employés helpers =====================
+static QFrame* empInfoBlock(QStyle* st, const QString& line1, const QString& line2)
+{
+    QFrame* box = new QFrame;
+    box->setStyleSheet(QString("QFrame{ background: rgba(255,255,255,0.70); border:1px solid %1; border-radius: 12px; }")
+                           .arg(C_PANEL_BR));
+    QVBoxLayout* v = new QVBoxLayout(box);
+    v->setContentsMargins(12,10,12,10);
+    v->setSpacing(8);
+
+    auto line = [&](QStyle::StandardPixmap sp, const QString& t){
+        QWidget* row = new QWidget;
+        QHBoxLayout* h = new QHBoxLayout(row);
+        h->setContentsMargins(0,0,0,0);
+        h->setSpacing(10);
+        QLabel* ic = new QLabel;
+        ic->setPixmap(st->standardIcon(sp).pixmap(18,18));
+        QLabel* lab = new QLabel(t);
+        lab->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+        h->addWidget(ic);
+        h->addWidget(lab);
+        h->addStretch(1);
+        return row;
+    };
+
+    v->addWidget(line(QStyle::SP_FileDialogInfoView, line1));
+    v->addWidget(line(QStyle::SP_ArrowUp,            line2));
+    return box;
+}
+
+static QFrame* empBottomBarWithText(QStyle* st, const QString& text)
+{
+    QFrame* bar = new QFrame;
+    bar->setStyleSheet(QString("QFrame{ background: rgba(255,255,255,0.70); border:1px solid %1; border-radius: 12px; }")
+                           .arg(C_PANEL_BR));
+    QHBoxLayout* h = new QHBoxLayout(bar);
+    h->setContentsMargins(10,8,10,8);
+    h->setSpacing(10);
+
+    QLabel* eye = new QLabel;
+    eye->setPixmap(st->standardIcon(QStyle::SP_FileDialogContentsView).pixmap(18,18));
+
+    QLabel* t = new QLabel(text);
+    t->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+
+    QToolButton* lock = new QToolButton;
+    lock->setAutoRaise(true);
+    lock->setIcon(st->standardIcon(QStyle::SP_MessageBoxInformation));
+    lock->setCursor(Qt::PointingHandCursor);
+    lock->setStyleSheet("QToolButton{ padding:6px; border-radius:10px; } QToolButton:hover{ background: rgba(0,0,0,0.06);}");
+
+    QToolButton* dd = new QToolButton;
+    dd->setAutoRaise(true);
+    dd->setIcon(st->standardIcon(QStyle::SP_ArrowDown));
+    dd->setCursor(Qt::PointingHandCursor);
+    dd->setStyleSheet(lock->styleSheet());
+
+    h->addWidget(eye);
+    h->addWidget(t);
+    h->addStretch(1);
+    h->addWidget(lock);
+    h->addWidget(dd);
+    return bar;
+}
+
+static QFrame* empFilterPill(const QString& text)
+{
+    QFrame* f = new QFrame;
+    f->setStyleSheet("QFrame{ background: rgba(255,255,255,0.72); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
+    QHBoxLayout* h = new QHBoxLayout(f);
+    h->setContentsMargins(10,8,10,8);
+    h->setSpacing(8);
+    QLabel* t = new QLabel(text);
+    t->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+    QToolButton* dd = new QToolButton;
+    dd->setAutoRaise(true);
+    dd->setIcon(qApp->style()->standardIcon(QStyle::SP_ArrowDown));
+    dd->setCursor(Qt::PointingHandCursor);
+    h->addWidget(t);
+    h->addStretch(1);
+    h->addWidget(dd);
+    return f;
+}
+
+static void empSetupAvailabilityGrid(QTableWidget* grid)
+{
+    grid->setRowCount(6);
+    grid->setColumnCount(6);
+    grid->horizontalHeader()->setVisible(false);
+    grid->verticalHeader()->setVisible(false);
+    grid->setShowGrid(true);
+    grid->setGridStyle(Qt::SolidLine);
+    grid->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    grid->setSelectionMode(QAbstractItemView::NoSelection);
+
+    grid->setStyleSheet(R"(
+        QTableWidget{
+            background: rgba(255,255,255,0.65);
+            border: 1px solid rgba(0,0,0,0.10);
+            border-radius: 12px;
+            gridline-color: rgba(0,0,0,0.10);
+        }
+        QTableWidget::item{
+            border: none;
+            font-weight: 900;
+            color: rgba(0,0,0,0.65);
+        }
+    )");
+
+    for (int c=0; c<6; ++c) grid->setColumnWidth(c, 52);
+    for (int r=0; r<6; ++r) grid->setRowHeight(r, 34);
+
+    int val = 1;
+    for (int r=0; r<6; ++r){
+        for(int c=0; c<6; ++c){
+            QTableWidgetItem* it = new QTableWidgetItem(QString("%1").arg(val++));
+            it->setTextAlignment(Qt::AlignCenter);
+            grid->setItem(r,c,it);
+        }
+    }
+
+    auto colorRow = [&](int r, const QColor& bg, const QColor& fg){
+        for(int c=0;c<6;++c){
+            grid->item(r,c)->setBackground(bg);
+            grid->item(r,c)->setForeground(fg);
+        }
+    };
+    colorRow(0, QColor("#9FBEB9"), QColor(0,0,0,140));
+    colorRow(2, QColor("#2E6F63"), QColor(255,255,255,230));
+    colorRow(4, QColor("#9FBEB9"), QColor(0,0,0,140));
+
+    grid->item(1,1)->setBackground(QColor("#2E6F63"));
+    grid->item(1,1)->setForeground(QColor(255,255,255,235));
+    grid->item(3,4)->setBackground(QColor("#2E6F63"));
+    grid->item(3,4)->setForeground(QColor(255,255,255,235));
+}
+
+static void empSetupConstraintsTable(QTableWidget* t)
+{
+    t->setColumnCount(4);
+    t->setRowCount(4);
+    t->setHorizontalHeaderLabels({"CIN","Rôle","Spécialisation","Laboratoire"});
+    t->verticalHeader()->setVisible(false);
+    t->horizontalHeader()->setStretchLastSection(true);
+    t->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    t->setSelectionMode(QAbstractItemView::NoSelection);
+
+    t->setStyleSheet(QString(R"(
+        QTableWidget{
+            background: rgba(255,255,255,0.65);
+            border: 1px solid %1;
+            border-radius: 12px;
+            gridline-color: rgba(0,0,0,0.10);
+        }
+        QHeaderView::section{
+            background: rgba(159,190,185,0.85);
+            color: rgba(0,0,0,0.60);
+            border: none;
+            padding: 8px 10px;
+            font-weight: 900;
+        }
+        QTableWidget::item{
+            padding: 8px 10px;
+            color: rgba(0,0,0,0.65);
+            font-weight: 800;
+        }
+    )").arg(C_PANEL_BR));
+
+    auto setR=[&](int r, const QString& cin, const QString& role, const QString& spec, const QString& lab){
+        t->setItem(r,0,new QTableWidgetItem(cin));
+        t->setItem(r,1,new QTableWidgetItem(role));
+        t->setItem(r,2,new QTableWidgetItem(spec));
+        t->setItem(r,3,new QTableWidgetItem(lab));
+        for(int c=0;c<4;++c) t->item(r,c)->setTextAlignment(Qt::AlignLeft|Qt::AlignVCenter);
+    };
+
+    setR(0,"AA123456","Chercheur","Biomol","Lab A");
+    setR(1,"BB654321","Technicien","Chimie","Lab B");
+    setR(2,"CC998877","Chercheur","Bioinfo","Lab C");
+    setR(3,"DD112233","Technicien","Général","Lab A");
 }
 
 // ===================== Dialog: Confirm delete (design) =====================
@@ -2148,10 +2441,11 @@ MainWindow::MainWindow(QWidget *parent)
     projBottomL->setContentsMargins(14,10,14,10);
     projBottomL->setSpacing(12);
 
-    QPushButton* projAdd   = actionBtn("Ajouter",      "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
-    QPushButton* projEdit  = actionBtn("Modifier",     "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
-    QPushButton* projDel   = actionBtn("Supprimer",    "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
-    QPushButton* projStatB = actionBtn("Statistiques", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ComputerIcon), true);
+    QPushButton* projAdd     = actionBtn("Ajouter",      "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
+    QPushButton* projEdit    = actionBtn("Modifier",     "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
+    QPushButton* projDetails = actionBtn("Détails",      "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DialogHelpButton), true);
+    QPushButton* projDel     = actionBtn("Supprimer",    "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
+    QPushButton* projStatB   = actionBtn("Statistiques", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ComputerIcon), true);
 
     QObject::connect(projDel, &QPushButton::clicked, this, [=](){
         int r = projTable->currentRow();
@@ -2169,6 +2463,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     projBottomL->addWidget(projAdd);
     projBottomL->addWidget(projEdit);
+    projBottomL->addWidget(projDetails);
     projBottomL->addWidget(projDel);
     projBottomL->addWidget(projStatB);
     projBottomL->addStretch(1);
@@ -2480,10 +2775,11 @@ MainWindow::MainWindow(QWidget *parent)
     expBottomL->setContentsMargins(14,10,14,10);
     expBottomL->setSpacing(12);
 
-    QPushButton* expAdd   = actionBtn("Ajouter",      "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
-    QPushButton* expEdit  = actionBtn("Modifier",     "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
-    QPushButton* expDel   = actionBtn("Supprimer",    "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
-    QPushButton* expStats = actionBtn("Statistiques", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ComputerIcon), true);
+    QPushButton* expAdd     = actionBtn("Ajouter",      "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
+    QPushButton* expEdit    = actionBtn("Modifier",     "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
+    QPushButton* expDetails = actionBtn("Détails",      "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DialogHelpButton), true);
+    QPushButton* expDel     = actionBtn("Supprimer",    "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
+    QPushButton* expStats   = actionBtn("Statistiques", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ComputerIcon), true);
 
     QObject::connect(expDel, &QPushButton::clicked, this, [=](){
         int r = expTable->currentRow();
@@ -2499,6 +2795,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     expBottomL->addWidget(expAdd);
     expBottomL->addWidget(expEdit);
+    expBottomL->addWidget(expDetails);
     expBottomL->addWidget(expDel);
     expBottomL->addWidget(expStats);
     expBottomL->addStretch(1);
@@ -2822,10 +3119,11 @@ QPushButton:hover{ background: %2; }
     pubBottomL->setContentsMargins(14,10,14,10);
     pubBottomL->setSpacing(12);
 
-    QPushButton* pubAdd   = actionBtn("Ajouter",      "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
-    QPushButton* pubEdit  = actionBtn("Modifier",     "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
-    QPushButton* pubDel   = actionBtn("Supprimer",    "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
-    QPushButton* pubStats = actionBtn("Statistiques", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ComputerIcon), true);
+    QPushButton* pubAdd     = actionBtn("Ajouter",      "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
+    QPushButton* pubEdit    = actionBtn("Modifier",     "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
+    QPushButton* pubDetails = actionBtn("Détails",      "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DialogHelpButton), true);
+    QPushButton* pubDel     = actionBtn("Supprimer",    "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
+    QPushButton* pubStats   = actionBtn("Statistiques", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ComputerIcon), true);
 
     QObject::connect(pubDel, &QPushButton::clicked, this, [=](){
         int r = pubTable->currentRow();
@@ -2843,6 +3141,7 @@ QPushButton:hover{ background: %2; }
 
     pubBottomL->addWidget(pubAdd);
     pubBottomL->addWidget(pubEdit);
+    pubBottomL->addWidget(pubDetails);
     pubBottomL->addWidget(pubDel);
     pubBottomL->addWidget(pubStats);
     pubBottomL->addStretch(1);
@@ -3927,6 +4226,1038 @@ QPushButton:hover{ background: %2; }
 
     eq4->addWidget(eqBottom4);
     stack->addWidget(equip4);
+
+    // ==========================================================
+    // ======================  EMPLOYES  ========================
+    // ==========================================================
+
+    // ==========================================================
+    // PAGE 18 : Employés - LISTE (EMP_LIST)
+    // ==========================================================
+    QWidget* empListPage = new QWidget;
+    QVBoxLayout* emp1 = new QVBoxLayout(empListPage);
+    emp1->setContentsMargins(22, 18, 22, 18);
+    emp1->setSpacing(14);
+
+    ModulesBar barEmpList;
+    emp1->addWidget(makeHeaderBlock(st, "Gestion des Employés", ModuleTab::Employee, &barEmpList));
+    connectModulesSwitch(this, stack, barEmpList);
+
+    QFrame* empBar = new QFrame;
+    empBar->setFixedHeight(54);
+    empBar->setStyleSheet("background: rgba(255,255,255,0.22); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* empBarL = new QHBoxLayout(empBar);
+    empBarL->setContentsMargins(14, 8, 14, 8);
+    empBarL->setSpacing(10);
+
+    QLineEdit* empSearch = new QLineEdit;
+    empSearch->setPlaceholderText("Rechercher (CIN, nom, role, laboratoire...)");
+    empSearch->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
+
+    QComboBox* empRole = new QComboBox; empRole->addItems({"Role", "Chercheur", "Technicien"});
+    QComboBox* empSpec = new QComboBox; empSpec->addItems({"Specialisation", "Biomol", "Bioinfo", "Chimie", "General"});
+    QComboBox* empLab  = new QComboBox; empLab->addItems({"Laboratoire", "Lab A", "Lab B", "Lab C"});
+    QComboBox* empFT   = new QComboBox; empFT->addItems({"Temps", "Plein", "Partiel", "Contrat", "Absence"});
+
+    QPushButton* empFilters = new QPushButton(st->standardIcon(QStyle::SP_FileDialogDetailedView), "  Filtres");
+    empFilters->setCursor(Qt::PointingHandCursor);
+    empFilters->setStyleSheet(QString(R"(
+        QPushButton{
+            background:%1; color: rgba(255,255,255,0.92);
+            border:1px solid rgba(0,0,0,0.18);
+            border-radius: 12px; padding: 10px 16px; font-weight: 800;
+        }
+        QPushButton:hover{ background: %2; }
+    )").arg(C_PRIMARY, C_TOPBAR));
+
+    empBarL->addWidget(empSearch, 1);
+    empBarL->addWidget(empRole);
+    empBarL->addWidget(empSpec);
+    empBarL->addWidget(empLab);
+    empBarL->addWidget(empFT);
+    empBarL->addWidget(empFilters);
+    emp1->addWidget(empBar);
+
+    QFrame* empCard = makeCard();
+    QVBoxLayout* empCardL = new QVBoxLayout(empCard);
+    empCardL->setContentsMargins(10,10,10,10);
+
+    QTableWidget* empTable = new QTableWidget(6, 12);
+    empTable->setHorizontalHeaderLabels({"", "Employe ID", "CIN", "Nom", "Prenom", "Role", "Specialisation", "Qualification", "Publications", "Temps", "Laboratoire", "Projet"});
+    empTable->verticalHeader()->setVisible(false);
+    empTable->setShowGrid(true);
+    empTable->setAlternatingRowColors(true);
+    empTable->setStyleSheet(QString("QTableWidget{ alternate-background-color:%1; background-color:%2; }").arg(C_ROW_EVEN, C_ROW_ODD));
+    empTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    empTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    empTable->horizontalHeader()->setStretchLastSection(true);
+    empTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    empTable->setItemDelegateForColumn(9, new EmployeeBadgeDelegate(empTable));
+
+    empTable->setColumnWidth(0, 36);
+    empTable->setColumnWidth(1, 100);
+    empTable->setColumnWidth(2, 110);
+    empTable->setColumnWidth(3, 120);
+    empTable->setColumnWidth(4, 120);
+    empTable->setColumnWidth(5, 120);
+    empTable->setColumnWidth(6, 140);
+    empTable->setColumnWidth(7, 140);
+    empTable->setColumnWidth(8, 110);
+    empTable->setColumnWidth(9, 120);
+    empTable->setColumnWidth(10, 110);
+    empTable->setColumnWidth(11, 140);
+
+    auto setEmpRow=[&](int r, const QString& empId, const QString& cin,
+                       const QString& nom, const QString& prenom,
+                       const QString& role, const QString& spec,
+                       const QString& qualif, const QString& pubs,
+                       FTStatus ft, const QString& lab, const QString& proj)
+    {
+        QTableWidgetItem* iconItem = new QTableWidgetItem;
+        iconItem->setIcon(st->standardIcon(QStyle::SP_ArrowRight));
+        iconItem->setTextAlignment(Qt::AlignCenter);
+        empTable->setItem(r, 0, iconItem);
+
+        auto mk = [&](const QString& t){
+            QTableWidgetItem* it = new QTableWidgetItem(t);
+            it->setTextAlignment(Qt::AlignLeft|Qt::AlignVCenter);
+            return it;
+        };
+
+        empTable->setItem(r, 1, mk(empId));
+        empTable->setItem(r, 2, mk(cin));
+        empTable->setItem(r, 3, mk(nom));
+        empTable->setItem(r, 4, mk(prenom));
+        empTable->setItem(r, 5, mk(role));
+        empTable->setItem(r, 6, mk(spec));
+        empTable->setItem(r, 7, mk(qualif));
+        QTableWidgetItem* p = mk(pubs);
+        p->setTextAlignment(Qt::AlignRight|Qt::AlignVCenter);
+        empTable->setItem(r, 8, p);
+
+        QTableWidgetItem* badge = new QTableWidgetItem;
+        badge->setData(Qt::UserRole, (int)ft);
+        empTable->setItem(r, 9, badge);
+
+        empTable->setItem(r,10, mk(lab));
+        empTable->setItem(r,11, mk(proj));
+
+        empTable->setRowHeight(r, 46);
+    };
+
+    setEmpRow(0, "E001", "AA123456", "Ali", "Ben Salem", "Chercheur", "Biomol", "PhD",  "25", FTStatus::FullTime, "Lab A", "Projet GENOME");
+    setEmpRow(1, "E002", "BB654321", "Sara", "Bouaziz", "Technicien", "Chimie",  "BSc",  "5",  FTStatus::PartTime, "Lab B", "-");
+    setEmpRow(2, "E003", "CC998877", "Youssef", "K.",    "Chercheur", "Bioinfo", "PhD",  "12", FTStatus::Contract, "Lab C", "Projet AI-BIO");
+    setEmpRow(3, "E004", "DD112233", "Meriem", "H.",     "Technicien","General", "BTS",  "2",  FTStatus::FullTime, "Lab A", "-");
+    setEmpRow(4, "E005", "EE667788", "Omar",   "A.",     "Chercheur", "Biomol",  "PhD",  "40", FTStatus::OnLeave,  "Lab B", "Projet PROTEO");
+    setEmpRow(5, "E006", "FF334455", "Nada",   "B.",     "Chercheur", "Chimie",  "MSc",  "10", FTStatus::FullTime, "Lab C", "Projet MATERIA");
+
+    empCardL->addWidget(empTable);
+    emp1->addWidget(empCard, 1);
+
+    QFrame* empBottom = new QFrame;
+    empBottom->setFixedHeight(64);
+    empBottom->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* empBottomL = new QHBoxLayout(empBottom);
+    empBottomL->setContentsMargins(14,10,14,10);
+    empBottomL->setSpacing(12);
+
+    QPushButton* empAdd    = actionBtn("Creer", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
+    QPushButton* empEdit   = actionBtn("Modifier", "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
+    QPushButton* empDel    = actionBtn("Supprimer", "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
+    QPushButton* empStats  = actionBtn("Statistiques", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_MessageBoxInformation), true);
+
+    empBottomL->addWidget(empAdd);
+    empBottomL->addWidget(empEdit);
+    empBottomL->addWidget(empDel);
+    empBottomL->addWidget(empStats);
+    empBottomL->addStretch(1);
+
+    empBottomL->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_DirIcon)));
+    empBottomL->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_FileIcon)));
+    empBottomL->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_DialogSaveButton)));
+    empBottomL->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_BrowserReload)));
+
+    QPushButton* empMore = new QPushButton(st->standardIcon(QStyle::SP_FileDialogContentsView), "  Affectations & Labs");
+    empMore->setCursor(Qt::PointingHandCursor);
+    empMore->setStyleSheet(R"(
+        QPushButton{
+            background: rgba(255,255,255,0.55);
+            border: 1px solid rgba(0,0,0,0.12);
+            border-radius: 12px;
+            padding: 10px 14px;
+            color: rgba(0,0,0,0.65);
+            font-weight: 800;
+        }
+        QPushButton:hover{ background: rgba(255,255,255,0.75); }
+    )");
+    empBottomL->addWidget(empMore);
+
+    emp1->addWidget(empBottom);
+    stack->addWidget(empListPage);
+
+    // ==========================================================
+    // PAGE 19 : Employés - CREER / MODIFIER (EMP_FORM)
+    // ==========================================================
+    QWidget* empFormPage = new QWidget;
+    QVBoxLayout* emp2 = new QVBoxLayout(empFormPage);
+    emp2->setContentsMargins(22, 18, 22, 18);
+    emp2->setSpacing(14);
+
+    ModulesBar barEmpForm;
+    emp2->addWidget(makeHeaderBlock(st, "Creer / Modifier Employe", ModuleTab::Employee, &barEmpForm));
+    connectModulesSwitch(this, stack, barEmpForm);
+
+    QFrame* empOuter2 = new QFrame;
+    empOuter2->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
+    QHBoxLayout* empOuter2L = new QHBoxLayout(empOuter2);
+    empOuter2L->setContentsMargins(12,12,12,12);
+    empOuter2L->setSpacing(12);
+
+    QFrame* empLeft2 = softBox();
+    empLeft2->setFixedWidth(280);
+    QVBoxLayout* empLeft2L = new QVBoxLayout(empLeft2);
+    empLeft2L->setContentsMargins(10,10,10,10);
+    empLeft2L->setSpacing(10);
+
+    auto empLeftAction = [&](const QString& title, QStyle::StandardPixmap sp, const QString& text){
+        QLabel* head = new QLabel(title);
+        head->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+        QToolButton* b = new QToolButton;
+        b->setIcon(st->standardIcon(sp));
+        b->setText("  " + text);
+        b->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        b->setCursor(Qt::PointingHandCursor);
+        b->setStyleSheet(R"(
+            QToolButton{
+                background: rgba(255,255,255,0.70);
+                border: 1px solid rgba(0,0,0,0.12);
+                border-radius: 12px;
+                padding: 10px 12px;
+                text-align: left;
+                color: rgba(0,0,0,0.60);
+                font-weight: 800;
+            }
+            QToolButton:hover{ background: rgba(255,255,255,0.85); }
+        )");
+        empLeft2L->addWidget(head);
+        empLeft2L->addWidget(b);
+    };
+
+    empLeftAction("Role", QStyle::SP_FileIcon, "Chercheur / Technicien");
+
+    QToolButton* empSpecBtn = new QToolButton;
+    empSpecBtn->setIcon(st->standardIcon(QStyle::SP_DirIcon));
+    empSpecBtn->setText("  Specialisation");
+    empSpecBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    empSpecBtn->setCursor(Qt::PointingHandCursor);
+    empSpecBtn->setStyleSheet(R"(
+        QToolButton{
+            background: rgba(255,255,255,0.70);
+            border: 1px solid rgba(0,0,0,0.12);
+            border-radius: 12px;
+            padding: 10px 12px;
+            text-align: left;
+            color: rgba(0,0,0,0.60);
+            font-weight: 800;
+        }
+        QToolButton:hover{ background: rgba(255,255,255,0.85); }
+    )");
+    empLeft2L->addWidget(empSpecBtn);
+
+    QLabel* empAssignHead = new QLabel("Affectations");
+    empAssignHead->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+    empLeft2L->addWidget(empAssignHead);
+
+    auto empColBtn = [&](QStyle::StandardPixmap sp, const QString& txt){
+        QToolButton* b = new QToolButton;
+        b->setIcon(st->standardIcon(sp));
+        b->setText("  " + txt);
+        b->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        b->setCursor(Qt::PointingHandCursor);
+        b->setStyleSheet(R"(
+            QToolButton{
+                background: rgba(255,255,255,0.70);
+                border: 1px solid rgba(0,0,0,0.12);
+                border-radius: 12px;
+                padding: 10px 12px;
+                text-align: left;
+                color: rgba(0,0,0,0.60);
+                font-weight: 800;
+            }
+            QToolButton:hover{ background: rgba(255,255,255,0.85); }
+        )");
+        return b;
+    };
+
+    empLeft2L->addWidget(empColBtn(QStyle::SP_DriveHDIcon, "Laboratoire"));
+    empLeft2L->addWidget(empColBtn(QStyle::SP_FileDialogListView, "Projet"));
+    empLeft2L->addWidget(empColBtn(QStyle::SP_ArrowDown, "Temps Plein / Partiel"));
+    empLeft2L->addStretch(1);
+
+    QFrame* empRight2 = softBox();
+    QVBoxLayout* empRight2L = new QVBoxLayout(empRight2);
+    empRight2L->setContentsMargins(12,12,12,12);
+    empRight2L->setSpacing(10);
+
+    QFrame* empTinyTop = softBox();
+    QHBoxLayout* empTinyTopL = new QHBoxLayout(empTinyTop);
+    empTinyTopL->setContentsMargins(12,8,12,8);
+
+    QToolButton* empAddDrop = new QToolButton;
+    empAddDrop->setIcon(st->standardIcon(QStyle::SP_DialogYesButton));
+    empAddDrop->setText("Ajouter");
+    empAddDrop->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    empAddDrop->setStyleSheet("QToolButton{ color: rgba(0,0,0,0.55); font-weight: 900; }");
+
+    QLabel* empIdLbl = new QLabel("E007");
+    empIdLbl->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+
+    empTinyTopL->addWidget(empAddDrop);
+    empTinyTopL->addSpacing(10);
+    empTinyTopL->addWidget(empIdLbl);
+    empTinyTopL->addStretch(1);
+    empRight2L->addWidget(empTinyTop);
+
+    auto empComboRow = [&](QWidget* wLeft, QWidget* wRight){
+        QFrame* r = softBox();
+        QHBoxLayout* l = new QHBoxLayout(r);
+        l->setContentsMargins(10,8,10,8);
+        l->setSpacing(8);
+        l->addWidget(wLeft, 1);
+        l->addWidget(wRight, 1);
+        return r;
+    };
+
+    QLineEdit* empCinEdit = new QLineEdit; empCinEdit->setPlaceholderText("CIN");
+    QLineEdit* empNomEdit = new QLineEdit; empNomEdit->setPlaceholderText("Nom");
+    empRight2L->addWidget(empComboRow(empCinEdit, empNomEdit));
+
+    QLineEdit* empPrenomEdit = new QLineEdit; empPrenomEdit->setPlaceholderText("Prenom");
+    QComboBox* empRoleCb = new QComboBox; empRoleCb->addItems({"Chercheur","Technicien"});
+    empRight2L->addWidget(empComboRow(empPrenomEdit, empRoleCb));
+
+    QComboBox* empSpecCb = new QComboBox; empSpecCb->addItems({"Biomol","Bioinfo","Chimie","General"});
+    QLineEdit* empQualifEdit = new QLineEdit; empQualifEdit->setPlaceholderText("Qualification (PhD, MSc...)");
+    empRight2L->addWidget(empComboRow(empSpecCb, empQualifEdit));
+
+    QSpinBox* empPubs = new QSpinBox; empPubs->setRange(0,1000); empPubs->setValue(0);
+    empPubs->setPrefix("Pub: ");
+    QComboBox* empFtCb = new QComboBox; empFtCb->addItems({"Plein","Partiel","Contrat","Absence"});
+    empRight2L->addWidget(empComboRow(empPubs, empFtCb));
+
+    QComboBox* empLabCb = new QComboBox; empLabCb->addItems({"Lab A","Lab B","Lab C"});
+    QComboBox* empProjCb = new QComboBox; empProjCb->addItems({"-","Projet GENOME","Projet AI-BIO","Projet PROTEO","Projet MATERIA"});
+    empRight2L->addWidget(empComboRow(empLabCb, empProjCb));
+
+    QFrame* empDateRow = softBox();
+    QHBoxLayout* empDateRowL = new QHBoxLayout(empDateRow);
+    empDateRowL->setContentsMargins(10,8,10,8);
+    empDateRowL->setSpacing(8);
+
+    QToolButton* empCal = new QToolButton; empCal->setAutoRaise(true); empCal->setIcon(st->standardIcon(QStyle::SP_FileDialogDetailedView));
+    QDateEdit* empDate = new QDateEdit(QDate::currentDate());
+    empDate->setCalendarPopup(true);
+    empDate->setDisplayFormat("dd/MM/yyyy");
+    empDate->setStyleSheet("QDateEdit{ background: transparent; border:0; font-weight: 900; color: rgba(0,0,0,0.55);} ");
+
+    QToolButton* empI1 = new QToolButton; empI1->setAutoRaise(true); empI1->setIcon(st->standardIcon(QStyle::SP_BrowserReload));
+    QToolButton* empI2 = new QToolButton; empI2->setAutoRaise(true); empI2->setIcon(st->standardIcon(QStyle::SP_FileDialogListView));
+    QToolButton* empI3 = new QToolButton; empI3->setAutoRaise(true); empI3->setIcon(st->standardIcon(QStyle::SP_DialogSaveButton));
+
+    empDateRowL->addWidget(empCal);
+    empDateRowL->addWidget(new QLabel("Date d'embauche: "));
+    empDateRowL->addWidget(empDate, 1);
+    empDateRowL->addWidget(empI1);
+    empDateRowL->addWidget(empI2);
+    empDateRowL->addWidget(empI3);
+    empRight2L->addWidget(empDateRow);
+
+    empRight2L->addStretch(1);
+
+    empOuter2L->addWidget(empLeft2);
+    empOuter2L->addWidget(empRight2, 1);
+    emp2->addWidget(empOuter2, 1);
+
+    QFrame* empBottom2 = new QFrame;
+    empBottom2->setFixedHeight(64);
+    empBottom2->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* empBottom2L = new QHBoxLayout(empBottom2);
+    empBottom2L->setContentsMargins(14,10,14,10);
+    empBottom2L->setSpacing(12);
+
+    QPushButton* empSave = actionBtn("Enregistrer", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogSaveButton), true);
+    QPushButton* empCancel = actionBtn("Annuler", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DialogCancelButton), true);
+
+    empBottom2L->addWidget(empSave);
+    empBottom2L->addWidget(empCancel);
+    empBottom2L->addStretch(1);
+    emp2->addWidget(empBottom2);
+
+    stack->addWidget(empFormPage);
+
+    // ==========================================================
+    // PAGE 20 : Employés - AFFECTATIONS (EMP_AFF)
+    // ==========================================================
+    QWidget* empAffPage = new QWidget;
+    QVBoxLayout* emp3 = new QVBoxLayout(empAffPage);
+    emp3->setContentsMargins(22, 18, 22, 18);
+    emp3->setSpacing(14);
+
+    ModulesBar barEmpAff;
+    emp3->addWidget(makeHeaderBlock(st, "Affectations & Laboratoires", ModuleTab::Employee, &barEmpAff));
+    connectModulesSwitch(this, stack, barEmpAff);
+
+    QFrame* empOuter3 = new QFrame;
+    empOuter3->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
+    QHBoxLayout* empOuter3L = new QHBoxLayout(empOuter3);
+    empOuter3L->setContentsMargins(12,12,12,12);
+    empOuter3L->setSpacing(12);
+
+    QFrame* empLeft3 = softBox();
+    empLeft3->setFixedWidth(300);
+    QVBoxLayout* empLeft3L = new QVBoxLayout(empLeft3);
+    empLeft3L->setContentsMargins(10,10,10,10);
+    empLeft3L->setSpacing(10);
+
+    QFrame* empDdBox = new QFrame;
+    empDdBox->setStyleSheet("QFrame{ background: rgba(255,255,255,0.72); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
+    QHBoxLayout* empDdBoxL = new QHBoxLayout(empDdBox);
+    empDdBoxL->setContentsMargins(10,8,10,8);
+
+    QLabel* empDdText = new QLabel("Laboratoire: Lab A");
+    empDdText->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+    QToolButton* empDdBtn = new QToolButton;
+    empDdBtn->setAutoRaise(true);
+    empDdBtn->setIcon(st->standardIcon(QStyle::SP_ArrowDown));
+    empDdBtn->setCursor(Qt::PointingHandCursor);
+
+    empDdBoxL->addWidget(empDdText);
+    empDdBoxL->addStretch(1);
+    empDdBoxL->addWidget(empDdBtn);
+
+    QTreeWidget* empTree3 = new QTreeWidget;
+    empTree3->setHeaderHidden(true);
+    empTree3->setIndentation(18);
+
+    auto* empLabA = new QTreeWidgetItem(empTree3, QStringList() << "Lab A");
+    auto* empLabB = new QTreeWidgetItem(empTree3, QStringList() << "Lab B");
+    auto* empLabC = new QTreeWidgetItem(empTree3, QStringList() << "Lab C");
+
+    empLabA->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
+    empLabB->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
+    empLabC->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
+
+    auto* empP1 = new QTreeWidgetItem(empLabB, QStringList() << "Projet AI-BIO");
+    auto* empP2 = new QTreeWidgetItem(empLabB, QStringList() << "Projet GENOME");
+    auto* empP3 = new QTreeWidgetItem(empLabB, QStringList() << "Projet PROTEO");
+    auto* empP4 = new QTreeWidgetItem(empLabB, QStringList() << "Groupe Techniciens");
+    empP1->setIcon(0, st->standardIcon(QStyle::SP_FileIcon));
+    empP2->setIcon(0, st->standardIcon(QStyle::SP_FileIcon));
+    empP3->setIcon(0, st->standardIcon(QStyle::SP_FileIcon));
+    empP4->setIcon(0, st->standardIcon(QStyle::SP_FileDialogInfoView));
+
+    empTree3->expandAll();
+    empTree3->setCurrentItem(empLabB);
+
+    empLeft3L->addWidget(empDdBox);
+    empLeft3L->addWidget(empTree3, 1);
+
+    QFrame* empRight3 = softBox();
+    QVBoxLayout* empRight3L = new QVBoxLayout(empRight3);
+    empRight3L->setContentsMargins(10,10,10,10);
+    empRight3L->setSpacing(10);
+
+    QFrame* empHeader3 = new QFrame;
+    empHeader3->setStyleSheet("QFrame{ background: rgba(255,255,255,0.72); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
+    QHBoxLayout* empHeader3L = new QHBoxLayout(empHeader3);
+    empHeader3L->setContentsMargins(10,8,10,8);
+
+    QPushButton* empDetails3 = new QPushButton(st->standardIcon(QStyle::SP_FileDialogDetailedView), "  Details");
+    empDetails3->setCursor(Qt::PointingHandCursor);
+    empDetails3->setStyleSheet(QString(R"(
+        QPushButton{
+            background:%1; color: rgba(255,255,255,0.95);
+            border:1px solid rgba(0,0,0,0.18);
+            border-radius: 12px; padding: 10px 16px; font-weight: 900;
+        }
+        QPushButton:hover{ background: %2; }
+    )").arg(C_PRIMARY, C_TOPBAR));
+
+    auto empChip = [&](const QString& t){
+        QLabel* c = new QLabel(t);
+        c->setStyleSheet("background: rgba(255,255,255,0.90); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; padding: 8px 12px; font-weight:900; color: rgba(0,0,0,0.55);");
+        return c;
+    };
+
+    empHeader3L->addWidget(empDetails3);
+    empHeader3L->addStretch(1);
+    empHeader3L->addWidget(empChip("Affectations"));
+    empHeader3L->addWidget(empChip("Groupes"));
+
+    QFrame* empListBox3 = new QFrame;
+    empListBox3->setStyleSheet("QFrame{ background: rgba(255,255,255,0.55); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
+    QVBoxLayout* empListBox3L = new QVBoxLayout(empListBox3);
+    empListBox3L->setContentsMargins(12,12,12,12);
+
+    QListWidget* empList3 = new QListWidget;
+    empList3->setSpacing(8);
+    empList3->setSelectionMode(QAbstractItemView::NoSelection);
+
+    auto addEmpListRow=[&](QWidget* w){
+        QListWidgetItem* it = new QListWidgetItem;
+        it->setSizeHint(QSize(10, 40));
+        empList3->addItem(it);
+        empList3->setItemWidget(it, w);
+    };
+
+    addEmpListRow(new GradientRowWidget(st, "Ali Ben Salem (Chercheur)", "Pub: 25", W_GREEN,  QStyle::SP_FileIcon, false));
+    addEmpListRow(new GradientRowWidget(st, "Sara Bouaziz (Technicien)", "Partiel", W_ORANGE, QStyle::SP_FileIcon, false));
+    addEmpListRow(new GradientRowWidget(st, "Youssef K. (Chercheur)",    "Contrat", W_GRAY,   QStyle::SP_FileIcon, false));
+    addEmpListRow(new GradientRowWidget(st, "Omar A. (Chercheur)",       "Absence", W_RED,    QStyle::SP_FileIcon, true));
+
+    empListBox3L->addWidget(empList3);
+
+    QWidget* empBottomInfo3 = new QWidget;
+    QHBoxLayout* empBottomInfo3L = new QHBoxLayout(empBottomInfo3);
+    empBottomInfo3L->setContentsMargins(0,0,0,0);
+    empBottomInfo3L->setSpacing(12);
+    empBottomInfo3L->addWidget(empInfoBlock(st, "Lab B: Chercheurs: 3, Techniciens: 2", "Disponibles: 4"));
+    empBottomInfo3L->addWidget(empBottomBarWithText(st, "Lab B • Projet AI-BIO"), 1);
+
+    empRight3L->addWidget(empHeader3);
+    empRight3L->addWidget(empListBox3, 1);
+    empRight3L->addWidget(empBottomInfo3);
+
+    empOuter3L->addWidget(empLeft3);
+    empOuter3L->addWidget(empRight3, 1);
+
+    emp3->addWidget(empOuter3, 1);
+
+    QFrame* empBottom3 = new QFrame;
+    empBottom3->setFixedHeight(64);
+    empBottom3->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* empBottom3L = new QHBoxLayout(empBottom3);
+    empBottom3L->setContentsMargins(14,10,14,10);
+
+    QPushButton* empBack3 = actionBtn("Retour", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ArrowBack), true);
+    empBottom3L->addWidget(empBack3);
+    empBottom3L->addStretch(1);
+
+    emp3->addWidget(empBottom3);
+    stack->addWidget(empAffPage);
+
+    // ==========================================================
+    // PAGE 21 : Employés - DISPONIBILITES (EMP_AVAIL)
+    // ==========================================================
+    QWidget* empAvailPage = new QWidget;
+    QVBoxLayout* emp4 = new QVBoxLayout(empAvailPage);
+    emp4->setContentsMargins(22, 18, 22, 18);
+    emp4->setSpacing(14);
+
+    ModulesBar barEmpAvail;
+    emp4->addWidget(makeHeaderBlock(st, "Disponibilites & Contraintes", ModuleTab::Employee, &barEmpAvail));
+    connectModulesSwitch(this, stack, barEmpAvail);
+
+    QFrame* empOuter4 = new QFrame;
+    empOuter4->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
+    QHBoxLayout* empOuter4L = new QHBoxLayout(empOuter4);
+    empOuter4L->setContentsMargins(12,12,12,12);
+    empOuter4L->setSpacing(12);
+
+    QFrame* empLeft4 = softBox();
+    empLeft4->setFixedWidth(310);
+    QVBoxLayout* empLeft4L = new QVBoxLayout(empLeft4);
+    empLeft4L->setContentsMargins(10,10,10,10);
+    empLeft4L->setSpacing(10);
+
+    QFrame* empDd4 = new QFrame;
+    empDd4->setStyleSheet("QFrame{ background: rgba(255,255,255,0.72); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
+    QHBoxLayout* empDd4L = new QHBoxLayout(empDd4);
+    empDd4L->setContentsMargins(10,8,10,8);
+    QLabel* empDd4T = new QLabel("Laboratoires");
+    empDd4T->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+    QToolButton* empDd4B = new QToolButton;
+    empDd4B->setAutoRaise(true);
+    empDd4B->setIcon(st->standardIcon(QStyle::SP_ArrowDown));
+    empDd4B->setCursor(Qt::PointingHandCursor);
+    empDd4L->addWidget(empDd4T);
+    empDd4L->addStretch(1);
+    empDd4L->addWidget(empDd4B);
+
+    QTreeWidget* empTree4 = new QTreeWidget;
+    empTree4->setHeaderHidden(true);
+    empTree4->setIndentation(18);
+
+    auto* empWf1 = new QTreeWidgetItem(empTree4, QStringList() << "Lab A");
+    auto* empWf2 = new QTreeWidgetItem(empTree4, QStringList() << "Lab B");
+    auto* empWf4 = new QTreeWidgetItem(empTree4, QStringList() << "Lab C");
+    empWf1->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
+    empWf2->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
+    empWf4->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
+
+    auto* empShA = new QTreeWidgetItem(empWf2, QStringList() << "Projet AI-BIO");
+    auto* empShB = new QTreeWidgetItem(empWf2, QStringList() << "Projet PROTEO");
+    auto* empSh6 = new QTreeWidgetItem(empWf2, QStringList() << "Projet GENOME");
+    auto* empRm  = new QTreeWidgetItem(empWf2, QStringList() << "Techniciens");
+    empShA->setIcon(0, st->standardIcon(QStyle::SP_FileIcon));
+    empShB->setIcon(0, st->standardIcon(QStyle::SP_FileIcon));
+    empSh6->setIcon(0, st->standardIcon(QStyle::SP_FileIcon));
+    empRm ->setIcon(0, st->standardIcon(QStyle::SP_FileDialogInfoView));
+
+    empTree4->expandAll();
+    empTree4->setCurrentItem(empWf2);
+
+    QFrame* empTemp4 = empInfoBlock(st, "Lab B • FT: 3 / PT: 2", "Total: 5");
+
+    QPushButton* empExport4 = actionBtn("Exporter Liste", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.92)", st->standardIcon(QStyle::SP_DialogSaveButton), true);
+    QPushButton* empMark4   = actionBtn("Affecter au Projet", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DialogApplyButton), true);
+
+    empLeft4L->addWidget(empDd4);
+    empLeft4L->addWidget(empTree4, 1);
+    empLeft4L->addWidget(empTemp4);
+    empLeft4L->addWidget(empExport4);
+    empLeft4L->addWidget(empMark4);
+
+    QFrame* empRight4 = softBox();
+    QVBoxLayout* empRight4L = new QVBoxLayout(empRight4);
+    empRight4L->setContentsMargins(10,10,10,10);
+    empRight4L->setSpacing(10);
+
+    QWidget* empFiltersRow = new QWidget;
+    QHBoxLayout* empFr = new QHBoxLayout(empFiltersRow);
+    empFr->setContentsMargins(0,0,0,0);
+    empFr->setSpacing(10);
+    empFr->addWidget(empFilterPill("Role"));
+    empFr->addWidget(empFilterPill("Temps"));
+    empFr->addWidget(empFilterPill("Lab"));
+    empRight4L->addWidget(empFiltersRow);
+
+    QFrame* empRackCard = new QFrame;
+    empRackCard->setStyleSheet("QFrame{ background: rgba(255,255,255,0.55); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
+    QVBoxLayout* empRackCardL = new QVBoxLayout(empRackCard);
+    empRackCardL->setContentsMargins(12,12,12,12);
+    QTableWidget* empAvailability = new QTableWidget;
+    empSetupAvailabilityGrid(empAvailability);
+    empRackCardL->addWidget(empAvailability);
+    empRight4L->addWidget(empRackCard);
+
+    QFrame* empAccCard = new QFrame;
+    empAccCard->setStyleSheet("QFrame{ background: rgba(255,255,255,0.55); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
+    QVBoxLayout* empAccCardL = new QVBoxLayout(empAccCard);
+    empAccCardL->setContentsMargins(12,12,12,12);
+    QLabel* empAccTitle = new QLabel("Contraintes");
+    empAccTitle->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+    QTableWidget* empAccTable = new QTableWidget;
+    empSetupConstraintsTable(empAccTable);
+    empAccCardL->addWidget(empAccTitle);
+    empAccCardL->addWidget(empAccTable);
+    empRight4L->addWidget(empAccCard, 1);
+
+    QWidget* empBottomRight = new QWidget;
+    QHBoxLayout* empBr = new QHBoxLayout(empBottomRight);
+    empBr->setContentsMargins(0,0,0,0);
+    empBr->setSpacing(10);
+    empBr->addStretch(1);
+
+    QPushButton* empBtnFolder = actionBtn("Lab", "rgba(255,255,255,0.72)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DirIcon), true);
+    QPushButton* empBtnSec    = actionBtn("Statistiques", "rgba(255,255,255,0.72)", C_TEXT_DARK, st->standardIcon(QStyle::SP_MessageBoxWarning), true);
+
+    empBr->addWidget(empBtnFolder);
+    empBr->addWidget(empBtnSec);
+    empRight4L->addWidget(empBottomRight);
+
+    empOuter4L->addWidget(empLeft4);
+    empOuter4L->addWidget(empRight4, 1);
+
+    emp4->addWidget(empOuter4, 1);
+
+    QFrame* empBottom4 = new QFrame;
+    empBottom4->setFixedHeight(64);
+    empBottom4->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* empBottom4L = new QHBoxLayout(empBottom4);
+    empBottom4L->setContentsMargins(14,10,14,10);
+
+    QPushButton* empBack4 = actionBtn("Retour", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ArrowBack), true);
+    empBottom4L->addWidget(empBack4);
+    empBottom4L->addStretch(1);
+
+    emp4->addWidget(empBottom4);
+    stack->addWidget(empAvailPage);
+
+    // ==========================================================
+    // PAGE 22 : Employés - STATISTIQUES (EMP_STATS)
+    // ==========================================================
+    QWidget* empStatsPage = new QWidget;
+    QVBoxLayout* empS = new QVBoxLayout(empStatsPage);
+    empS->setContentsMargins(22, 18, 22, 18);
+    empS->setSpacing(14);
+
+    ModulesBar barEmpStats;
+    empS->addWidget(makeHeaderBlock(st, "Statistiques Employes", ModuleTab::Employee, &barEmpStats));
+    connectModulesSwitch(this, stack, barEmpStats);
+
+    QFrame* empOuterStats = new QFrame;
+    empOuterStats->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
+    QVBoxLayout* empOuterStatsL = new QVBoxLayout(empOuterStats);
+    empOuterStatsL->setContentsMargins(12,12,12,12);
+    empOuterStatsL->setSpacing(12);
+
+    QFrame* empDash = new QFrame;
+    empDash->setStyleSheet("QFrame{ background: rgba(255,255,255,0.55); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
+    QHBoxLayout* empDashL = new QHBoxLayout(empDash);
+    empDashL->setContentsMargins(12,12,12,12);
+    empDashL->setSpacing(12);
+
+    QFrame* empDonutCard = softBox();
+    QVBoxLayout* empDcL = new QVBoxLayout(empDonutCard);
+    empDcL->setContentsMargins(12,12,12,12);
+    QLabel* empTotalLbl = new QLabel("Total Employes:");
+    empTotalLbl->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+    DonutChart* empDonutStats = new DonutChart;
+    empDcL->addWidget(empTotalLbl);
+    empDcL->addWidget(empDonutStats, 1);
+
+    QFrame* empLegendCard = softBox();
+    QVBoxLayout* empLgL = new QVBoxLayout(empLegendCard);
+    empLgL->setContentsMargins(12,12,12,12);
+    empLgL->setSpacing(10);
+    auto empLegendRow=[&](const QColor& c, const QString& t){
+        QWidget* row = new QWidget;
+        QHBoxLayout* h = new QHBoxLayout(row);
+        h->setContentsMargins(0,0,0,0);
+        h->setSpacing(10);
+        QFrame* dot = new QFrame;
+        dot->setFixedSize(12,12);
+        dot->setStyleSheet(QString("background:%1; border-radius:6px;").arg(c.name()));
+        QLabel* lab = new QLabel(t);
+        lab->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+        h->addWidget(dot);
+        h->addWidget(lab);
+        h->addStretch(1);
+        return row;
+    };
+    empLgL->addWidget(empLegendRow(W_GREEN, "Chercheurs"));
+    empLgL->addWidget(empLegendRow(QColor("#9FBEB9"), "Techniciens"));
+    empLgL->addWidget(empLegendRow(W_ORANGE, "Temps partiel"));
+    empLgL->addWidget(empLegendRow(W_RED, "Absents"));
+    empLgL->addStretch(1);
+
+    QFrame* empBarCard = softBox();
+    QVBoxLayout* empBcL = new QVBoxLayout(empBarCard);
+    empBcL->setContentsMargins(12,12,12,12);
+    BarChart* empBarStats = new BarChart;
+    empBcL->addWidget(empBarStats, 1);
+
+    empDashL->addWidget(empDonutCard, 1);
+    empDashL->addWidget(empLegendCard, 1);
+    empDashL->addWidget(empBarCard, 1);
+
+    empOuterStatsL->addWidget(empDash);
+    empS->addWidget(empOuterStats, 1);
+
+    QFrame* empBottomStats = new QFrame;
+    empBottomStats->setFixedHeight(64);
+    empBottomStats->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* empBottomStatsL = new QHBoxLayout(empBottomStats);
+    empBottomStatsL->setContentsMargins(14,10,14,10);
+    QPushButton* empBackStats = actionBtn("Retour", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ArrowBack), true);
+    empBottomStatsL->addWidget(empBackStats);
+    empBottomStatsL->addStretch(1);
+    empS->addWidget(empBottomStats);
+
+    stack->addWidget(empStatsPage);
+
+    auto updateEmpStatsFromTable = [=](){
+        QMap<QString,int> roleCount;
+        QMap<QString,int> specCount;
+        int total = empTable->rowCount();
+
+        for (int r=0; r<empTable->rowCount(); ++r) {
+            const QString role = empTable->item(r, 5)->text();
+            const QString spec = empTable->item(r, 6)->text();
+            roleCount[role] += 1;
+            specCount[spec] += 1;
+        }
+
+        empTotalLbl->setText(QString("Total Employes: %1").arg(total));
+
+        QList<DonutChart::Slice> slices;
+        auto colorForRole = [&](const QString& role)->QColor{
+            if (role == "Chercheur")  return W_GREEN;
+            if (role == "Technicien") return QColor("#9FBEB9");
+            return QColor("#7A8B8A");
+        };
+        for (auto it = roleCount.constBegin(); it != roleCount.constEnd(); ++it) {
+            slices.push_back({(double)it.value(), colorForRole(it.key()), it.key()});
+        }
+        empDonutStats->setData(slices);
+
+        QList<BarChart::Bar> bars;
+        for (auto it = specCount.constBegin(); it != specCount.constEnd(); ++it) {
+            bars.push_back({(double)it.value(), it.key()});
+        }
+        empBarStats->setData(bars);
+    };
+
+    // ==========================================================
+    // PAGE 23 : Publications - DETAILS (PUB_DETAILS)
+    // ==========================================================
+    QWidget* pubDetailsPage = new QWidget;
+    QVBoxLayout* pb4 = new QVBoxLayout(pubDetailsPage);
+    pb4->setContentsMargins(22, 18, 22, 18);
+    pb4->setSpacing(14);
+
+    ModulesBar barPubDetails;
+    pb4->addWidget(makeHeaderBlock(st, "Détails publication", ModuleTab::Publication, &barPubDetails));
+    connectModulesSwitch(this, stack, barPubDetails);
+
+    QFrame* pubDetailsCard = softBox();
+    QVBoxLayout* pubDetailsL = new QVBoxLayout(pubDetailsCard);
+    pubDetailsL->setContentsMargins(14,14,14,14);
+    pubDetailsL->setSpacing(10);
+
+    QLabel* pubDetTitle = new QLabel("Titre");
+    QFont pubTitleFont = pubDetTitle->font();
+    pubTitleFont.setPointSize(14);
+    pubTitleFont.setBold(true);
+    pubDetTitle->setFont(pubTitleFont);
+
+    auto pubDetailRow = [&](const QString& label, QLabel*& valueOut){
+        QWidget* row = new QWidget;
+        QHBoxLayout* h = new QHBoxLayout(row);
+        h->setContentsMargins(0,0,0,0);
+        h->setSpacing(8);
+        QLabel* lab = new QLabel(label + " :");
+        lab->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+        QLabel* val = new QLabel;
+        val->setStyleSheet("color: rgba(0,0,0,0.70); font-weight: 700;");
+        val->setWordWrap(true);
+        h->addWidget(lab);
+        h->addWidget(val, 1);
+        valueOut = val;
+        return row;
+    };
+
+    QLabel* pubDetAuthors = nullptr;
+    QLabel* pubDetJournal = nullptr;
+    QLabel* pubDetYear = nullptr;
+    QLabel* pubDetDoi = nullptr;
+    QLabel* pubDetStatus = nullptr;
+    QLabel* pubDetAbstract = nullptr;
+
+    pubDetailsL->addWidget(pubDetTitle);
+    pubDetailsL->addWidget(pubDetailRow("Auteurs", pubDetAuthors));
+    pubDetailsL->addWidget(pubDetailRow("Journal/Conf.", pubDetJournal));
+    pubDetailsL->addWidget(pubDetailRow("Année", pubDetYear));
+    pubDetailsL->addWidget(pubDetailRow("DOI", pubDetDoi));
+    pubDetailsL->addWidget(pubDetailRow("Statut", pubDetStatus));
+
+    QLabel* abstractLabel = new QLabel("Résumé :");
+    abstractLabel->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+    QLabel* abstractValue = new QLabel;
+    abstractValue->setWordWrap(true);
+    abstractValue->setStyleSheet("color: rgba(0,0,0,0.65); font-weight: 700;");
+    pubDetAbstract = abstractValue;
+
+    pubDetailsL->addWidget(abstractLabel);
+    pubDetailsL->addWidget(abstractValue);
+
+    pb4->addWidget(pubDetailsCard, 1);
+
+    QFrame* pubDetailsBottom = new QFrame;
+    pubDetailsBottom->setFixedHeight(64);
+    pubDetailsBottom->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* pubDetailsBottomL = new QHBoxLayout(pubDetailsBottom);
+    pubDetailsBottomL->setContentsMargins(14,10,14,10);
+    QPushButton* pubDetailsBack = actionBtn("Retour", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ArrowBack), true);
+    pubDetailsBottomL->addWidget(pubDetailsBack);
+    pubDetailsBottomL->addStretch(1);
+    pb4->addWidget(pubDetailsBottom);
+
+    stack->addWidget(pubDetailsPage);
+
+    auto updatePubDetailsFromRow = [=]()->bool{
+        int r = pubTable->currentRow();
+        if (r < 0) {
+            QMessageBox::information(this, "Information", "Sélectionnez une publication.");
+            return false;
+        }
+        pubDetTitle->setText(pubTable->item(r,1)->text());
+        pubDetAuthors->setText(pubTable->item(r,2)->text());
+        pubDetJournal->setText(pubTable->item(r,3)->text());
+        pubDetYear->setText(pubTable->item(r,4)->text());
+        pubDetDoi->setText(pubTable->item(r,5)->text());
+        pubDetStatus->setText(pubTable->item(r,6)->text());
+        pubDetAbstract->setText("Résumé non renseigné.");
+        return true;
+    };
+
+    // ==========================================================
+    // PAGE 24 : Expériences - DETAILS (EXP_DETAILS)
+    // ==========================================================
+    QWidget* expDetailsPage = new QWidget;
+    QVBoxLayout* ep4 = new QVBoxLayout(expDetailsPage);
+    ep4->setContentsMargins(22, 18, 22, 18);
+    ep4->setSpacing(14);
+
+    ModulesBar barExpDetails;
+    ep4->addWidget(makeHeaderBlock(st, "Détails expérience", ModuleTab::ExperiencesProtocoles, &barExpDetails));
+    connectModulesSwitch(this, stack, barExpDetails);
+
+    QFrame* expDetailsCard = softBox();
+    QVBoxLayout* expDetailsL = new QVBoxLayout(expDetailsCard);
+    expDetailsL->setContentsMargins(14,14,14,14);
+    expDetailsL->setSpacing(10);
+
+    QLabel* expDetTitle = new QLabel("Expérience");
+    QFont expTitleFont = expDetTitle->font();
+    expTitleFont.setPointSize(14);
+    expTitleFont.setBold(true);
+    expDetTitle->setFont(expTitleFont);
+
+    QLabel* expDetId = nullptr;
+    QLabel* expDetProto = nullptr;
+    QLabel* expDetResp = nullptr;
+    QLabel* expDetDate = nullptr;
+    QLabel* expDetStatus = nullptr;
+    QLabel* expDetBsl = nullptr;
+
+    auto expDetailRow = [&](const QString& label, QLabel*& valueOut){
+        QWidget* row = new QWidget;
+        QHBoxLayout* h = new QHBoxLayout(row);
+        h->setContentsMargins(0,0,0,0);
+        h->setSpacing(8);
+        QLabel* lab = new QLabel(label + " :");
+        lab->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+        QLabel* val = new QLabel;
+        val->setStyleSheet("color: rgba(0,0,0,0.70); font-weight: 700;");
+        h->addWidget(lab);
+        h->addWidget(val, 1);
+        valueOut = val;
+        return row;
+    };
+
+    expDetailsL->addWidget(expDetTitle);
+    expDetailsL->addWidget(expDetailRow("ID", expDetId));
+    expDetailsL->addWidget(expDetailRow("Protocole", expDetProto));
+    expDetailsL->addWidget(expDetailRow("Responsable", expDetResp));
+    expDetailsL->addWidget(expDetailRow("Date", expDetDate));
+    expDetailsL->addWidget(expDetailRow("Statut", expDetStatus));
+    expDetailsL->addWidget(expDetailRow("BSL", expDetBsl));
+
+    ep4->addWidget(expDetailsCard, 1);
+
+    QFrame* expDetailsBottom = new QFrame;
+    expDetailsBottom->setFixedHeight(64);
+    expDetailsBottom->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* expDetailsBottomL = new QHBoxLayout(expDetailsBottom);
+    expDetailsBottomL->setContentsMargins(14,10,14,10);
+    QPushButton* expDetailsBack = actionBtn("Retour", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ArrowBack), true);
+    expDetailsBottomL->addWidget(expDetailsBack);
+    expDetailsBottomL->addStretch(1);
+    ep4->addWidget(expDetailsBottom);
+
+    stack->addWidget(expDetailsPage);
+
+    auto updateExpDetailsFromRow = [=]()->bool{
+        int r = expTable->currentRow();
+        if (r < 0) {
+            QMessageBox::information(this, "Information", "Sélectionnez une expérience.");
+            return false;
+        }
+        expDetTitle->setText(expTable->item(r,1)->text());
+        expDetId->setText(expTable->item(r,0)->text());
+        expDetProto->setText(expTable->item(r,2)->text());
+        expDetResp->setText(expTable->item(r,3)->text());
+        expDetDate->setText(expTable->item(r,4)->text());
+        expDetStatus->setText(expTable->item(r,5)->text());
+        expDetBsl->setText(expTable->item(r,6)->text());
+        return true;
+    };
+
+    // ==========================================================
+    // PAGE 25 : Gestion Projet - DETAILS (PROJ_DETAILS)
+    // ==========================================================
+    QWidget* projDetailsPage = new QWidget;
+    QVBoxLayout* gp4 = new QVBoxLayout(projDetailsPage);
+    gp4->setContentsMargins(22, 18, 22, 18);
+    gp4->setSpacing(14);
+
+    ModulesBar barProjDetails;
+    gp4->addWidget(makeHeaderBlock(st, "Détails projet", ModuleTab::GestionProjet, &barProjDetails));
+    connectModulesSwitch(this, stack, barProjDetails);
+
+    QFrame* projDetailsCard = softBox();
+    QVBoxLayout* projDetailsL = new QVBoxLayout(projDetailsCard);
+    projDetailsL->setContentsMargins(14,14,14,14);
+    projDetailsL->setSpacing(10);
+
+    QLabel* projDetTitle = new QLabel("Projet");
+    QFont projTitleFont = projDetTitle->font();
+    projTitleFont.setPointSize(14);
+    projTitleFont.setBold(true);
+    projDetTitle->setFont(projTitleFont);
+
+    QLabel* projDetId = nullptr;
+    QLabel* projDetDomain = nullptr;
+    QLabel* projDetOwner = nullptr;
+    QLabel* projDetBudget = nullptr;
+    QLabel* projDetStart = nullptr;
+    QLabel* projDetStatus = nullptr;
+
+    auto projDetailRow = [&](const QString& label, QLabel*& valueOut){
+        QWidget* row = new QWidget;
+        QHBoxLayout* h = new QHBoxLayout(row);
+        h->setContentsMargins(0,0,0,0);
+        h->setSpacing(8);
+        QLabel* lab = new QLabel(label + " :");
+        lab->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+        QLabel* val = new QLabel;
+        val->setStyleSheet("color: rgba(0,0,0,0.70); font-weight: 700;");
+        h->addWidget(lab);
+        h->addWidget(val, 1);
+        valueOut = val;
+        return row;
+    };
+
+    projDetailsL->addWidget(projDetTitle);
+    projDetailsL->addWidget(projDetailRow("ID", projDetId));
+    projDetailsL->addWidget(projDetailRow("Domaine", projDetDomain));
+    projDetailsL->addWidget(projDetailRow("Responsable", projDetOwner));
+    projDetailsL->addWidget(projDetailRow("Budget", projDetBudget));
+    projDetailsL->addWidget(projDetailRow("Début", projDetStart));
+    projDetailsL->addWidget(projDetailRow("Statut", projDetStatus));
+
+    gp4->addWidget(projDetailsCard, 1);
+
+    QFrame* projDetailsBottom = new QFrame;
+    projDetailsBottom->setFixedHeight(64);
+    projDetailsBottom->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* projDetailsBottomL = new QHBoxLayout(projDetailsBottom);
+    projDetailsBottomL->setContentsMargins(14,10,14,10);
+    QPushButton* projDetailsBack = actionBtn("Retour", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ArrowBack), true);
+    projDetailsBottomL->addWidget(projDetailsBack);
+    projDetailsBottomL->addStretch(1);
+    gp4->addWidget(projDetailsBottom);
+
+    stack->addWidget(projDetailsPage);
+
+    auto updateProjDetailsFromRow = [=]()->bool{
+        int r = projTable->currentRow();
+        if (r < 0) {
+            QMessageBox::information(this, "Information", "Sélectionnez un projet.");
+            return false;
+        }
+        projDetTitle->setText(projTable->item(r,1)->text());
+        projDetId->setText(projTable->item(r,0)->text());
+        projDetDomain->setText(projTable->item(r,2)->text());
+        projDetOwner->setText(projTable->item(r,3)->text());
+        projDetBudget->setText(projTable->item(r,4)->text());
+        projDetStart->setText(projTable->item(r,5)->text());
+        projDetStatus->setText(projTable->item(r,6)->text());
+        return true;
+    };
     // ==========================================================
     // ✅ Marges adaptatives (initial)
     // ==========================================================
@@ -3942,6 +5273,14 @@ QPushButton:hover{ background: %2; }
     eq2->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
     eq3->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
     eq4->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
+    emp1->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
+    emp2->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
+    emp3->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
+    emp4->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
+    empS->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
+    pb4->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
+    ep4->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
+    gp4->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
 
     // ==========================================================
     // NAVIGATION BioSimple
@@ -3986,7 +5325,16 @@ QPushButton:hover{ background: %2; }
         setWindowTitle("Statistiques Projet");
         stack->setCurrentIndex(PROJ_STATS);
     });
+    QObject::connect(projDetails, &QPushButton::clicked, this, [=](){
+        if (!updateProjDetailsFromRow()) return;
+        setWindowTitle("Détails projet");
+        stack->setCurrentIndex(PROJ_DETAILS);
+    });
     QObject::connect(p3Back, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Gestion Projet");
+        stack->setCurrentIndex(PROJ_LIST);
+    });
+    QObject::connect(projDetailsBack, &QPushButton::clicked, this, [=](){
         setWindowTitle("Gestion Projet");
         stack->setCurrentIndex(PROJ_LIST);
     });
@@ -4028,7 +5376,16 @@ QPushButton:hover{ background: %2; }
         setWindowTitle("Statistiques Expériences");
         stack->setCurrentIndex(EXP_STATS);
     });
+    QObject::connect(expDetails, &QPushButton::clicked, this, [=](){
+        if (!updateExpDetailsFromRow()) return;
+        setWindowTitle("Détails expérience");
+        stack->setCurrentIndex(EXP_DETAILS);
+    });
     QObject::connect(expBackStats, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Expériences & Protocoles");
+        stack->setCurrentIndex(EXP_LIST);
+    });
+    QObject::connect(expDetailsBack, &QPushButton::clicked, this, [=](){
         setWindowTitle("Expériences & Protocoles");
         stack->setCurrentIndex(EXP_LIST);
     });
@@ -4083,6 +5440,73 @@ QPushButton:hover{ background: %2; }
         stack->setCurrentIndex(EQUIP_FORM);
     });
 
+    // ==========================================================
+    // NAVIGATION Employés (5 widgets)
+    // ==========================================================
+    QObject::connect(empAdd, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Creer / Modifier Employe");
+        stack->setCurrentIndex(EMP_FORM);
+    });
+    QObject::connect(empEdit, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Creer / Modifier Employe");
+        stack->setCurrentIndex(EMP_FORM);
+    });
+    QObject::connect(empCancel, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Gestion des Employés");
+        stack->setCurrentIndex(EMP_LIST);
+    });
+    QObject::connect(empSave, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Gestion des Employés");
+        stack->setCurrentIndex(EMP_LIST);
+        QMessageBox::information(this, "Employe", "Enregistrement (a connecter a la base de donnees).");
+    });
+    QObject::connect(empMore, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Affectations & Laboratoires");
+        stack->setCurrentIndex(EMP_AFF);
+    });
+    QObject::connect(empBack3, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Gestion des Employés");
+        stack->setCurrentIndex(EMP_LIST);
+    });
+    QObject::connect(empDetails3, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Disponibilites & Contraintes");
+        stack->setCurrentIndex(EMP_AVAIL);
+    });
+    QObject::connect(empBack4, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Affectations & Laboratoires");
+        stack->setCurrentIndex(EMP_AFF);
+    });
+    QObject::connect(empStats, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Statistiques Employes");
+        stack->setCurrentIndex(EMP_STATS);
+        updateEmpStatsFromTable();
+    });
+    QObject::connect(empBtnSec, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Statistiques Employes");
+        stack->setCurrentIndex(EMP_STATS);
+        updateEmpStatsFromTable();
+    });
+    QObject::connect(empBackStats, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Gestion des Employés");
+        stack->setCurrentIndex(EMP_LIST);
+    });
+    QObject::connect(empDel, &QPushButton::clicked, this, [=](){
+        int r = empTable->currentRow();
+        if (r < 0) {
+            QMessageBox::information(this, "Suppression", "Selectionnez un employe dans la liste.");
+            return;
+        }
+        QString resume = QString("ID : %1 | Nom : %2 | Role : %3")
+                             .arg(empTable->item(r,1)->text(),
+                                  empTable->item(r,3)->text(),
+                                  empTable->item(r,5)->text());
+        ConfirmDeleteDialog confirm(style(), resume, this);
+        if (confirm.exec() == QDialog::Accepted) {
+            empTable->removeRow(r);
+            updateEmpStatsFromTable();
+        }
+    });
+
     // ===================== NAVIGATION PUBLICATION =====================
 
     // LIST -> FORM
@@ -4102,12 +5526,25 @@ QPushButton:hover{ background: %2; }
         stack->setCurrentIndex(PUB_STATS);
     });
 
+    QObject::connect(pubDetails, &QPushButton::clicked, this, [=](){
+        if (!updatePubDetailsFromRow()) return;
+        stack->setCurrentIndex(PUB_DETAILS);
+    });
+
     // FORM -> LIST
     QObject::connect(pubCancel, &QPushButton::clicked, this, [=](){
         stack->setCurrentIndex(PUB_LIST);
     });
     QObject::connect(pubSave, &QPushButton::clicked, this, [=](){
         // (démo) : tu peux ajouter ici l’insertion dans pubTable si tu veux
+        stack->setCurrentIndex(PUB_LIST);
+    });
+
+    QObject::connect(pub3Back, &QPushButton::clicked, this, [=](){
+        stack->setCurrentIndex(PUB_LIST);
+    });
+
+    QObject::connect(pubDetailsBack, &QPushButton::clicked, this, [=](){
         stack->setCurrentIndex(PUB_LIST);
     });
 
