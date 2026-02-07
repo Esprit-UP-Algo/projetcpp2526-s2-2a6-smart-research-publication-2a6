@@ -1,4 +1,4 @@
-// ===================== mainwindow.cpp (COMPLET & CORRIGÉ - FR + STATISTIQUES) =====================
+// ===================== biosimple.cpp (UN SEUL FICHIER - BioSimple + Gestion Projet - 3 Widgets) =====================
 #include "biosimple.h"
 
 #include <QPainterPath>
@@ -6,9 +6,11 @@
 #include <QMessageBox>
 
 #include <QApplication>
+#include <QMainWindow>
 #include <QWidget>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QGridLayout>
 #include <QFrame>
 #include <QLabel>
 #include <QToolButton>
@@ -52,12 +54,26 @@ static const QColor  W_ORANGE     = QColor("#B5672C");
 static const QColor  W_RED        = QColor("#8B2F3C");
 static const QColor  W_GRAY       = QColor("#7A8B8A");
 
+// ===================== STACK INDEX =====================
+// BioSimple (5 pages)
+static const int BIO_LIST  = 0;
+static const int BIO_FORM  = 1;
+static const int BIO_LOC   = 2;
+static const int BIO_RACK  = 3;
+static const int BIO_STATS = 4;
+
+// Gestion Projet (3 widgets/pages)
+static const int PROJ_LIST  = 5; // Widget 1
+static const int PROJ_FORM  = 6; // Widget 2
+static const int PROJ_STATS = 7; // Widget 3
+
+// ===================== UI responsive margin =====================
 static int uiMargin(QWidget* w)
 {
     int W = w->width();
-    if (W < 1100) return 6;    // petit écran
-    if (W < 1400) return 10;   // écran moyen
-    return 14;                 // grand écran
+    if (W < 1100) return 6;
+    if (W < 1400) return 10;
+    return 14;
 }
 
 // ===================== Helpers =====================
@@ -137,64 +153,153 @@ static QToolButton* tinySquareBtn(const QIcon& icon)
     return b;
 }
 
-// ===== Brand (logo + 3 dots) used in ALL topbars =====
-static QWidget* makeBrandWidget()
+// ===================== LOGO TRÈS GRAND CENTRÉ =====================
+// ===================== CENTERED LOGO CARD =====================
+static QFrame* makeBigLogoPanel()
 {
-    QWidget* w = new QWidget;
-    QHBoxLayout* h = new QHBoxLayout(w);
-    h->setContentsMargins(0,0,0,0);
-    h->setSpacing(10);
-    h->setAlignment(Qt::AlignVCenter);
+    // Carte verte arrondie
+    QFrame* box = new QFrame;
+    box->setObjectName("logoCard");
+    box->setFixedSize(360, 180);
 
+    box->setStyleSheet(
+        "QFrame#logoCard {"
+        " background-color: #12443B;"   // vert foncé
+        " border-radius: 28px;"         // coins très arrondis
+        "}"
+        );
+
+    // Layout vertical centré
+    QVBoxLayout* v = new QVBoxLayout(box);
+    v->setContentsMargins(20, 15, 20, 15);
+    v->setSpacing(8);
+    v->setAlignment(Qt::AlignCenter);
+
+    // ===== LOGO PLUS GRAND =====
     QLabel* logo = new QLabel;
-    logo->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-    logo->setContentsMargins(0, 4, 0, 0);
+    logo->setAlignment(Qt::AlignCenter);
 
-    QPixmap px(":image/smartvision.png");
+    QPixmap px(":/image/smartvision.png"); // vérifie ton chemin qrc
+
     if (!px.isNull())
-        logo->setPixmap(px.scaled(36, 36, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    {
+        logo->setPixmap(
+            px.scaled(160, 160, Qt::KeepAspectRatio, Qt::SmoothTransformation)
+            );
+    }
+    else
+    {
+        logo->setText("LOGO");
+        logo->setStyleSheet("color:#bbb; font-size:18px;");
+    }
 
-    QLabel* name = new QLabel("SmartVision");
-    QFont nf = name->font();
-    nf.setBold(true);
-    nf.setPointSize(11);
-    name->setFont(nf);
-    name->setStyleSheet(QString("color:%1; letter-spacing: 0.6px;").arg(C_BEIGE));
-    name->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
+    v->addWidget(logo, 0, Qt::AlignCenter);
 
-    auto dot = [&](const QColor& c){
-        QFrame* d = new QFrame;
-        d->setFixedSize(6,6);
-        d->setStyleSheet(QString("background:%1; border-radius:3px;").arg(c.name()));
-        return d;
-    };
+    // ===== TEXTE SmartVision CENTRÉ =====
+    QLabel* title = new QLabel("SmartVision");
+    title->setAlignment(Qt::AlignCenter);
 
-    QWidget* dots = new QWidget;
-    QHBoxLayout* dh = new QHBoxLayout(dots);
-    dh->setContentsMargins(0,0,0,0);
-    dh->setSpacing(6);
-    dh->setAlignment(Qt::AlignVCenter);
+    QFont ft;
+    ft.setPointSize(16);
+    ft.setBold(true);
+    title->setFont(ft);
 
-    dh->addWidget(dot(QColor("#C6B29A")));
-    dh->addWidget(dot(QColor("#8FD3E8")));
-    dh->addWidget(dot(QColor("#C6B29A")));
+    title->setStyleSheet("color: #C6B29A;"); // beige
 
-    h->addWidget(logo);
-    h->addWidget(name);
-    h->addWidget(dots);
-    return w;
+    v->addWidget(title, 0, Qt::AlignCenter);
+
+    return box;
 }
 
-static QFrame* makeTopBar(QStyle* st, const QString& titleText, QWidget* parent=nullptr)
+
+// ===================== MODULES BAR =====================
+enum class ModuleTab {
+    Employee = 0,
+    Publication,
+    BioSimple,
+    Equipement,
+    ExperiencesProtocoles,
+    GestionProjet
+};
+
+static QPushButton* modulePill(const QString& text, bool selected)
+{
+    QPushButton* b = new QPushButton(text);
+    b->setCursor(Qt::PointingHandCursor);
+    b->setCheckable(true);
+    b->setChecked(selected);
+
+    b->setStyleSheet(QString(R"(
+        QPushButton{
+            background: rgba(255,255,255,0.70);
+            border: 1px solid rgba(0,0,0,0.12);
+            border-radius: 18px;
+            padding: 8px 16px;
+            font-weight: 900;
+            color: rgba(0,0,0,0.60);
+        }
+        QPushButton:hover{
+            background: rgba(255,255,255,0.82);
+        }
+        QPushButton:checked{
+            background: rgba(10,95,88,0.75);
+            border: 1px solid rgba(0,0,0,0.18);
+            color: rgba(255,255,255,0.92);
+        }
+    )"));
+    return b;
+}
+
+struct ModulesBar {
+    QFrame* bar = nullptr;
+    QPushButton* bEmployee = nullptr;
+    QPushButton* bPublication = nullptr;
+    QPushButton* bBioSimple = nullptr;
+    QPushButton* bEquipement = nullptr;
+    QPushButton* bExp = nullptr;
+    QPushButton* bProjet = nullptr;
+};
+
+static ModulesBar makeModulesBar(ModuleTab selected, QWidget* parent=nullptr)
+{
+    ModulesBar out;
+
+    out.bar = new QFrame(parent);
+    out.bar->setFixedHeight(52);
+    out.bar->setStyleSheet("background: rgba(255,255,255,0.18); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+
+    QHBoxLayout* h = new QHBoxLayout(out.bar);
+    h->setContentsMargins(14, 8, 14, 8);
+    h->setSpacing(10);
+
+    out.bEmployee    = modulePill("Employee",        selected == ModuleTab::Employee);
+    out.bPublication = modulePill("Publication",     selected == ModuleTab::Publication);
+    out.bBioSimple   = modulePill("BioSimple",       selected == ModuleTab::BioSimple);
+    out.bEquipement  = modulePill("Équipement",      selected == ModuleTab::Equipement);
+    out.bExp         = modulePill("Expériences  Protocoles", selected == ModuleTab::ExperiencesProtocoles);
+    out.bProjet      = modulePill("Gestion Projet",  selected == ModuleTab::GestionProjet);
+
+    h->addWidget(out.bEmployee);
+    h->addWidget(out.bPublication);
+    h->addWidget(out.bBioSimple);
+    h->addWidget(out.bEquipement);
+    h->addWidget(out.bExp);
+    h->addWidget(out.bProjet);
+    h->addStretch(1);
+
+    return out;
+}
+
+// ===================== TOPBAR (sans logo) =====================
+static QFrame* makeTopBarNoLogo(QStyle* st, const QString& titleText, QWidget* parent=nullptr)
 {
     QFrame* top = new QFrame(parent);
-    top->setFixedHeight(54);
-    top->setStyleSheet(QString("background:%1; border-radius: 14px;").arg(C_TOPBAR));
+    top->setFixedHeight(46);
+    top->setStyleSheet(QString("background:%1; border-radius: 18px;").arg(C_TOPBAR));
 
     QHBoxLayout* L = new QHBoxLayout(top);
-    L->setContentsMargins(14,10,14,10);
-
-    L->addWidget(makeBrandWidget(), 0, Qt::AlignLeft);
+    L->setContentsMargins(16,8,16,8);
+    L->setSpacing(8);
 
     QLabel* title = new QLabel(titleText);
     QFont f = title->font(); f.setPointSize(14); f.setBold(true);
@@ -227,7 +332,62 @@ static QFrame* makeTopBar(QStyle* st, const QString& titleText, QWidget* parent=
     return top;
 }
 
-// ===================== Widget1 badge delegate =====================
+// ===================== HEADER BLOCK (logo + modules + topbar) =====================
+static QWidget* makeHeaderBlock(QStyle* st,
+                                const QString& pageTitle,
+                                ModuleTab selectedModule,
+                                ModulesBar* outBar=nullptr)
+{
+    QWidget* wrap = new QWidget;
+    QHBoxLayout* H = new QHBoxLayout(wrap);
+    H->setContentsMargins(0,0,0,0);
+    H->setSpacing(14);
+
+    QFrame* logo = makeBigLogoPanel();
+
+    QWidget* right = new QWidget;
+    QVBoxLayout* R = new QVBoxLayout(right);
+    R->setContentsMargins(0,0,0,0);
+    R->setSpacing(10);
+
+    ModulesBar bar = makeModulesBar(selectedModule);
+    if (outBar) *outBar = bar;
+
+    QFrame* topbar  = makeTopBarNoLogo(st, pageTitle);
+
+    R->addWidget(bar.bar);
+    R->addWidget(topbar);
+
+    H->addWidget(logo, 0, Qt::AlignTop);
+    H->addWidget(right, 1);
+
+    return wrap;
+}
+
+// ===================== Connexion modules (BioSimple / Gestion Projet) =====================
+static void connectModulesSwitch(MainWindow* self, QStackedWidget* stack, const ModulesBar& mb)
+{
+    // On garde seulement 2 modules actifs: BioSimple et Gestion Projet
+    QObject::connect(mb.bBioSimple, &QPushButton::clicked, self, [=](){
+        self->setWindowTitle("Gestion des Échantillons");
+        stack->setCurrentIndex(BIO_LIST);
+    });
+    QObject::connect(mb.bProjet, &QPushButton::clicked, self, [=](){
+        self->setWindowTitle("Gestion Projet");
+        stack->setCurrentIndex(PROJ_LIST);
+    });
+
+    // Les autres: message (optionnel)
+    auto notImpl = [=](const QString& name){
+        QMessageBox::information(self, "Module", QString("Module \"%1\" non activé dans ce fichier.").arg(name));
+    };
+    QObject::connect(mb.bEmployee, &QPushButton::clicked, self, [=]{ notImpl("Employee"); });
+    QObject::connect(mb.bPublication, &QPushButton::clicked, self, [=]{ notImpl("Publication"); });
+    QObject::connect(mb.bEquipement, &QPushButton::clicked, self, [=]{ notImpl("Équipement"); });
+    QObject::connect(mb.bExp, &QPushButton::clicked, self, [=]{ notImpl("Expériences / Protocoles"); });
+}
+
+// ===================== Widget1 badge delegate (BioSimple) =====================
 enum class ExpireStatus { Ok=0, Soon=1, Expired=2, Bsl=3 };
 
 static QString statusText(ExpireStatus s)
@@ -317,7 +477,7 @@ public:
     }
 };
 
-// ===================== Widget3 gradient row =====================
+// ===================== Widget3 (BioSimple) gradient row =====================
 class GradientRowWidget : public QWidget
 {
 public:
@@ -481,7 +641,7 @@ static QFrame* w3BottomLocationBar(QStyle* st, const QString& text)
     return bar;
 }
 
-// ===================== Widget STATISTIQUES (Graphiques) =====================
+// ===================== STATISTIQUES (Graphiques) =====================
 class DonutChart : public QWidget {
 public:
     struct Slice { double value; QColor color; QString label; };
@@ -536,7 +696,7 @@ protected:
         p.setPen(QColor(0,0,0,120));
         QFont f = font(); f.setBold(true); f.setPointSize(10);
         p.setFont(f);
-        p.drawText(inner, Qt::AlignCenter, "🧪");
+        p.drawText(inner, Qt::AlignCenter, "📊");
     }
 
 private:
@@ -618,7 +778,7 @@ private:
     QList<Bar> m_bars;
 };
 
-// ===================== Widget4 helpers =====================
+// ===================== Widget4 helpers (BioSimple Rack) =====================
 static QFrame* w4FilterPill(const QString& text)
 {
     QFrame* f = new QFrame;
@@ -736,114 +896,6 @@ static void w4SetupAccountsTable(QTableWidget* t)
     setR(3,"123460","RNA","-60°C","BSL-3");
 }
 
-// ===================== Dialog: Delete list with buttons =====================
-class DeleteDialog : public QDialog
-{
-public:
-    DeleteDialog(QStyle* st, QWidget* parent=nullptr)
-        : QDialog(parent), m_style(st)
-    {
-        setWindowTitle("Supprimer des échantillons");
-        resize(800, 420);
-        setModal(true);
-
-        QVBoxLayout* root = new QVBoxLayout(this);
-        root->setContentsMargins(14,14,14,14);
-        root->setSpacing(12);
-
-        QLabel* title = new QLabel("Liste des échantillons");
-        QFont tf = title->font(); tf.setBold(true); tf.setPointSize(12);
-        title->setFont(tf);
-        title->setStyleSheet("color: rgba(0,0,0,0.65);");
-        root->addWidget(title);
-
-        table = new QTableWidget(0, 5, this);
-        table->setHorizontalHeaderLabels({"Type","Organisme","Stockage","Expiration","Action"});
-        table->verticalHeader()->setVisible(false);
-        table->horizontalHeader()->setStretchLastSection(true);
-        table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-        table->setSelectionMode(QAbstractItemView::NoSelection);
-
-        table->setStyleSheet(R"(
-            QHeaderView::section{
-                background: rgba(159,190,185,0.85);
-                padding: 8px;
-                font-weight: 900;
-            }
-            QTableWidget{
-                background: rgba(255,255,255,0.75);
-                border: 1px solid rgba(0,0,0,0.12);
-                border-radius: 12px;
-            }
-            QTableWidget::item{
-                padding: 8px;
-                font-weight: 800;
-                color: rgba(0,0,0,0.65);
-            }
-        )");
-
-        root->addWidget(table, 1);
-
-        QPushButton* closeBtn = new QPushButton("Fermer");
-        closeBtn->setCursor(Qt::PointingHandCursor);
-        closeBtn->setStyleSheet("QPushButton{ padding:10px 18px; border-radius:10px; font-weight:900; }");
-        QObject::connect(closeBtn, &QPushButton::clicked, this, &QDialog::accept);
-        root->addWidget(closeBtn, 0, Qt::AlignRight);
-
-        // exemples
-        addRow("DNA","E. coli","-80°C","16/05/2024");
-        addRow("RNA","Humain","-20°C","01/05/2024");
-        addRow("Protéine","Levure","-20°C","20/04/2024");
-        addRow("DNA","Souris","Temp. ambiante","24/04/2024");
-    }
-
-private:
-    QStyle* m_style = nullptr;
-    QTableWidget* table = nullptr;
-
-    void addRow(const QString& type,
-                const QString& org,
-                const QString& storage,
-                const QString& expiry)
-    {
-        int r = table->rowCount();
-        table->insertRow(r);
-
-        table->setItem(r,0,new QTableWidgetItem(type));
-        table->setItem(r,1,new QTableWidgetItem(org));
-        table->setItem(r,2,new QTableWidgetItem(storage));
-        table->setItem(r,3,new QTableWidgetItem(expiry));
-
-        for (int c=0;c<4;++c)
-            table->item(r,c)->setTextAlignment(Qt::AlignLeft|Qt::AlignVCenter);
-
-        QPushButton* del = new QPushButton("Supprimer");
-        del->setCursor(Qt::PointingHandCursor);
-        del->setStyleSheet("QPushButton{ color:#B14A4A; font-weight:900; padding:6px 12px; }");
-
-        QObject::connect(del, &QPushButton::clicked, this, [this, del](){
-            int row = -1;
-            for (int i=0; i<table->rowCount(); ++i) {
-                if (table->cellWidget(i,4) == del) { row = i; break; }
-            }
-            if (row < 0) return;
-
-            auto rep = QMessageBox::question(
-                this,
-                "Confirmation",
-                "Voulez-vous supprimer cet échantillon ?",
-                QMessageBox::Yes | QMessageBox::No
-                );
-            if (rep == QMessageBox::Yes) {
-                table->removeRow(row);
-            }
-        });
-
-        table->setCellWidget(r, 4, del);
-        table->setRowHeight(r, 42);
-    }
-};
-
 // ===================== Dialog: Confirm delete (design) =====================
 class ConfirmDeleteDialog : public QDialog
 {
@@ -878,7 +930,7 @@ public:
         QLabel* ic = new QLabel;
         ic->setPixmap(st->standardIcon(QStyle::SP_MessageBoxWarning).pixmap(18,18));
 
-        QLabel* t = new QLabel("Supprimer l’échantillon ?");
+        QLabel* t = new QLabel("Supprimer l’élément ?");
         QFont ft = t->font(); ft.setBold(true); ft.setPointSize(11);
         t->setFont(ft);
         t->setStyleSheet(QString("color:%1;").arg(C_BEIGE));
@@ -956,7 +1008,7 @@ public:
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
-    resize(1170, 560);
+    resize(1320, 680);
 
     QWidget* root = new QWidget(this);
     root->setObjectName("root");
@@ -1017,14 +1069,16 @@ MainWindow::MainWindow(QWidget *parent)
     rootLayout->addWidget(stack);
 
     // ==========================================================
-    // PAGE 0 : Widget 1 - Gestion des Échantillons
+    // PAGE 0 : BioSimple - Gestion des Échantillons (LIST)
     // ==========================================================
     QWidget* page1 = new QWidget;
     QVBoxLayout* p1 = new QVBoxLayout(page1);
     p1->setContentsMargins(22, 18, 22, 18);
     p1->setSpacing(14);
 
-    p1->addWidget(makeTopBar(st, "Gestion des Échantillons"));
+    ModulesBar barBioList;
+    p1->addWidget(makeHeaderBlock(st, "Gestion des Échantillons", ModuleTab::BioSimple, &barBioList));
+    connectModulesSwitch(this, stack, barBioList);
 
     QFrame* bar1 = new QFrame;
     bar1->setFixedHeight(54);
@@ -1077,10 +1131,10 @@ MainWindow::MainWindow(QWidget *parent)
 
     table->setColumnWidth(0, 36);
     table->setColumnWidth(1, 110);
-    table->setColumnWidth(2, 120);
+    table->setColumnWidth(2, 140);
     table->setColumnWidth(3, 170);
     table->setColumnWidth(4, 120);
-    table->setColumnWidth(5, 140);
+    table->setColumnWidth(5, 160);
     table->setColumnWidth(6, 150);
     table->setColumnWidth(7, 90);
 
@@ -1141,57 +1195,22 @@ MainWindow::MainWindow(QWidget *parent)
     QPushButton* btnAdd   = actionBtn("Ajouter",      "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
     QPushButton* btnEdit  = actionBtn("Modifier",     "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
     QPushButton* btnDel   = actionBtn("Supprimer",    "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
-
-    // ✅ CHANGÉ: Détails -> Statistiques (ouvre la page Statistiques)
     QPushButton* btnStats = actionBtn("Statistiques", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ComputerIcon), true);
 
     QObject::connect(btnDel, &QPushButton::clicked, this, [=](){
         int r = table->currentRow();
-
         if (r < 0) {
-            QDialog dlg(this);
-            dlg.setModal(true);
-            dlg.setWindowTitle("Information");
-            dlg.setFixedSize(420, 170);
-            dlg.setStyleSheet(QString("QDialog{ background:%1; border:1px solid %2; border-radius:14px; }")
-                                  .arg(C_PANEL_BG, C_PANEL_BR));
-
-            QVBoxLayout* L = new QVBoxLayout(&dlg);
-            L->setContentsMargins(14,14,14,14);
-            L->setSpacing(12);
-
-            QLabel* t = new QLabel("Veuillez sélectionner une ligne à supprimer.");
-            t->setStyleSheet("color: rgba(0,0,0,0.65); font-weight:900;");
-            t->setWordWrap(true);
-
-            QPushButton* ok = new QPushButton("OK");
-            ok->setCursor(Qt::PointingHandCursor);
-            ok->setStyleSheet("QPushButton{ background: rgba(10,95,88,0.45); color:white; font-weight:900; border-radius:12px; padding:10px 16px; }"
-                              "QPushButton:hover{ background: rgba(18,68,59,0.95);}");
-
-            QObject::connect(ok, &QPushButton::clicked, &dlg, &QDialog::accept);
-
-            L->addWidget(t);
-            L->addStretch(1);
-            L->addWidget(ok, 0, Qt::AlignRight);
-
-            dlg.exec();
+            QMessageBox::information(this, "Information", "Veuillez sélectionner une ligne à supprimer.");
             return;
         }
-
         auto cell = [&](int c)->QString{
             QTableWidgetItem* it = table->item(r, c);
             return it ? it->text() : "";
         };
-
         QString resume = QString("Type : %1   |   Organisme : %2   |   Stockage : %3   |   Expiration : %4")
                              .arg(cell(1), cell(2), cell(3), cell(5));
-
         ConfirmDeleteDialog confirm(style(), resume, this);
-
-        if (confirm.exec() == QDialog::Accepted) {
-            table->removeRow(r);
-        }
+        if (confirm.exec() == QDialog::Accepted) table->removeRow(r);
     });
 
     bottom1L->addWidget(btnAdd);
@@ -1224,14 +1243,16 @@ MainWindow::MainWindow(QWidget *parent)
     stack->addWidget(page1);
 
     // ==========================================================
-    // PAGE 1 : Widget 2 - Ajouter / Modifier
+    // PAGE 1 : BioSimple - Ajouter / Modifier
     // ==========================================================
     QWidget* page2 = new QWidget;
     QVBoxLayout* p2 = new QVBoxLayout(page2);
     p2->setContentsMargins(22, 18, 22, 18);
     p2->setSpacing(14);
 
-    p2->addWidget(makeTopBar(st, "Ajouter / Modifier un échantillon"));
+    ModulesBar barBioForm;
+    p2->addWidget(makeHeaderBlock(st, "Ajouter / Modifier un échantillon", ModuleTab::BioSimple, &barBioForm));
+    connectModulesSwitch(this, stack, barBioForm);
 
     QFrame* outer2 = new QFrame;
     outer2->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }")
@@ -1294,10 +1315,7 @@ MainWindow::MainWindow(QWidget *parent)
         QDateEdit* d = new QDateEdit(defDate);
         d->setCalendarPopup(true);
         d->setDisplayFormat("dd/MM/yyyy");
-        d->setStyleSheet(
-            "QDateEdit{ background: transparent; border:0;"
-            "color: rgba(54,92,245,0.95); font-weight: 900; }"
-            );
+        d->setStyleSheet("QDateEdit{ background: transparent; border:0; color: rgba(54,92,245,0.95); font-weight: 900; }");
 
         l->addWidget(cal);
         l->addWidget(lab);
@@ -1394,14 +1412,16 @@ MainWindow::MainWindow(QWidget *parent)
     stack->addWidget(page2);
 
     // ==========================================================
-    // PAGE 2 : Widget 3 - Localisation & Stockage
+    // PAGE 2 : BioSimple - Localisation & Stockage
     // ==========================================================
     QWidget* page3 = new QWidget;
     QVBoxLayout* p3 = new QVBoxLayout(page3);
     p3->setContentsMargins(22, 18, 22, 18);
     p3->setSpacing(14);
 
-    p3->addWidget(makeTopBar(st, "Localisation & Stockage"));
+    ModulesBar barBioLoc;
+    p3->addWidget(makeHeaderBlock(st, "Localisation & Stockage", ModuleTab::BioSimple, &barBioLoc));
+    connectModulesSwitch(this, stack, barBioLoc);
 
     QFrame* outer3 = new QFrame;
     outer3->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
@@ -1410,7 +1430,7 @@ MainWindow::MainWindow(QWidget *parent)
     outer3L->setSpacing(12);
 
     QFrame* left3 = softBox();
-    left3->setFixedWidth(300);
+    left3->setFixedWidth(320);
     QVBoxLayout* left3L = new QVBoxLayout(left3);
     left3L->setContentsMargins(10,10,10,10);
     left3L->setSpacing(10);
@@ -1455,8 +1475,15 @@ MainWindow::MainWindow(QWidget *parent)
     tree3->expandAll();
     tree3->setCurrentItem(tF2);
 
+    QPushButton* exportReport3 = actionBtn("Exporter le rapport",
+                                           "rgba(10,95,88,0.45)",
+                                           "rgba(255,255,255,0.92)",
+                                           st->standardIcon(QStyle::SP_DialogSaveButton),
+                                           true);
+
     left3L->addWidget(ddBox);
     left3L->addWidget(tree3, 1);
+    left3L->addWidget(exportReport3);
 
     QFrame* right3 = softBox();
     QVBoxLayout* right3L = new QVBoxLayout(right3);
@@ -1543,14 +1570,16 @@ MainWindow::MainWindow(QWidget *parent)
     stack->addWidget(page3);
 
     // ==========================================================
-    // PAGE 3 : Widget 4 - Rack + Contraintes
+    // PAGE 3 : BioSimple - Rack + Contraintes
     // ==========================================================
     QWidget* page4 = new QWidget;
     QVBoxLayout* p4 = new QVBoxLayout(page4);
     p4->setContentsMargins(22, 18, 22, 18);
     p4->setSpacing(14);
 
-    p4->addWidget(makeTopBar(st, "Localisation & Stockage"));
+    ModulesBar barBioRack;
+    p4->addWidget(makeHeaderBlock(st, "Localisation & Stockage", ModuleTab::BioSimple, &barBioRack));
+    connectModulesSwitch(this, stack, barBioRack);
 
     QFrame* outer4 = new QFrame;
     outer4->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
@@ -1559,7 +1588,7 @@ MainWindow::MainWindow(QWidget *parent)
     outer4L->setSpacing(12);
 
     QFrame* left4 = softBox();
-    left4->setFixedWidth(310);
+    left4->setFixedWidth(320);
     QVBoxLayout* left4L = new QVBoxLayout(left4);
     left4L->setContentsMargins(10,10,10,10);
     left4L->setSpacing(10);
@@ -1679,16 +1708,16 @@ MainWindow::MainWindow(QWidget *parent)
     stack->addWidget(page4);
 
     // ==========================================================
-    // PAGE 4 : STATISTIQUES (2 graphes demandés)
-    //   1) Camembert: Répartition par type d’échantillon
-    //   2) Histogramme: Nombre d’échantillons collectés par mois
+    // PAGE 4 : BioSimple - STATISTIQUES
     // ==========================================================
     QWidget* page5 = new QWidget;
     QVBoxLayout* p5 = new QVBoxLayout(page5);
     p5->setContentsMargins(22, 18, 22, 18);
     p5->setSpacing(14);
 
-    p5->addWidget(makeTopBar(st, "Statistiques"));
+    ModulesBar barBioStats;
+    p5->addWidget(makeHeaderBlock(st, "Statistiques", ModuleTab::BioSimple, &barBioStats));
+    connectModulesSwitch(this, stack, barBioStats);
 
     QFrame* outer5 = new QFrame;
     outer5->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
@@ -1696,7 +1725,6 @@ MainWindow::MainWindow(QWidget *parent)
     outer5L->setContentsMargins(12,12,12,12);
     outer5L->setSpacing(12);
 
-    // Barre d’action simple (optionnel)
     QFrame* actBar = new QFrame;
     actBar->setStyleSheet("QFrame{ background: rgba(255,255,255,0.35); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
     QHBoxLayout* actL = new QHBoxLayout(actBar);
@@ -1713,14 +1741,12 @@ MainWindow::MainWindow(QWidget *parent)
     actL->addWidget(exportStats);
     outer5L->addWidget(actBar);
 
-    // Dashboard (3 colonnes)
     QFrame* dash = new QFrame;
     dash->setStyleSheet("QFrame{ background: rgba(255,255,255,0.55); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
     QHBoxLayout* dashL = new QHBoxLayout(dash);
     dashL->setContentsMargins(12,12,12,12);
     dashL->setSpacing(12);
 
-    // --- Camembert: répartition par type ---
     QFrame* pieCard = softBox();
     QVBoxLayout* pcL = new QVBoxLayout(pieCard);
     pcL->setContentsMargins(12,12,12,12);
@@ -1730,7 +1756,6 @@ MainWindow::MainWindow(QWidget *parent)
     pieTitle->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
 
     DonutChart* pie = new DonutChart;
-    // Exemple de données (à remplacer par tes vraies stats)
     pie->setData({
         {95,  QColor("#9FBEB9"), "DNA"},
         {55,  W_GREEN,           "RNA"},
@@ -1740,7 +1765,6 @@ MainWindow::MainWindow(QWidget *parent)
     pcL->addWidget(pieTitle);
     pcL->addWidget(pie, 1);
 
-    // --- Légende (type) ---
     QFrame* legendCard = softBox();
     QVBoxLayout* lgL = new QVBoxLayout(legendCard);
     lgL->setContentsMargins(12,12,12,12);
@@ -1771,7 +1795,6 @@ MainWindow::MainWindow(QWidget *parent)
     lgL->addWidget(legendRow(W_ORANGE,         "Protéine"));
     lgL->addStretch(1);
 
-    // --- Histogramme: nombre collecté par mois ---
     QFrame* barCard = softBox();
     QVBoxLayout* bcL = new QVBoxLayout(barCard);
     bcL->setContentsMargins(12,12,12,12);
@@ -1781,7 +1804,6 @@ MainWindow::MainWindow(QWidget *parent)
     barTitle->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
 
     BarChart* bars = new BarChart;
-    // Exemple de données (12 mois). Remplace par tes vraies stats.
     bars->setData({
         {12, "Jan"}, {18, "Fév"}, {22, "Mar"}, {15, "Avr"},
         {28, "Mai"}, {20, "Juin"}, {26, "Juil"}, {19, "Août"},
@@ -1811,35 +1833,412 @@ MainWindow::MainWindow(QWidget *parent)
     p5->addWidget(bottom5);
     stack->addWidget(page5);
 
-    // ✅ Appliquer les marges adaptatives
+    // ==========================================================
+    // =====================  GESTION PROJET  ====================
+    // ==========================================================
+
+    // ==========================================================
+    // PAGE 5 : Gestion Projet - Widget 1 (LISTE)
+    // ==========================================================
+    QWidget* proj1 = new QWidget;
+    QVBoxLayout* gp1 = new QVBoxLayout(proj1);
+    gp1->setContentsMargins(22, 18, 22, 18);
+    gp1->setSpacing(14);
+
+    ModulesBar barProjList;
+    gp1->addWidget(makeHeaderBlock(st, "Gestion Projet", ModuleTab::GestionProjet, &barProjList));
+    connectModulesSwitch(this, stack, barProjList);
+
+    QFrame* pBar = new QFrame;
+    pBar->setFixedHeight(54);
+    pBar->setStyleSheet("background: rgba(255,255,255,0.22); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* pBarL = new QHBoxLayout(pBar);
+    pBarL->setContentsMargins(14, 8, 14, 8);
+    pBarL->setSpacing(10);
+
+    QLineEdit* pSearch = new QLineEdit;
+    pSearch->setPlaceholderText("Rechercher (ID, nom, statut, responsable...)");
+    pSearch->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
+
+    QComboBox* pStatut = new QComboBox;
+    pStatut->addItems({"Statut", "Planifié", "En cours", "Terminé", "En retard"});
+
+    QComboBox* pPriorite = new QComboBox;
+    pPriorite->addItems({"Priorité", "Haute", "Moyenne", "Basse"});
+
+    QPushButton* pFilters = new QPushButton(st->standardIcon(QStyle::SP_FileDialogDetailedView), "  Filtres");
+    pFilters->setCursor(Qt::PointingHandCursor);
+    pFilters->setStyleSheet(QString(R"(
+        QPushButton{
+            background:%1; color: rgba(255,255,255,0.92);
+            border:1px solid rgba(0,0,0,0.18);
+            border-radius: 12px; padding: 10px 16px; font-weight: 800;
+        }
+        QPushButton:hover{ background: %2; }
+    )").arg(C_PRIMARY, C_TOPBAR));
+
+    pBarL->addWidget(pSearch, 1);
+    pBarL->addWidget(pStatut);
+    pBarL->addWidget(pPriorite);
+    pBarL->addWidget(pFilters);
+    gp1->addWidget(pBar);
+
+    QFrame* projCard = makeCard();
+    QVBoxLayout* projCardL = new QVBoxLayout(projCard);
+    projCardL->setContentsMargins(10,10,10,10);
+
+    QTableWidget* projTable = new QTableWidget(5, 7);
+    projTable->setHorizontalHeaderLabels({"ID","Nom","Domaine","Responsable","Budget","Début","Statut"});
+    projTable->verticalHeader()->setVisible(false);
+    projTable->horizontalHeader()->setStretchLastSection(true);
+    projTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    projTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    projTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+
+    auto putP=[&](int r,int c,const QString& v){
+        QTableWidgetItem* it=new QTableWidgetItem(v);
+        it->setTextAlignment(Qt::AlignLeft|Qt::AlignVCenter);
+        projTable->setItem(r,c,it);
+    };
+
+    putP(0,0,"P-001"); putP(0,1,"Projet Vaccin");        putP(0,2,"Biotech");   putP(0,3,"Dr. Amal");   putP(0,4,"120000"); putP(0,5,"01/02/2026"); putP(0,6,"En cours");
+    putP(1,0,"P-002"); putP(1,1,"Génomique");            putP(1,2,"Recherche"); putP(1,3,"Dr. Nader");  putP(1,4,"80000");  putP(1,5,"15/01/2026"); putP(1,6,"Planifié");
+    putP(2,0,"P-003"); putP(2,1,"Culture Cellulaire");   putP(2,2,"Laboratoire");putP(2,3,"Mme. Sara");  putP(2,4,"45000");  putP(2,5,"10/12/2025"); putP(2,6,"Terminé");
+    putP(3,0,"P-004"); putP(3,1,"Essais Cliniques");     putP(3,2,"Santé");     putP(3,3,"Dr. Hichem"); putP(3,4,"200000"); putP(3,5,"05/11/2025"); putP(3,6,"En cours");
+    putP(4,0,"P-005"); putP(4,1,"Optimisation Stockage");putP(4,2,"Qualité");   putP(4,3,"M. Karim");   putP(4,4,"20000");  putP(4,5,"01/10/2025"); putP(4,6,"En retard");
+
+    for(int r=0;r<projTable->rowCount();++r) projTable->setRowHeight(r, 46);
+
+    projCardL->addWidget(projTable);
+    gp1->addWidget(projCard, 1);
+
+    QFrame* projBottom = new QFrame;
+    projBottom->setFixedHeight(64);
+    projBottom->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* projBottomL = new QHBoxLayout(projBottom);
+    projBottomL->setContentsMargins(14,10,14,10);
+    projBottomL->setSpacing(12);
+
+    QPushButton* projAdd   = actionBtn("Ajouter",      "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
+    QPushButton* projEdit  = actionBtn("Modifier",     "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
+    QPushButton* projDel   = actionBtn("Supprimer",    "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
+    QPushButton* projStatB = actionBtn("Statistiques", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ComputerIcon), true);
+
+    QObject::connect(projDel, &QPushButton::clicked, this, [=](){
+        int r = projTable->currentRow();
+        if (r < 0) {
+            QMessageBox::information(this, "Information", "Veuillez sélectionner une ligne à supprimer.");
+            return;
+        }
+        QString resume = QString("ID : %1 | Projet : %2 | Statut : %3")
+                             .arg(projTable->item(r,0)->text(),
+                                  projTable->item(r,1)->text(),
+                                  projTable->item(r,6)->text());
+        ConfirmDeleteDialog confirm(style(), resume, this);
+        if (confirm.exec() == QDialog::Accepted) projTable->removeRow(r);
+    });
+
+    projBottomL->addWidget(projAdd);
+    projBottomL->addWidget(projEdit);
+    projBottomL->addWidget(projDel);
+    projBottomL->addWidget(projStatB);
+    projBottomL->addStretch(1);
+    gp1->addWidget(projBottom);
+
+    stack->addWidget(proj1);
+
+    // ==========================================================
+    // PAGE 6 : Gestion Projet - Widget 2 (AJOUT/MODIF)
+    // ==========================================================
+    QWidget* proj2 = new QWidget;
+    QVBoxLayout* gp2 = new QVBoxLayout(proj2);
+    gp2->setContentsMargins(22, 18, 22, 18);
+    gp2->setSpacing(14);
+
+    ModulesBar barProjForm;
+    gp2->addWidget(makeHeaderBlock(st, "Ajouter / Modifier un projet", ModuleTab::GestionProjet, &barProjForm));
+    connectModulesSwitch(this, stack, barProjForm);
+
+    QFrame* outP2 = new QFrame;
+    outP2->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
+    QHBoxLayout* outP2L = new QHBoxLayout(outP2);
+    outP2L->setContentsMargins(12,12,12,12);
+    outP2L->setSpacing(12);
+
+    QFrame* p2Left = softBox();
+    p2Left->setFixedWidth(380);
+    QVBoxLayout* p2LeftL = new QVBoxLayout(p2Left);
+    p2LeftL->setContentsMargins(12,12,12,12);
+    p2LeftL->setSpacing(10);
+
+    auto projTitle = [&](const QString& t){
+        QLabel* lab = new QLabel(t);
+        lab->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+        return lab;
+    };
+
+    auto projRow = [&](QStyle::StandardPixmap sp, const QString& label, QWidget* input){
+        QFrame* r = softBox();
+        QHBoxLayout* l = new QHBoxLayout(r);
+        l->setContentsMargins(10,8,10,8);
+        l->setSpacing(10);
+
+        QToolButton* ic = new QToolButton;
+        ic->setAutoRaise(true);
+        ic->setIcon(st->standardIcon(sp));
+
+        QLabel* lab = new QLabel(label);
+        lab->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+
+        l->addWidget(ic);
+        l->addWidget(lab);
+        l->addStretch(1);
+        l->addWidget(input);
+        return r;
+    };
+
+    QLineEdit* projId = new QLineEdit;
+    projId->setPlaceholderText("P-XXX");
+    projId->setFixedWidth(160);
+
+    QLineEdit* projName = new QLineEdit;
+    projName->setPlaceholderText("Nom du projet");
+
+    QComboBox* projDomain = new QComboBox;
+    projDomain->addItems({"Domaine", "Biotech", "Recherche", "Qualité", "Santé", "Laboratoire"});
+    projDomain->setFixedWidth(200);
+
+    QComboBox* projStatus = new QComboBox;
+    projStatus->addItems({"Statut", "Planifié", "En cours", "Terminé", "En retard"});
+    projStatus->setFixedWidth(200);
+
+    p2LeftL->addWidget(projTitle("Informations"));
+    p2LeftL->addWidget(projRow(QStyle::SP_FileIcon, "ID", projId));
+    p2LeftL->addWidget(projRow(QStyle::SP_DirIcon, "Nom", projName));
+    p2LeftL->addWidget(projRow(QStyle::SP_ComputerIcon, "Domaine", projDomain));
+    p2LeftL->addWidget(projRow(QStyle::SP_MessageBoxInformation, "Statut", projStatus));
+    p2LeftL->addStretch(1);
+
+    QFrame* p2Right = softBox();
+    QVBoxLayout* p2RightL = new QVBoxLayout(p2Right);
+    p2RightL->setContentsMargins(12,12,12,12);
+    p2RightL->setSpacing(10);
+
+    QLineEdit* projOwner = new QLineEdit;
+    projOwner->setPlaceholderText("Responsable");
+
+    QSpinBox* projBudget = new QSpinBox;
+    projBudget->setRange(0, 999999999);
+    projBudget->setValue(0);
+    projBudget->setFixedWidth(180);
+    projBudget->setStyleSheet("QSpinBox{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 900; }");
+
+    QDateEdit* projStart = new QDateEdit(QDate::currentDate());
+    projStart->setCalendarPopup(true);
+    projStart->setDisplayFormat("dd/MM/yyyy");
+    projStart->setStyleSheet("QDateEdit{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 900; }");
+
+    QDateEdit* projEnd = new QDateEdit(QDate::currentDate().addDays(60));
+    projEnd->setCalendarPopup(true);
+    projEnd->setDisplayFormat("dd/MM/yyyy");
+    projEnd->setStyleSheet(projStart->styleSheet());
+
+    QComboBox* projPriority = new QComboBox;
+    projPriority->addItems({"Priorité", "Haute", "Moyenne", "Basse"});
+    projPriority->setFixedWidth(200);
+
+    p2RightL->addWidget(projTitle("Planification"));
+    p2RightL->addWidget(projRow(QStyle::SP_DirHomeIcon, "Responsable", projOwner));
+    p2RightL->addWidget(projRow(QStyle::SP_DialogApplyButton, "Budget", projBudget));
+    p2RightL->addWidget(projRow(QStyle::SP_FileDialogDetailedView, "Date début", projStart));
+    p2RightL->addWidget(projRow(QStyle::SP_FileDialogDetailedView, "Date fin", projEnd));
+    p2RightL->addWidget(projRow(QStyle::SP_ArrowUp, "Priorité", projPriority));
+    p2RightL->addStretch(1);
+
+    outP2L->addWidget(p2Left);
+    outP2L->addWidget(p2Right, 1);
+    gp2->addWidget(outP2, 1);
+
+    QFrame* p2Bottom = new QFrame;
+    p2Bottom->setFixedHeight(64);
+    p2Bottom->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* p2BottomL = new QHBoxLayout(p2Bottom);
+    p2BottomL->setContentsMargins(14,10,14,10);
+    p2BottomL->setSpacing(12);
+
+    QPushButton* projSave = actionBtn("Enregistrer", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogSaveButton), true);
+    QPushButton* projCancel = actionBtn("Annuler", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DialogCancelButton), true);
+
+    p2BottomL->addWidget(projSave);
+    p2BottomL->addWidget(projCancel);
+    p2BottomL->addStretch(1);
+
+    gp2->addWidget(p2Bottom);
+    stack->addWidget(proj2);
+
+    // ==========================================================
+    // PAGE 7 : Gestion Projet - Widget 3 (STATISTIQUES)
+    // ==========================================================
+    QWidget* proj3 = new QWidget;
+    QVBoxLayout* gp3 = new QVBoxLayout(proj3);
+    gp3->setContentsMargins(22, 18, 22, 18);
+    gp3->setSpacing(14);
+
+    ModulesBar barProjStats;
+    gp3->addWidget(makeHeaderBlock(st, "Statistiques Projet", ModuleTab::GestionProjet, &barProjStats));
+    connectModulesSwitch(this, stack, barProjStats);
+
+    QFrame* outP3 = new QFrame;
+    outP3->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
+    QVBoxLayout* outP3L = new QVBoxLayout(outP3);
+    outP3L->setContentsMargins(12,12,12,12);
+    outP3L->setSpacing(12);
+
+    QFrame* actP3 = new QFrame;
+    actP3->setStyleSheet("QFrame{ background: rgba(255,255,255,0.35); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
+    QHBoxLayout* actP3L = new QHBoxLayout(actP3);
+    actP3L->setContentsMargins(12,10,12,10);
+
+    QLabel* hp = new QLabel("Aperçu : statut & charge mensuelle");
+    hp->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+    QPushButton* exportP3 = actionBtn("Exporter", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.92)", st->standardIcon(QStyle::SP_DialogSaveButton), true);
+
+    actP3L->addWidget(hp);
+    actP3L->addStretch(1);
+    actP3L->addWidget(exportP3);
+    outP3L->addWidget(actP3);
+
+    QFrame* dashP3 = new QFrame;
+    dashP3->setStyleSheet("QFrame{ background: rgba(255,255,255,0.55); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
+    QHBoxLayout* dashP3L = new QHBoxLayout(dashP3);
+    dashP3L->setContentsMargins(12,12,12,12);
+    dashP3L->setSpacing(12);
+
+    QFrame* pieP = softBox();
+    QVBoxLayout* piePL = new QVBoxLayout(pieP);
+    piePL->setContentsMargins(12,12,12,12);
+    piePL->setSpacing(10);
+    QLabel* pt = new QLabel("Répartition des projets par statut");
+    pt->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+    DonutChart* pd = new DonutChart;
+    pd->setData({
+        {3, W_GREEN,  "En cours"},
+        {2, W_ORANGE, "Planifié"},
+        {1, W_RED,    "En retard"},
+        {2, QColor("#9FBEB9"), "Terminé"}
+    });
+    piePL->addWidget(pt);
+    piePL->addWidget(pd, 1);
+
+    QFrame* barP = softBox();
+    QVBoxLayout* barPL = new QVBoxLayout(barP);
+    barPL->setContentsMargins(12,12,12,12);
+    barPL->setSpacing(10);
+    QLabel* bt = new QLabel("Tâches / charge estimée par mois");
+    bt->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+    BarChart* bd = new BarChart;
+    bd->setData({
+        {8, "Jan"}, {12, "Fév"}, {14, "Mar"}, {10, "Avr"},
+        {18, "Mai"}, {9, "Juin"}, {16, "Juil"}, {11, "Août"},
+        {13, "Sep"}, {20, "Oct"}, {17, "Nov"}, {9, "Déc"}
+    });
+    barPL->addWidget(bt);
+    barPL->addWidget(bd, 1);
+
+    dashP3L->addWidget(pieP, 1);
+    dashP3L->addWidget(barP, 2);
+
+    outP3L->addWidget(dashP3, 1);
+
+    QFrame* p3Bottom = new QFrame;
+    p3Bottom->setFixedHeight(64);
+    p3Bottom->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+    QHBoxLayout* p3BottomL = new QHBoxLayout(p3Bottom);
+    p3BottomL->setContentsMargins(14,10,14,10);
+
+    QPushButton* p3Back = actionBtn("Retour", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ArrowBack), true);
+    p3BottomL->addWidget(p3Back);
+    p3BottomL->addStretch(1);
+
+    outP3L->addWidget(p3Bottom);
+    gp3->addWidget(outP3, 1);
+
+    stack->addWidget(proj3);
+
+    // ==========================================================
+    // ✅ Marges adaptatives (initial)
+    // ==========================================================
     p1->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
     p2->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
     p3->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
     p4->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
     p5->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
+    gp1->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
+    gp2->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
+    gp3->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
 
     // ==========================================================
-    // NAVIGATION
+    // NAVIGATION BioSimple
     // ==========================================================
-    QObject::connect(btnAdd,  &QPushButton::clicked, this, [=]{ setWindowTitle("Ajouter / Modifier un échantillon"); stack->setCurrentIndex(1); });
-    QObject::connect(btnEdit, &QPushButton::clicked, this, [=]{ setWindowTitle("Ajouter / Modifier un échantillon"); stack->setCurrentIndex(1); });
+    QObject::connect(btnAdd,  &QPushButton::clicked, this, [=]{ setWindowTitle("Ajouter / Modifier un échantillon"); stack->setCurrentIndex(BIO_FORM); });
+    QObject::connect(btnEdit, &QPushButton::clicked, this, [=]{ setWindowTitle("Ajouter / Modifier un échantillon"); stack->setCurrentIndex(BIO_FORM); });
 
-    QObject::connect(cancelBtn, &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(0); });
-    QObject::connect(saveBtn,   &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(0); });
+    QObject::connect(cancelBtn, &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(BIO_LIST); });
+    QObject::connect(saveBtn,   &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(BIO_LIST); });
 
-    QObject::connect(btnMore, &QPushButton::clicked, this, [=]{ setWindowTitle("Localisation & Stockage"); stack->setCurrentIndex(2); });
-    QObject::connect(back3,   &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(0); });
+    QObject::connect(btnMore, &QPushButton::clicked, this, [=]{ setWindowTitle("Localisation & Stockage"); stack->setCurrentIndex(BIO_LOC); });
+    QObject::connect(back3,   &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(BIO_LIST); });
 
-    QObject::connect(details3, &QPushButton::clicked, this, [=]{ setWindowTitle("Localisation & Stockage"); stack->setCurrentIndex(3); });
-    QObject::connect(back4,    &QPushButton::clicked, this, [=]{ setWindowTitle("Localisation & Stockage"); stack->setCurrentIndex(2); });
+    QObject::connect(details3, &QPushButton::clicked, this, [=]{ setWindowTitle("Localisation & Stockage"); stack->setCurrentIndex(BIO_RACK); });
+    QObject::connect(back4,    &QPushButton::clicked, this, [=]{ setWindowTitle("Localisation & Stockage"); stack->setCurrentIndex(BIO_LOC); });
 
-    // ✅ Accès aux statistiques depuis page4 + depuis le bouton du bas page1
-    QObject::connect(btnSec,   &QPushButton::clicked, this, [=]{ setWindowTitle("Statistiques"); stack->setCurrentIndex(4); });
-    QObject::connect(btnStats, &QPushButton::clicked, this, [=]{ setWindowTitle("Statistiques"); stack->setCurrentIndex(4); });
+    QObject::connect(btnSec,   &QPushButton::clicked, this, [=]{ setWindowTitle("Statistiques"); stack->setCurrentIndex(BIO_STATS); });
+    QObject::connect(btnStats, &QPushButton::clicked, this, [=]{ setWindowTitle("Statistiques"); stack->setCurrentIndex(BIO_STATS); });
+    QObject::connect(back5,    &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(BIO_LIST); });
 
-    // ✅ Retour statistiques -> gestion
-    QObject::connect(back5,  &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(0); });
+    // ==========================================================
+    // NAVIGATION Gestion Projet (3 widgets)
+    // ==========================================================
+    QObject::connect(projAdd, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Ajouter / Modifier un projet");
+        stack->setCurrentIndex(PROJ_FORM);
+    });
+    QObject::connect(projEdit, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Ajouter / Modifier un projet");
+        stack->setCurrentIndex(PROJ_FORM);
+    });
+    QObject::connect(projCancel, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Gestion Projet");
+        stack->setCurrentIndex(PROJ_LIST);
+    });
+    QObject::connect(projSave, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Gestion Projet");
+        stack->setCurrentIndex(PROJ_LIST);
+        QMessageBox::information(this, "Projet", "Enregistrement (à connecter à la base de données).");
+    });
+    QObject::connect(projStatB, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Statistiques Projet");
+        stack->setCurrentIndex(PROJ_STATS);
+    });
+    QObject::connect(p3Back, &QPushButton::clicked, this, [=](){
+        setWindowTitle("Gestion Projet");
+        stack->setCurrentIndex(PROJ_LIST);
+    });
+
+    // Exports (démo)
+    QObject::connect(exportReport3, &QPushButton::clicked, this, [=](){
+        QMessageBox::information(this, "Export", "Export rapport (à connecter à PDF/Excel).");
+    });
+    QObject::connect(export4, &QPushButton::clicked, this, [=](){
+        QMessageBox::information(this, "Export", "Export rapport (à connecter à PDF/Excel).");
+    });
+    QObject::connect(exportStats, &QPushButton::clicked, this, [=](){
+        QMessageBox::information(this, "Export", "Export statistiques BioSimple (à connecter à PDF/Excel).");
+    });
+    QObject::connect(exportP3, &QPushButton::clicked, this, [=](){
+        QMessageBox::information(this, "Export", "Export statistiques Projet (à connecter à PDF/Excel).");
+    });
 
     setWindowTitle("Gestion des Échantillons");
-    stack->setCurrentIndex(0);
+    stack->setCurrentIndex(BIO_LIST);
 }
