@@ -1,10 +1,13 @@
-#pragma once
-#include <QMainWindow>
-#include <QScrollArea>
-class QScrollArea;
+#ifndef BIOSIMPLE_H
+#define BIOSIMPLE_H
 
-class MainWindow : public QMainWindow {
+#include <QMainWindow>
+
+class MainWindow : public QMainWindow
+{
     Q_OBJECT
 public:
     explicit MainWindow(QWidget *parent = nullptr);
 };
+
+#endif
