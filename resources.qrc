@@ -1,5 +1,6 @@
 <RCC>
     <qresource prefix="/image">
+        <file>background2.png</file>
         <file>smartvision.png</file>
     </qresource>
 </RCC>
