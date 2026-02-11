@@ -2946,7 +2946,7 @@ MainWindow::MainWindow(QWidget *parent)
     pBarL->setSpacing(10);
 
     QLineEdit* pSearch = new QLineEdit;
-    pSearch->setPlaceholderText("Rechercher (ID, nom, statut, responsable...)");
+    pSearch->setPlaceholderText("Rechercher (nom, statut, responsable...)");
     pSearch->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
 
     QComboBox* pStatut = new QComboBox;
@@ -2976,8 +2976,8 @@ MainWindow::MainWindow(QWidget *parent)
     QVBoxLayout* projCardL = new QVBoxLayout(projCard);
     projCardL->setContentsMargins(10,10,10,10);
 
-    QTableWidget* projTable = new QTableWidget(5, 7);
-    projTable->setHorizontalHeaderLabels({"ID","Nom","Domaine","Responsable","Budget","Début","Statut"});
+    QTableWidget* projTable = new QTableWidget(5, 6);
+    projTable->setHorizontalHeaderLabels({"Nom","Domaine","Responsable","Budget","Début","Statut"});
     projTable->verticalHeader()->setVisible(false);
     projTable->horizontalHeader()->setStretchLastSection(true);
     projTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -2990,11 +2990,11 @@ MainWindow::MainWindow(QWidget *parent)
         projTable->setItem(r,c,it);
     };
 
-    putP(0,0,"P-001"); putP(0,1,"Projet Vaccin");        putP(0,2,"Biotech");   putP(0,3,"Dr. Amal");   putP(0,4,"120000"); putP(0,5,"01/02/2026"); putP(0,6,"En cours");
-    putP(1,0,"P-002"); putP(1,1,"Génomique");            putP(1,2,"Recherche"); putP(1,3,"Dr. Nader");  putP(1,4,"80000");  putP(1,5,"15/01/2026"); putP(1,6,"Planifié");
-    putP(2,0,"P-003"); putP(2,1,"Culture Cellulaire");   putP(2,2,"Laboratoire");putP(2,3,"Mme. Sara");  putP(2,4,"45000");  putP(2,5,"10/12/2025"); putP(2,6,"Terminé");
-    putP(3,0,"P-004"); putP(3,1,"Essais Cliniques");     putP(3,2,"Santé");     putP(3,3,"Dr. Hichem"); putP(3,4,"200000"); putP(3,5,"05/11/2025"); putP(3,6,"En cours");
-    putP(4,0,"P-005"); putP(4,1,"Optimisation Stockage");putP(4,2,"Qualité");   putP(4,3,"M. Karim");   putP(4,4,"20000");  putP(4,5,"01/10/2025"); putP(4,6,"En retard");
+    putP(0,0,"Projet Vaccin");         putP(0,1,"Biotech");     putP(0,2,"Dr. Amal");   putP(0,3,"120000"); putP(0,4,"01/02/2026"); putP(0,5,"En cours");
+    putP(1,0,"Génomique");             putP(1,1,"Recherche");   putP(1,2,"Dr. Nader");  putP(1,3,"80000");  putP(1,4,"15/01/2026"); putP(1,5,"Planifié");
+    putP(2,0,"Culture Cellulaire");    putP(2,1,"Laboratoire"); putP(2,2,"Mme. Sara");  putP(2,3,"45000");  putP(2,4,"10/12/2025"); putP(2,5,"Terminé");
+    putP(3,0,"Essais Cliniques");      putP(3,1,"Santé");       putP(3,2,"Dr. Hichem"); putP(3,3,"200000"); putP(3,4,"05/11/2025"); putP(3,5,"En cours");
+    putP(4,0,"Optimisation Stockage"); putP(4,1,"Qualité");     putP(4,2,"M. Karim");   putP(4,3,"20000");  putP(4,4,"01/10/2025"); putP(4,5,"En retard");
 
     for(int r=0;r<projTable->rowCount();++r) projTable->setRowHeight(r, 46);
 
@@ -3020,10 +3020,10 @@ MainWindow::MainWindow(QWidget *parent)
             QMessageBox::information(this, "Information", "Veuillez sélectionner une ligne à supprimer.");
             return;
         }
-        QString resume = QString("ID : %1 | Projet : %2 | Statut : %3")
-                             .arg(projTable->item(r,0)->text(),
-                                  projTable->item(r,1)->text(),
-                                  projTable->item(r,6)->text());
+           QString resume = QString("Projet : %1 | Responsable : %2 | Statut : %3")
+                            .arg(projTable->item(r,0)->text(),
+                                projTable->item(r,2)->text(),
+                                projTable->item(r,5)->text());
         ConfirmDeleteDialog confirm(style(), resume, this);
         if (confirm.exec() == QDialog::Accepted) projTable->removeRow(r);
     });
@@ -3279,7 +3279,7 @@ MainWindow::MainWindow(QWidget *parent)
     eBarL->setSpacing(10);
 
     QLineEdit* eSearch = new QLineEdit;
-    eSearch->setPlaceholderText("Rechercher (ID, expérience, protocole, responsable, statut...)");
+    eSearch->setPlaceholderText("Rechercher (expérience, protocole, responsable, statut...)");
     eSearch->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
 
     QComboBox* eStatut = new QComboBox;
@@ -3309,8 +3309,8 @@ MainWindow::MainWindow(QWidget *parent)
     QVBoxLayout* expCardL = new QVBoxLayout(expCard);
     expCardL->setContentsMargins(10,10,10,10);
 
-    QTableWidget* expTable = new QTableWidget(6, 7);
-    expTable->setHorizontalHeaderLabels({"ID", "Expérience", "Protocole", "Responsable", "Date", "Statut", "BSL"});
+    QTableWidget* expTable = new QTableWidget(6, 6);
+    expTable->setHorizontalHeaderLabels({"Expérience", "Protocole", "Responsable", "Date", "Statut", "BSL"});
     expTable->verticalHeader()->setVisible(false);
     expTable->horizontalHeader()->setStretchLastSection(true);
     expTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -3323,12 +3323,12 @@ MainWindow::MainWindow(QWidget *parent)
         expTable->setItem(r,c,it);
     };
 
-    putE(0,0,"E-001"); putE(0,1,"Culture cellulaire"); putE(0,2,"PROTO-CC-01"); putE(0,3,"Dr. Amal");  putE(0,4,"07/02/2026"); putE(0,5,"En cours");   putE(0,6,"BSL-2");
-    putE(1,0,"E-002"); putE(1,1,"Extraction ADN");     putE(1,2,"PROTO-DNA-03");putE(1,3,"Mme. Sara"); putE(1,4,"05/02/2026"); putE(1,5,"Terminée"); putE(1,6,"BSL-1");
-    putE(2,0,"E-003"); putE(2,1,"PCR temps réel");     putE(2,2,"PROTO-PCR-07");putE(2,3,"Dr. Nader"); putE(2,4,"10/02/2026"); putE(2,5,"Planifiée");putE(2,6,"BSL-2");
-    putE(3,0,"E-004"); putE(3,1,"Séquençage");         putE(3,2,"PROTO-SEQ-02");putE(3,3,"Dr. Hichem");putE(3,4,"28/01/2026"); putE(3,5,"Suspendue");putE(3,6,"BSL-3");
-    putE(4,0,"E-005"); putE(4,1,"Dosage protéique");   putE(4,2,"PROTO-PROT-01");putE(4,3,"M. Karim"); putE(4,4,"02/02/2026"); putE(4,5,"En cours");  putE(4,6,"BSL-1");
-    putE(5,0,"E-006"); putE(5,1,"Stérilité");          putE(5,2,"PROTO-STER-04");putE(5,3,"Dr. Amal");  putE(5,4,"01/02/2026"); putE(5,5,"Terminée"); putE(5,6,"BSL-2");
+    putE(0,0,"Culture cellulaire"); putE(0,1,"PROTO-CC-01");  putE(0,2,"Dr. Amal");  putE(0,3,"07/02/2026"); putE(0,4,"En cours");   putE(0,5,"BSL-2");
+    putE(1,0,"Extraction ADN");     putE(1,1,"PROTO-DNA-03"); putE(1,2,"Mme. Sara"); putE(1,3,"05/02/2026"); putE(1,4,"Terminée");   putE(1,5,"BSL-1");
+    putE(2,0,"PCR temps réel");     putE(2,1,"PROTO-PCR-07"); putE(2,2,"Dr. Nader"); putE(2,3,"10/02/2026"); putE(2,4,"Planifiée");  putE(2,5,"BSL-2");
+    putE(3,0,"Séquençage");         putE(3,1,"PROTO-SEQ-02"); putE(3,2,"Dr. Hichem");putE(3,3,"28/01/2026"); putE(3,4,"Suspendue");  putE(3,5,"BSL-3");
+    putE(4,0,"Dosage protéique");   putE(4,1,"PROTO-PROT-01");putE(4,2,"M. Karim");  putE(4,3,"02/02/2026"); putE(4,4,"En cours");   putE(4,5,"BSL-1");
+    putE(5,0,"Stérilité");          putE(5,1,"PROTO-STER-04");putE(5,2,"Dr. Amal");   putE(5,3,"01/02/2026"); putE(5,4,"Terminée");   putE(5,5,"BSL-2");
 
     for(int r=0;r<expTable->rowCount();++r) expTable->setRowHeight(r, 46);
 
@@ -3354,8 +3354,10 @@ MainWindow::MainWindow(QWidget *parent)
             QMessageBox::information(this, "Information", "Veuillez sélectionner une ligne à supprimer.");
             return;
         }
-        QString resume = QString("ID : %1 | Expérience : %2 | Protocole : %3")
-                             .arg(expTable->item(r,0)->text(), expTable->item(r,1)->text(), expTable->item(r,2)->text());
+        QString resume = QString("Expérience : %1 | Protocole : %2 | Responsable : %3")
+                     .arg(expTable->item(r,0)->text(),
+                      expTable->item(r,1)->text(),
+                      expTable->item(r,2)->text());
         ConfirmDeleteDialog confirm(style(), resume, this);
         if (confirm.exec() == QDialog::Accepted) expTable->removeRow(r);
     });
@@ -3652,8 +3654,8 @@ QPushButton:hover{ background: %2; }
     QVBoxLayout* pubCardL = new QVBoxLayout(pubCard);
     pubCardL->setContentsMargins(10,10,10,10);
 
-    QTableWidget* pubTable = new QTableWidget(6, 7);
-    pubTable->setHorizontalHeaderLabels({"ID","Titre","Auteurs","Journal/Conf.","Année","DOI","Statut"});
+    QTableWidget* pubTable = new QTableWidget(6, 6);
+    pubTable->setHorizontalHeaderLabels({"Titre","Auteurs","Journal/Conf.","Année","DOI","Statut"});
     pubTable->verticalHeader()->setVisible(false);
     pubTable->horizontalHeader()->setStretchLastSection(true);
     pubTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -3666,12 +3668,12 @@ QPushButton:hover{ background: %2; }
         pubTable->setItem(r,c,it);
     };
 
-    putPUB(0,0,"PUB-001"); putPUB(0,1,"Analyse génomique des souches"); putPUB(0,2,"A. Ben Ali; S. Trabelsi"); putPUB(0,3,"Nature Methods"); putPUB(0,4,"2026"); putPUB(0,5,"10.1000/xyz001"); putPUB(0,6,"Soumise");
-    putPUB(1,0,"PUB-002"); putPUB(1,1,"PCR temps réel : optimisation"); putPUB(1,2,"H. Chaachou; M. Karim"); putPUB(1,3,"BioTech Conf"); putPUB(1,4,"2025"); putPUB(1,5,"10.1000/xyz002"); putPUB(1,6,"Acceptée");
-    putPUB(2,0,"PUB-003"); putPUB(2,1,"Culture cellulaire avancée"); putPUB(2,2,"Dr. Amal; Dr. Nader"); putPUB(2,3,"Cell Reports"); putPUB(2,4,"2025"); putPUB(2,5,"10.1000/xyz003"); putPUB(2,6,"Publiée");
-    putPUB(3,0,"PUB-004"); putPUB(3,1,"Traçabilité scientifique en labo"); putPUB(3,2,"S. Sara; H. Hichem"); putPUB(3,3,"Lab Quality"); putPUB(3,4,"2024"); putPUB(3,5,"10.1000/xyz004"); putPUB(3,6,"Brouillon");
-    putPUB(4,0,"PUB-005"); putPUB(4,1,"Séquençage : protocole comparatif"); putPUB(4,2,"A. Ben Ali; K. Yassmine"); putPUB(4,3,"Genomics Journal"); putPUB(4,4,"2024"); putPUB(4,5,"10.1000/xyz005"); putPUB(4,6,"Soumise");
-    putPUB(5,0,"PUB-006"); putPUB(5,1,"Dosage protéique : étude"); putPUB(5,2,"M. Karim; Dr. Amal"); putPUB(5,3,"Protein Conf"); putPUB(5,4,"2023"); putPUB(5,5,"10.1000/xyz006"); putPUB(5,6,"Rejetée");
+    putPUB(0,0,"Analyse génomique des souches"); putPUB(0,1,"A. Ben Ali; S. Trabelsi"); putPUB(0,2,"Nature Methods"); putPUB(0,3,"2026"); putPUB(0,4,"10.1000/xyz001"); putPUB(0,5,"Soumise");
+    putPUB(1,0,"PCR temps réel : optimisation"); putPUB(1,1,"H. Chaachou; M. Karim"); putPUB(1,2,"BioTech Conf");   putPUB(1,3,"2025"); putPUB(1,4,"10.1000/xyz002"); putPUB(1,5,"Acceptée");
+    putPUB(2,0,"Culture cellulaire avancée");    putPUB(2,1,"Dr. Amal; Dr. Nader");   putPUB(2,2,"Cell Reports");  putPUB(2,3,"2025"); putPUB(2,4,"10.1000/xyz003"); putPUB(2,5,"Publiée");
+    putPUB(3,0,"Traçabilité scientifique en labo"); putPUB(3,1,"S. Sara; H. Hichem"); putPUB(3,2,"Lab Quality"); putPUB(3,3,"2024"); putPUB(3,4,"10.1000/xyz004"); putPUB(3,5,"Brouillon");
+    putPUB(4,0,"Séquençage : protocole comparatif"); putPUB(4,1,"A. Ben Ali; K. Yassmine"); putPUB(4,2,"Genomics Journal"); putPUB(4,3,"2024"); putPUB(4,4,"10.1000/xyz005"); putPUB(4,5,"Soumise");
+    putPUB(5,0,"Dosage protéique : étude");          putPUB(5,1,"M. Karim; Dr. Amal");     putPUB(5,2,"Protein Conf");   putPUB(5,3,"2023"); putPUB(5,4,"10.1000/xyz006"); putPUB(5,5,"Rejetée");
 
     for(int r=0;r<pubTable->rowCount();++r) pubTable->setRowHeight(r, 46);
 
@@ -3698,10 +3700,10 @@ QPushButton:hover{ background: %2; }
             QMessageBox::information(this, "Information", "Veuillez sélectionner une publication à supprimer.");
             return;
         }
-        QString resume = QString("ID : %1 | Titre : %2 | Année : %3")
-                             .arg(pubTable->item(r,0)->text(),
-                                  pubTable->item(r,1)->text(),
-                                  pubTable->item(r,4)->text());
+           QString resume = QString("Titre : %1 | Année : %2 | Statut : %3")
+                            .arg(pubTable->item(r,0)->text(),
+                                pubTable->item(r,3)->text(),
+                                pubTable->item(r,5)->text());
         ConfirmDeleteDialog confirm(style(), resume, this);
         if (confirm.exec() == QDialog::Accepted) pubTable->removeRow(r);
     });
@@ -3959,7 +3961,7 @@ QPushButton:hover{ background: %2; }
     eqBarL->setSpacing(10);
 
     QLineEdit* eqSearch = new QLineEdit;
-    eqSearch->setPlaceholderText("Rechercher (ID, nom, fabricant, modèle...)");
+    eqSearch->setPlaceholderText("Rechercher (nom, fabricant, modèle...)");
     eqSearch->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
 
     QComboBox* cbEquipType = new QComboBox;
@@ -3993,8 +3995,8 @@ QPushButton:hover{ background: %2; }
     QVBoxLayout* eqCardL = new QVBoxLayout(eqCard);
     eqCardL->setContentsMargins(10,10,10,10);
 
-    QTableWidget* eqTable = new QTableWidget(5, 10);
-    eqTable->setHorizontalHeaderLabels({"", "ID", "Nom", "Fabricant", "Modèle",
+    QTableWidget* eqTable = new QTableWidget(5, 9);
+    eqTable->setHorizontalHeaderLabels({"", "Nom", "Fabricant", "Modèle",
                                          "Localisation", "Date achat", "Prochaine maintenance", "Statut", "Calibration"});
     eqTable->verticalHeader()->setVisible(false);
     eqTable->setShowGrid(true);
@@ -4004,19 +4006,19 @@ QPushButton:hover{ background: %2; }
     eqTable->setSelectionMode(QAbstractItemView::SingleSelection);
     eqTable->horizontalHeader()->setStretchLastSection(true);
     eqTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    eqTable->setItemDelegateForColumn(8, new StatusBadgeDelegate(eqTable));
+    eqTable->setItemDelegateForColumn(7, new StatusBadgeDelegate(eqTable));
 
     eqTable->setColumnWidth(0, 36);
-    eqTable->setColumnWidth(1, 90);
-    eqTable->setColumnWidth(2, 150);
-    eqTable->setColumnWidth(3, 130);
+    eqTable->setColumnWidth(1, 150);
+    eqTable->setColumnWidth(2, 130);
+    eqTable->setColumnWidth(3, 110);
     eqTable->setColumnWidth(4, 110);
-    eqTable->setColumnWidth(5, 110);
-    eqTable->setColumnWidth(6, 120);
-    eqTable->setColumnWidth(7, 150);
-    eqTable->setColumnWidth(8, 140);
+    eqTable->setColumnWidth(5, 120);
+    eqTable->setColumnWidth(6, 150);
+    eqTable->setColumnWidth(7, 140);
+    eqTable->setColumnWidth(8, 120);
 
-    auto setEqRow=[&](int r, const QString& id, const QString& name,
+    auto setEqRow=[&](int r, const QString& name,
                       const QString& manufacturer, const QString& model, const QString& location,
                       const QString& purchaseDate, const QString& nextMaint, EquipmentStatus stt,
                       const QString& calibDate)
@@ -4032,27 +4034,26 @@ QPushButton:hover{ background: %2; }
             return it;
         };
 
-        eqTable->setItem(r, 1, mk(id));
-        eqTable->setItem(r, 2, mk(name));
-        eqTable->setItem(r, 3, mk(manufacturer));
-        eqTable->setItem(r, 4, mk(model));
-        eqTable->setItem(r, 5, mk(location));
-        eqTable->setItem(r, 6, mk(purchaseDate));
-        eqTable->setItem(r, 7, mk(nextMaint));
+        eqTable->setItem(r, 1, mk(name));
+        eqTable->setItem(r, 2, mk(manufacturer));
+        eqTable->setItem(r, 3, mk(model));
+        eqTable->setItem(r, 4, mk(location));
+        eqTable->setItem(r, 5, mk(purchaseDate));
+        eqTable->setItem(r, 6, mk(nextMaint));
 
         QTableWidgetItem* badge = new QTableWidgetItem;
         badge->setData(Qt::UserRole, (int)stt);
-        eqTable->setItem(r, 8, badge);
+        eqTable->setItem(r, 7, badge);
 
-        eqTable->setItem(r, 9, mk(calibDate));
+        eqTable->setItem(r, 8, mk(calibDate));
         eqTable->setRowHeight(r, 46);
     };
 
-    setEqRow(0, "EQ-001", "PCR Machine",   "Thermo Fisher", "TX-500",  "Lab 101", "15/01/2023", "15/03/2026", EquipmentStatus::Available, "15/06/2026");
-    setEqRow(1, "EQ-002", "Centrifugeuse", "Eppendorf",     "5424R",   "Lab 102", "20/03/2023", "20/02/2026", EquipmentStatus::InUse, "20/05/2026");
-    setEqRow(2, "EQ-003", "Microscope",    "Zeiss",         "AX-10",   "Lab 101", "10/06/2022", "10/02/2026", EquipmentStatus::UnderMaintenance, "10/04/2026");
-    setEqRow(3, "EQ-004", "Incubateur",    "Thermo Fisher", "HI-3000", "Lab 201", "05/09/2023", "05/03/2026", EquipmentStatus::Available, "05/09/2026");
-    setEqRow(4, "EQ-005", "PCR Machine",   "Bio-Rad",       "PCR-200", "Lab 103", "12/11/2021", "12/01/2026", EquipmentStatus::OutOfOrder, "12/01/2026");
+    setEqRow(0, "PCR Machine",   "Thermo Fisher", "TX-500",  "Lab 101", "15/01/2023", "15/03/2026", EquipmentStatus::Available, "15/06/2026");
+    setEqRow(1, "Centrifugeuse", "Eppendorf",     "5424R",   "Lab 102", "20/03/2023", "20/02/2026", EquipmentStatus::InUse, "20/05/2026");
+    setEqRow(2, "Microscope",    "Zeiss",         "AX-10",   "Lab 101", "10/06/2022", "10/02/2026", EquipmentStatus::UnderMaintenance, "10/04/2026");
+    setEqRow(3, "Incubateur",    "Thermo Fisher", "HI-3000", "Lab 201", "05/09/2023", "05/03/2026", EquipmentStatus::Available, "05/09/2026");
+    setEqRow(4, "PCR Machine",   "Bio-Rad",       "PCR-200", "Lab 103", "12/11/2021", "12/01/2026", EquipmentStatus::OutOfOrder, "12/01/2026");
 
     eqCardL->addWidget(eqTable);
     eq1->addWidget(eqCard, 1);
@@ -4075,10 +4076,10 @@ QPushButton:hover{ background: %2; }
             QMessageBox::information(this, "Information", "Veuillez sélectionner un équipement à supprimer.");
             return;
         }
-        QString resume = QString("ID : %1 | Équipement : %2 | Statut : %3")
-                             .arg(eqTable->item(r,1)->text(),
-                                  eqTable->item(r,2)->text(),
-                                  equipmentStatusText(static_cast<EquipmentStatus>(eqTable->item(r,8)->data(Qt::UserRole).toInt())));
+           QString resume = QString("Équipement : %1 | Localisation : %2 | Statut : %3")
+                            .arg(eqTable->item(r,1)->text(),
+                                eqTable->item(r,4)->text(),
+                                equipmentStatusText(static_cast<EquipmentStatus>(eqTable->item(r,7)->data(Qt::UserRole).toInt())));
         ConfirmDeleteDialog confirm(style(), resume, this);
         if (confirm.exec() == QDialog::Accepted) eqTable->removeRow(r);
     });
@@ -4849,8 +4850,8 @@ QPushButton:hover{ background: %2; }
     QVBoxLayout* empCardL = new QVBoxLayout(empCard);
     empCardL->setContentsMargins(10,10,10,10);
 
-    QTableWidget* empTable = new QTableWidget(6, 12);
-    empTable->setHorizontalHeaderLabels({"", "Employe ID", "CIN", "Nom", "Prenom", "Role", "Specialisation", "Qualification", "Publications", "Temps", "Laboratoire", "Projet"});
+    QTableWidget* empTable = new QTableWidget(6, 11);
+    empTable->setHorizontalHeaderLabels({"", "CIN", "Nom", "Prenom", "Role", "Specialisation", "Qualification", "Publications", "Temps", "Laboratoire", "Projet"});
     empTable->verticalHeader()->setVisible(false);
     empTable->setShowGrid(true);
     empTable->setAlternatingRowColors(true);
@@ -4859,22 +4860,21 @@ QPushButton:hover{ background: %2; }
     empTable->setSelectionMode(QAbstractItemView::SingleSelection);
     empTable->horizontalHeader()->setStretchLastSection(true);
     empTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    empTable->setItemDelegateForColumn(9, new EmployeeBadgeDelegate(empTable));
+    empTable->setItemDelegateForColumn(8, new EmployeeBadgeDelegate(empTable));
 
     empTable->setColumnWidth(0, 36);
-    empTable->setColumnWidth(1, 100);
-    empTable->setColumnWidth(2, 110);
+    empTable->setColumnWidth(1, 110);
+    empTable->setColumnWidth(2, 120);
     empTable->setColumnWidth(3, 120);
     empTable->setColumnWidth(4, 120);
-    empTable->setColumnWidth(5, 120);
+    empTable->setColumnWidth(5, 140);
     empTable->setColumnWidth(6, 140);
-    empTable->setColumnWidth(7, 140);
-    empTable->setColumnWidth(8, 110);
-    empTable->setColumnWidth(9, 120);
-    empTable->setColumnWidth(10, 110);
-    empTable->setColumnWidth(11, 140);
+    empTable->setColumnWidth(7, 110);
+    empTable->setColumnWidth(8, 120);
+    empTable->setColumnWidth(9, 110);
+    empTable->setColumnWidth(10, 140);
 
-    auto setEmpRow=[&](int r, const QString& empId, const QString& cin,
+    auto setEmpRow=[&](int r, const QString& cin,
                        const QString& nom, const QString& prenom,
                        const QString& role, const QString& spec,
                        const QString& qualif, const QString& pubs,
@@ -4891,33 +4891,32 @@ QPushButton:hover{ background: %2; }
             return it;
         };
 
-        empTable->setItem(r, 1, mk(empId));
-        empTable->setItem(r, 2, mk(cin));
-        empTable->setItem(r, 3, mk(nom));
-        empTable->setItem(r, 4, mk(prenom));
-        empTable->setItem(r, 5, mk(role));
-        empTable->setItem(r, 6, mk(spec));
-        empTable->setItem(r, 7, mk(qualif));
+        empTable->setItem(r, 1, mk(cin));
+        empTable->setItem(r, 2, mk(nom));
+        empTable->setItem(r, 3, mk(prenom));
+        empTable->setItem(r, 4, mk(role));
+        empTable->setItem(r, 5, mk(spec));
+        empTable->setItem(r, 6, mk(qualif));
         QTableWidgetItem* p = mk(pubs);
         p->setTextAlignment(Qt::AlignRight|Qt::AlignVCenter);
-        empTable->setItem(r, 8, p);
+        empTable->setItem(r, 7, p);
 
         QTableWidgetItem* badge = new QTableWidgetItem;
         badge->setData(Qt::UserRole, (int)ft);
-        empTable->setItem(r, 9, badge);
+        empTable->setItem(r, 8, badge);
 
-        empTable->setItem(r,10, mk(lab));
-        empTable->setItem(r,11, mk(proj));
+        empTable->setItem(r, 9, mk(lab));
+        empTable->setItem(r,10, mk(proj));
 
         empTable->setRowHeight(r, 46);
     };
 
-    setEmpRow(0, "E001", "AA123456", "Ali", "Ben Salem", "Chercheur", "Biomol", "PhD",  "25", FTStatus::FullTime, "Lab A", "Projet GENOME");
-    setEmpRow(1, "E002", "BB654321", "Sara", "Bouaziz", "Technicien", "Chimie",  "BSc",  "5",  FTStatus::PartTime, "Lab B", "-");
-    setEmpRow(2, "E003", "CC998877", "Youssef", "K.",    "Chercheur", "Bioinfo", "PhD",  "12", FTStatus::Contract, "Lab C", "Projet AI-BIO");
-    setEmpRow(3, "E004", "DD112233", "Meriem", "H.",     "Technicien","General", "BTS",  "2",  FTStatus::FullTime, "Lab A", "-");
-    setEmpRow(4, "E005", "EE667788", "Omar",   "A.",     "Chercheur", "Biomol",  "PhD",  "40", FTStatus::OnLeave,  "Lab B", "Projet PROTEO");
-    setEmpRow(5, "E006", "FF334455", "Nada",   "B.",     "Chercheur", "Chimie",  "MSc",  "10", FTStatus::FullTime, "Lab C", "Projet MATERIA");
+    setEmpRow(0, "AA123456", "Ali", "Ben Salem", "Chercheur", "Biomol", "PhD",  "25", FTStatus::FullTime, "Lab A", "Projet GENOME");
+    setEmpRow(1, "BB654321", "Sara", "Bouaziz", "Technicien", "Chimie",  "BSc",  "5",  FTStatus::PartTime, "Lab B", "-");
+    setEmpRow(2, "CC998877", "Youssef", "K.",    "Chercheur", "Bioinfo", "PhD",  "12", FTStatus::Contract, "Lab C", "Projet AI-BIO");
+    setEmpRow(3, "DD112233", "Meriem", "H.",     "Technicien","General", "BTS",  "2",  FTStatus::FullTime, "Lab A", "-");
+    setEmpRow(4, "EE667788", "Omar",   "A.",     "Chercheur", "Biomol",  "PhD",  "40", FTStatus::OnLeave,  "Lab B", "Projet PROTEO");
+    setEmpRow(5, "FF334455", "Nada",   "B.",     "Chercheur", "Chimie",  "MSc",  "10", FTStatus::FullTime, "Lab C", "Projet MATERIA");
 
     empCardL->addWidget(empTable);
     emp1->addWidget(empCard, 1);
@@ -5541,8 +5540,8 @@ QPushButton:hover{ background: %2; }
         int total = empTable->rowCount();
 
         for (int r=0; r<empTable->rowCount(); ++r) {
-            const QString role = empTable->item(r, 5)->text();
-            const QString spec = empTable->item(r, 6)->text();
+            const QString role = empTable->item(r, 4)->text();
+            const QString spec = empTable->item(r, 5)->text();
             roleCount[role] += 1;
             specCount[spec] += 1;
         }
@@ -5650,12 +5649,12 @@ QPushButton:hover{ background: %2; }
             QMessageBox::information(this, "Information", "Sélectionnez une publication.");
             return false;
         }
-        pubDetTitle->setText(pubTable->item(r,1)->text());
-        pubDetAuthors->setText(pubTable->item(r,2)->text());
-        pubDetJournal->setText(pubTable->item(r,3)->text());
-        pubDetYear->setText(pubTable->item(r,4)->text());
-        pubDetDoi->setText(pubTable->item(r,5)->text());
-        pubDetStatus->setText(pubTable->item(r,6)->text());
+        pubDetTitle->setText(pubTable->item(r,0)->text());
+        pubDetAuthors->setText(pubTable->item(r,1)->text());
+        pubDetJournal->setText(pubTable->item(r,2)->text());
+        pubDetYear->setText(pubTable->item(r,3)->text());
+        pubDetDoi->setText(pubTable->item(r,4)->text());
+        pubDetStatus->setText(pubTable->item(r,5)->text());
         pubDetAbstract->setText("Résumé non renseigné.");
         return true;
     };
@@ -5683,7 +5682,6 @@ QPushButton:hover{ background: %2; }
     expTitleFont.setBold(true);
     expDetTitle->setFont(expTitleFont);
 
-    QLabel* expDetId = nullptr;
     QLabel* expDetProto = nullptr;
     QLabel* expDetResp = nullptr;
     QLabel* expDetDate = nullptr;
@@ -5706,7 +5704,6 @@ QPushButton:hover{ background: %2; }
     };
 
     expDetailsL->addWidget(expDetTitle);
-    expDetailsL->addWidget(expDetailRow("ID", expDetId));
     expDetailsL->addWidget(expDetailRow("Protocole", expDetProto));
     expDetailsL->addWidget(expDetailRow("Responsable", expDetResp));
     expDetailsL->addWidget(expDetailRow("Date", expDetDate));
@@ -5733,13 +5730,12 @@ QPushButton:hover{ background: %2; }
             QMessageBox::information(this, "Information", "Sélectionnez une expérience.");
             return false;
         }
-        expDetTitle->setText(expTable->item(r,1)->text());
-        expDetId->setText(expTable->item(r,0)->text());
-        expDetProto->setText(expTable->item(r,2)->text());
-        expDetResp->setText(expTable->item(r,3)->text());
-        expDetDate->setText(expTable->item(r,4)->text());
-        expDetStatus->setText(expTable->item(r,5)->text());
-        expDetBsl->setText(expTable->item(r,6)->text());
+        expDetTitle->setText(expTable->item(r,0)->text());
+        expDetProto->setText(expTable->item(r,1)->text());
+        expDetResp->setText(expTable->item(r,2)->text());
+        expDetDate->setText(expTable->item(r,3)->text());
+        expDetStatus->setText(expTable->item(r,4)->text());
+        expDetBsl->setText(expTable->item(r,5)->text());
         return true;
     };
 
@@ -5766,7 +5762,6 @@ QPushButton:hover{ background: %2; }
     projTitleFont.setBold(true);
     projDetTitle->setFont(projTitleFont);
 
-    QLabel* projDetId = nullptr;
     QLabel* projDetDomain = nullptr;
     QLabel* projDetOwner = nullptr;
     QLabel* projDetBudget = nullptr;
@@ -5789,7 +5784,6 @@ QPushButton:hover{ background: %2; }
     };
 
     projDetailsL->addWidget(projDetTitle);
-    projDetailsL->addWidget(projDetailRow("ID", projDetId));
     projDetailsL->addWidget(projDetailRow("Domaine", projDetDomain));
     projDetailsL->addWidget(projDetailRow("Responsable", projDetOwner));
     projDetailsL->addWidget(projDetailRow("Budget", projDetBudget));
@@ -5816,13 +5810,12 @@ QPushButton:hover{ background: %2; }
             QMessageBox::information(this, "Information", "Sélectionnez un projet.");
             return false;
         }
-        projDetTitle->setText(projTable->item(r,1)->text());
-        projDetId->setText(projTable->item(r,0)->text());
-        projDetDomain->setText(projTable->item(r,2)->text());
-        projDetOwner->setText(projTable->item(r,3)->text());
-        projDetBudget->setText(projTable->item(r,4)->text());
-        projDetStart->setText(projTable->item(r,5)->text());
-        projDetStatus->setText(projTable->item(r,6)->text());
+        projDetTitle->setText(projTable->item(r,0)->text());
+        projDetDomain->setText(projTable->item(r,1)->text());
+        projDetOwner->setText(projTable->item(r,2)->text());
+        projDetBudget->setText(projTable->item(r,3)->text());
+        projDetStart->setText(projTable->item(r,4)->text());
+        projDetStatus->setText(projTable->item(r,5)->text());
         return true;
     };
     // ==========================================================
@@ -6063,10 +6056,10 @@ QPushButton:hover{ background: %2; }
             QMessageBox::information(this, "Suppression", "Selectionnez un employe dans la liste.");
             return;
         }
-        QString resume = QString("ID : %1 | Nom : %2 | Role : %3")
-                             .arg(empTable->item(r,1)->text(),
-                                  empTable->item(r,3)->text(),
-                                  empTable->item(r,5)->text());
+           QString resume = QString("CIN : %1 | Nom : %2 | Role : %3")
+                            .arg(empTable->item(r,1)->text(),
+                                empTable->item(r,2)->text(),
+                                empTable->item(r,4)->text());
         ConfirmDeleteDialog confirm(style(), resume, this);
         if (confirm.exec() == QDialog::Accepted) {
             empTable->removeRow(r);
