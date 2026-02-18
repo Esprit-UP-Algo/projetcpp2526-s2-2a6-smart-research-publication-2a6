@@ -1,5 +1,5 @@
-#ifndef BIOSIMPLE_H
-#define BIOSIMPLE_H
+#ifndef INTEGRATION_H
+#define INTEGRATION_H
 
 #include <QMainWindow>
 
