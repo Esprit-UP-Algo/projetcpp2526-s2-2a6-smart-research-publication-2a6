@@ -1,5 +1,6 @@
 // ===================== biosimple.cpp (UN SEUL FICHIER - BioSimple + Gestion Projet - 3 Widgets) =====================
 #include "biosimple.h"
+#include "connection.h"
 #include <QTextEdit>
 
 #include <QPainterPath>
@@ -115,6 +116,7 @@ static int uiMargin(QWidget* w)
     if (W < 1400) return 10;
     return 14;
 }
+
 
 // ===================== Helpers =====================
 // Creates a rounded card container with a soft drop shadow.
@@ -775,6 +777,94 @@ public:
         p->setFont(f);
         QRect textRect = pill.adjusted(34, 4, -10, -4);
         p->drawText(textRect, Qt::AlignVCenter|Qt::AlignLeft, empStatusText(st));
+
+        p->restore();
+    }
+};
+
+// ===================== Expériences status badge delegate =====================
+enum class ExpStatus { EnCours=0, Termine=1, EnAttente=2, Suspendue=3 };
+
+static QString expStatusText(ExpStatus s)
+{
+    switch (s) {
+    case ExpStatus::EnCours:   return "En cours";
+    case ExpStatus::Termine:   return "Terminé";
+    case ExpStatus::EnAttente: return "En attente";
+    case ExpStatus::Suspendue: return "Suspendue";
+    }
+    return "En cours";
+}
+
+static QColor expStatusColor(ExpStatus s)
+{
+    switch (s) {
+    case ExpStatus::EnCours:   return QColor("#2E6F63");
+    case ExpStatus::Termine:   return QColor("#3A7CA5");
+    case ExpStatus::EnAttente: return QColor("#B5672C");
+    case ExpStatus::Suspendue: return QColor("#8B2F3C");
+    }
+    return QColor("#2E6F63");
+}
+
+class ExpBadgeDelegate : public QStyledItemDelegate
+{
+public:
+    explicit ExpBadgeDelegate(QObject* parent=nullptr) : QStyledItemDelegate(parent) {}
+
+    void paint(QPainter *p, const QStyleOptionViewItem &opt, const QModelIndex &idx) const override
+    {
+        QVariant v = idx.data(Qt::UserRole);
+        ExpStatus st = ExpStatus::EnCours;
+        if (v.isValid()) st = static_cast<ExpStatus>(v.toInt());
+
+        QStyledItemDelegate::paint(p, opt, idx);
+
+        p->save();
+        p->setRenderHint(QPainter::Antialiasing, true);
+
+        QRect r = opt.rect.adjusted(8, 6, -8, -6);
+        int h = qMin(r.height(), 28);
+        int w = qMin(r.width(), 120);
+        QRect pill(r.left() + (r.width() - w)/2, r.top() + (r.height()-h)/2, w, h);
+
+        QColor bg = expStatusColor(st);
+        p->setPen(Qt::NoPen);
+        p->setBrush(bg);
+        p->drawRoundedRect(pill, 14, 14);
+
+        QRect iconCircle(pill.left()+10, pill.top()+6, 16, 16);
+        p->setBrush(QColor(255,255,255,35));
+        p->drawEllipse(iconCircle);
+
+        p->setPen(QPen(Qt::white, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        if (st == ExpStatus::EnCours) {
+            p->drawEllipse(iconCircle.adjusted(4,4,-4,-4));
+        } else if (st == ExpStatus::Termine) {
+            QPoint a(iconCircle.left()+4,  iconCircle.top()+9);
+            QPoint b(iconCircle.left()+7,  iconCircle.top()+12);
+            QPoint c(iconCircle.left()+13, iconCircle.top()+5);
+            p->drawLine(a,b); p->drawLine(b,c);
+        } else if (st == ExpStatus::EnAttente) {
+            QPainterPath path;
+            path.moveTo(iconCircle.center().x(), iconCircle.top()+2);
+            path.lineTo(iconCircle.left()+2, iconCircle.bottom()-2);
+            path.lineTo(iconCircle.right()-2, iconCircle.bottom()-2);
+            path.closeSubpath();
+            p->setPen(QPen(Qt::white, 1.8));
+            p->drawPath(path);
+        } else {
+            p->drawLine(QPoint(iconCircle.left()+4, iconCircle.top()+4),
+                        QPoint(iconCircle.right()-4, iconCircle.bottom()-4));
+            p->drawLine(QPoint(iconCircle.right()-4, iconCircle.top()+4),
+                        QPoint(iconCircle.left()+4, iconCircle.bottom()-4));
+        }
+
+        p->setPen(Qt::white);
+        QFont f = opt.font; f.setBold(true); f.setPointSizeF(f.pointSizeF()-0.5);
+        p->setFont(f);
+        QRect textRect = pill.adjusted(34, 4, -10, -4);
+        p->drawText(textRect, Qt::AlignVCenter|Qt::AlignLeft, expStatusText(st));
 
         p->restore();
     }
@@ -2177,7 +2267,7 @@ MainWindow::MainWindow(QWidget *parent)
     bar1L->setSpacing(10);
 
     QLineEdit* search = new QLineEdit;
-    search->setPlaceholderText("Rechercher (ID, type, organisme, stockage, BSL...)");
+    search->setPlaceholderText("Rechercher (type)");
     search->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
 
     QComboBox* cbType = new QComboBox; cbType->addItems({"Type", "DNA", "RNA", "Protéine"});
@@ -2206,8 +2296,8 @@ MainWindow::MainWindow(QWidget *parent)
     QVBoxLayout* card1L = new QVBoxLayout(card1);
     card1L->setContentsMargins(10,10,10,10);
 
-    QTableWidget* table = new QTableWidget(5, 8);
-    table->setHorizontalHeaderLabels({"", "Type", "Organisme", "Stockage", "Quantité", "Date d'expiration", "Statut", "BSL"});
+    QTableWidget* table = new QTableWidget(5, 9);
+    table->setHorizontalHeaderLabels({"", "Type", "Organisme", "Température", "Quantité restante", "Date de collecte", "Date d'expiration", "Statut", "Niveau de dangerosité"});
     table->verticalHeader()->setVisible(false);
     table->setShowGrid(true);
     table->setAlternatingRowColors(true);
@@ -2216,22 +2306,24 @@ MainWindow::MainWindow(QWidget *parent)
     table->setSelectionMode(QAbstractItemView::SingleSelection);
     table->horizontalHeader()->setStretchLastSection(true);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    table->setItemDelegateForColumn(6, new BadgeDelegate(table));
+    table->setItemDelegateForColumn(7, new BadgeDelegate(table));
 
     table->setColumnWidth(0, 36);
     table->setColumnWidth(1, 110);
     table->setColumnWidth(2, 140);
-    table->setColumnWidth(3, 170);
-    table->setColumnWidth(4, 120);
-    table->setColumnWidth(5, 160);
-    table->setColumnWidth(6, 150);
-    table->setColumnWidth(7, 90);
+    table->setColumnWidth(3, 140);
+    table->setColumnWidth(4, 140);
+    table->setColumnWidth(5, 150);
+    table->setColumnWidth(6, 160);
+    table->setColumnWidth(7, 150);
+    table->setColumnWidth(8, 170);
 
     auto setRow=[&](int r,
                       const QString& type,
                       const QString& org,
                       const QString& storage,
                       const QString& qty,
+                      const QString& dateCollecte,
                       const QString& date,
                       ExpireStatus stt,
                       const QString& bsl)
@@ -2255,24 +2347,41 @@ MainWindow::MainWindow(QWidget *parent)
         q->setTextAlignment(Qt::AlignRight|Qt::AlignVCenter);
         table->setItem(r, 4, q);
 
-        table->setItem(r, 5, mk(date));
+        table->setItem(r, 5, mk(dateCollecte));
+        table->setItem(r, 6, mk(date));
 
         QTableWidgetItem* badge = new QTableWidgetItem;
         badge->setData(Qt::UserRole, (int)stt);
-        table->setItem(r, 6, badge);
+        table->setItem(r, 7, badge);
 
-        table->setItem(r, 7, mk(bsl));
+        table->setItem(r, 8, mk(bsl));
         table->setRowHeight(r, 46);
     };
 
-    setRow(0,  "DNA",      "E. coli", "-80°C",           "150", "16/05/2024", ExpireStatus::Ok,      "BSL-1");
-    setRow(1,  "RNA",      "Humain",  "-20°C",            "75", "01/05/2024", ExpireStatus::Soon,    "BSL-2");
-    setRow(2,  "Protéine", "Levure",  "-20°C",            "40", "20/04/2024", ExpireStatus::Expired, "BSL-3");
-    setRow(3,  "DNA",      "Souris",  "Temp. ambiante",    "5", "24/04/2024", ExpireStatus::Ok,      "BSL-2");
-    setRow(4,  "DNA",      "Humain",  "-80°C",           "200", "20/02/2024", ExpireStatus::Bsl,     "BSL-3");
+    setRow(0,  "DNA",      "E. coli", "-80°C",           "150", "01/01/2024", "16/05/2024", ExpireStatus::Ok,      "BSL-1");
+    setRow(1,  "RNA",      "Humain",  "-20°C",            "75", "01/01/2024", "01/05/2024", ExpireStatus::Soon,    "BSL-2");
+    setRow(2,  "Protéine", "Levure",  "-20°C",            "40", "01/01/2024", "20/04/2024", ExpireStatus::Expired, "BSL-3");
+    setRow(3,  "DNA",      "Souris",  "Temp. ambiante",    "5", "01/01/2024", "24/04/2024", ExpireStatus::Ok,      "BSL-2");
+    setRow(4,  "DNA",      "Humain",  "-80°C",           "200", "01/01/2024", "20/02/2024", ExpireStatus::Bsl,     "BSL-3");
 
     card1L->addWidget(table);
     p1->addWidget(card1, 1);
+
+    // Search by type
+    QObject::connect(search, &QLineEdit::textChanged, this, [=](const QString& text){
+        QString filter = text.trimmed().toLower();
+        for (int r = 0; r < table->rowCount(); ++r) {
+            bool match = false;
+            if (filter.isEmpty()) { match = true; }
+            else {
+                for (int c = 1; c <= 8; ++c) {
+                    QTableWidgetItem* it = table->item(r, c);
+                    if (it && it->text().toLower().contains(filter)) { match = true; break; }
+                }
+            }
+            table->setRowHidden(r, !match);
+        }
+    });
 
     QFrame* bottom1 = new QFrame;
     bottom1->setFixedHeight(64);
@@ -2935,7 +3044,7 @@ MainWindow::MainWindow(QWidget *parent)
     gp1->setSpacing(14);
 
     ModulesBar barProjList;
-    gp1->addWidget(makeHeaderBlock(st, "Gestion Projet", ModuleTab::GestionProjet, &barProjList));
+    gp1->addWidget(makeHeaderBlock(st, "Gestion des Projets de Recherche", ModuleTab::GestionProjet, &barProjList));
     connectModulesSwitch(this, stack, barProjList);
 
     QFrame* pBar = new QFrame;
@@ -2946,14 +3055,17 @@ MainWindow::MainWindow(QWidget *parent)
     pBarL->setSpacing(10);
 
     QLineEdit* pSearch = new QLineEdit;
-    pSearch->setPlaceholderText("Rechercher (ID, nom, statut, responsable...)");
+    pSearch->setPlaceholderText("Rechercher par tous");
     pSearch->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
 
-    QComboBox* pStatut = new QComboBox;
-    pStatut->addItems({"Statut", "Planifié", "En cours", "Terminé", "En retard"});
+    QComboBox* pDomain = new QComboBox;
+    pDomain->addItems({"Domaine", "Génomique", "Protéomique", "Pharmacologie", "Immunologie"});
 
-    QComboBox* pPriorite = new QComboBox;
-    pPriorite->addItems({"Priorité", "Haute", "Moyenne", "Basse"});
+    QComboBox* pStatut = new QComboBox;
+    pStatut->addItems({"Statut", "En cours", "En retard", "Critique", "Suspendu"});
+
+    QComboBox* pBudget = new QComboBox;
+    pBudget->addItems({"Budget", "< 100k", "100k - 200k", "> 200k"});
 
     QPushButton* pFilters = new QPushButton(st->standardIcon(QStyle::SP_FileDialogDetailedView), "  Filtres");
     pFilters->setCursor(Qt::PointingHandCursor);
@@ -2967,8 +3079,9 @@ MainWindow::MainWindow(QWidget *parent)
     )").arg(C_PRIMARY, C_TOPBAR));
 
     pBarL->addWidget(pSearch, 1);
+    pBarL->addWidget(pDomain);
     pBarL->addWidget(pStatut);
-    pBarL->addWidget(pPriorite);
+    pBarL->addWidget(pBudget);
     pBarL->addWidget(pFilters);
     gp1->addWidget(pBar);
 
@@ -2976,27 +3089,77 @@ MainWindow::MainWindow(QWidget *parent)
     QVBoxLayout* projCardL = new QVBoxLayout(projCard);
     projCardL->setContentsMargins(10,10,10,10);
 
-    QTableWidget* projTable = new QTableWidget(5, 7);
-    projTable->setHorizontalHeaderLabels({"ID","Nom","Domaine","Responsable","Budget","Début","Statut"});
+    QTableWidget* projTable = new QTableWidget(5, 8);
+    projTable->setHorizontalHeaderLabels({"", "Nom du projet","Domaine","Responsable","Budget","Date début","Statut","Financement"});
     projTable->verticalHeader()->setVisible(false);
+    projTable->setShowGrid(true);
+    projTable->setAlternatingRowColors(true);
+    projTable->setStyleSheet(QString("QTableWidget{ alternate-background-color:%1; background-color:%2; }").arg(C_ROW_EVEN, C_ROW_ODD));
     projTable->horizontalHeader()->setStretchLastSection(true);
     projTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     projTable->setSelectionMode(QAbstractItemView::SingleSelection);
     projTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
-    auto putP=[&](int r,int c,const QString& v){
-        QTableWidgetItem* it=new QTableWidgetItem(v);
-        it->setTextAlignment(Qt::AlignLeft|Qt::AlignVCenter);
-        projTable->setItem(r,c,it);
+    projTable->setColumnWidth(0, 36);
+    projTable->setColumnWidth(1, 200);
+    projTable->setColumnWidth(2, 150);
+    projTable->setColumnWidth(3, 140);
+    projTable->setColumnWidth(4, 90);
+    projTable->setColumnWidth(5, 120);
+    projTable->setColumnWidth(6, 130);
+    projTable->setColumnWidth(7, 100);
+
+    auto setProjRow=[&](int r, const QString& name,
+                        const QString& domain, const QString& investigator,
+                        const QString& budget, const QString& startDate,
+                        const QString& status, const QString& funding)
+    {
+        QTableWidgetItem* iconItem = new QTableWidgetItem;
+        iconItem->setIcon(st->standardIcon(QStyle::SP_ArrowRight));
+        iconItem->setTextAlignment(Qt::AlignCenter);
+        projTable->setItem(r, 0, iconItem);
+
+        auto mk = [&](const QString& t){
+            QTableWidgetItem* it = new QTableWidgetItem(t);
+            it->setTextAlignment(Qt::AlignLeft|Qt::AlignVCenter);
+            return it;
+        };
+
+        projTable->setItem(r, 1, mk(name));
+        projTable->setItem(r, 2, mk(domain));
+        projTable->setItem(r, 3, mk(investigator));
+
+        QTableWidgetItem* b = mk(budget);
+        b->setTextAlignment(Qt::AlignRight|Qt::AlignVCenter);
+        projTable->setItem(r, 4, b);
+
+        projTable->setItem(r, 5, mk(startDate));
+        projTable->setItem(r, 6, mk(status));
+        projTable->setItem(r, 7, mk(funding));
+        projTable->setRowHeight(r, 46);
     };
 
-    putP(0,0,"P-001"); putP(0,1,"Projet Vaccin");        putP(0,2,"Biotech");   putP(0,3,"Dr. Amal");   putP(0,4,"120000"); putP(0,5,"01/02/2026"); putP(0,6,"En cours");
-    putP(1,0,"P-002"); putP(1,1,"Génomique");            putP(1,2,"Recherche"); putP(1,3,"Dr. Nader");  putP(1,4,"80000");  putP(1,5,"15/01/2026"); putP(1,6,"Planifié");
-    putP(2,0,"P-003"); putP(2,1,"Culture Cellulaire");   putP(2,2,"Laboratoire");putP(2,3,"Mme. Sara");  putP(2,4,"45000");  putP(2,5,"10/12/2025"); putP(2,6,"Terminé");
-    putP(3,0,"P-004"); putP(3,1,"Essais Cliniques");     putP(3,2,"Santé");     putP(3,3,"Dr. Hichem"); putP(3,4,"200000"); putP(3,5,"05/11/2025"); putP(3,6,"En cours");
-    putP(4,0,"P-005"); putP(4,1,"Optimisation Stockage");putP(4,2,"Qualité");   putP(4,3,"M. Karim");   putP(4,4,"20000");  putP(4,5,"01/10/2025"); putP(4,6,"En retard");
+    setProjRow(0, "Séquençage Génomique",    "Génomique",      "Dr. Amal",   "150k", "15/01/2024", "En cours",  "ANR");
+    setProjRow(1, "Analyse Protéique",        "Protéomique",    "Dr. Nader",  "85k",  "10/03/2024", "En retard", "CNRS");
+    setProjRow(2, "Découverte Médicaments",   "Pharmacologie",  "Dr. Hichem", "220k", "01/02/2024", "Critique",  "Privé");
+    setProjRow(3, "Recherche Cancer",         "Génomique",      "Mme. Sara",  "180k", "05/12/2023", "En cours",  "ANR");
+    setProjRow(4, "Développement Vaccin",     "Immunologie",    "M. Karim",   "95k",  "20/04/2024", "Suspendu",  "OMS");
 
-    for(int r=0;r<projTable->rowCount();++r) projTable->setRowHeight(r, 46);
+    // Search by all fields
+    QObject::connect(pSearch, &QLineEdit::textChanged, this, [=](const QString& text){
+        QString filter = text.trimmed().toLower();
+        for (int r = 0; r < projTable->rowCount(); ++r) {
+            bool match = false;
+            if (filter.isEmpty()) { match = true; }
+            else {
+                for (int c = 1; c < projTable->columnCount(); ++c) {
+                    QTableWidgetItem* it = projTable->item(r, c);
+                    if (it && it->text().toLower().contains(filter)) { match = true; break; }
+                }
+            }
+            projTable->setRowHidden(r, !match);
+        }
+    });
 
     projCardL->addWidget(projTable);
     gp1->addWidget(projCard, 1);
@@ -3010,9 +3173,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     QPushButton* projAdd     = actionBtn("Ajouter",      "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
     QPushButton* projEdit    = actionBtn("Modifier",     "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
-    QPushButton* projDetails = actionBtn("Détails",      "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DialogHelpButton), true);
     QPushButton* projDel     = actionBtn("Supprimer",    "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
-    QPushButton* projStatB   = actionBtn("Statistiques", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ComputerIcon), true);
+    QPushButton* projDetails = actionBtn("Détails",      "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DesktopIcon), true);
 
     QObject::connect(projDel, &QPushButton::clicked, this, [=](){
         int r = projTable->currentRow();
@@ -3020,20 +3182,40 @@ MainWindow::MainWindow(QWidget *parent)
             QMessageBox::information(this, "Information", "Veuillez sélectionner une ligne à supprimer.");
             return;
         }
-        QString resume = QString("ID : %1 | Projet : %2 | Statut : %3")
-                             .arg(projTable->item(r,0)->text(),
-                                  projTable->item(r,1)->text(),
-                                  projTable->item(r,6)->text());
+           QString resume = QString("Projet : %1 | Investigator : %2 | Status : %3")
+                            .arg(projTable->item(r,1)->text(),
+                                projTable->item(r,3)->text(),
+                                projTable->item(r,6)->text());
         ConfirmDeleteDialog confirm(style(), resume, this);
         if (confirm.exec() == QDialog::Accepted) projTable->removeRow(r);
     });
 
     projBottomL->addWidget(projAdd);
     projBottomL->addWidget(projEdit);
-    projBottomL->addWidget(projDetails);
     projBottomL->addWidget(projDel);
-    projBottomL->addWidget(projStatB);
+    projBottomL->addWidget(projDetails);
     projBottomL->addStretch(1);
+
+    projBottomL->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_DirIcon)));
+    projBottomL->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_FileIcon)));
+    projBottomL->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_DialogSaveButton)));
+    projBottomL->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_BrowserReload)));
+
+    QPushButton* projMore = new QPushButton(st->standardIcon(QStyle::SP_FileDialogContentsView), "  Détails avancés");
+    projMore->setCursor(Qt::PointingHandCursor);
+    projMore->setStyleSheet(R"(
+        QPushButton{
+            background: rgba(255,255,255,0.55);
+            border: 1px solid rgba(0,0,0,0.12);
+            border-radius: 12px;
+            padding: 10px 14px;
+            color: rgba(0,0,0,0.65);
+            font-weight: 800;
+        }
+        QPushButton:hover{ background: rgba(255,255,255,0.75); }
+    )");
+    projBottomL->addWidget(projMore);
+
     gp1->addWidget(projBottom);
 
     stack->addWidget(proj1);
@@ -3088,10 +3270,6 @@ MainWindow::MainWindow(QWidget *parent)
         return r;
     };
 
-    QLineEdit* projId = new QLineEdit;
-    projId->setPlaceholderText("P-XXX");
-    projId->setFixedWidth(160);
-
     QLineEdit* projName = new QLineEdit;
     projName->setPlaceholderText("Nom du projet");
 
@@ -3104,7 +3282,6 @@ MainWindow::MainWindow(QWidget *parent)
     projStatus->setFixedWidth(200);
 
     p2LeftL->addWidget(projTitle("Informations"));
-    p2LeftL->addWidget(projRow(QStyle::SP_FileIcon, "ID", projId));
     p2LeftL->addWidget(projRow(QStyle::SP_DirIcon, "Nom", projName));
     p2LeftL->addWidget(projRow(QStyle::SP_ComputerIcon, "Domaine", projDomain));
     p2LeftL->addWidget(projRow(QStyle::SP_MessageBoxInformation, "Statut", projStatus));
@@ -3268,7 +3445,7 @@ MainWindow::MainWindow(QWidget *parent)
     ep1->setSpacing(14);
 
     ModulesBar barExpList;
-    ep1->addWidget(makeHeaderBlock(st, "Expériences & Protocoles", ModuleTab::ExperiencesProtocoles, &barExpList));
+    ep1->addWidget(makeHeaderBlock(st, "Liste des Expériences", ModuleTab::ExperiencesProtocoles, &barExpList));
     connectModulesSwitch(this, stack, barExpList);
 
     QFrame* eBar = new QFrame;
@@ -3279,43 +3456,50 @@ MainWindow::MainWindow(QWidget *parent)
     eBarL->setSpacing(10);
 
     QLineEdit* eSearch = new QLineEdit;
-    eSearch->setPlaceholderText("Rechercher (ID, expérience, protocole, responsable, statut...)");
+    eSearch->setPlaceholderText("Rechercher par status, type");
     eSearch->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
 
-    QComboBox* eStatut = new QComboBox;
-    eStatut->addItems({"Statut", "Planifiée", "En cours", "Terminée", "Suspendue"});
+    QComboBox* eTrierCb = new QComboBox;
+    eTrierCb->addItems({"Trier par date", "Trier par type", "Trier par statut"});
 
-    QComboBox* eBsl = new QComboBox;
-    eBsl->addItems({"BSL", "BSL-1", "BSL-2", "BSL-3"});
-
-    QPushButton* eFilters = new QPushButton(st->standardIcon(QStyle::SP_FileDialogDetailedView), "  Filtres");
-    eFilters->setCursor(Qt::PointingHandCursor);
-    eFilters->setStyleSheet(QString(R"(
-    QPushButton{
-        background:%1; color: rgba(255,255,255,0.92);
-        border:1px solid rgba(0,0,0,0.18);
-        border-radius: 12px; padding: 10px 16px; font-weight: 800;
-    }
-    QPushButton:hover{ background: %2; }
-)").arg(C_PRIMARY, C_TOPBAR));
+    QPushButton* eExportBtn = new QPushButton(st->standardIcon(QStyle::SP_DialogSaveButton), "  Exporter (PDF / CSV)");
+    eExportBtn->setCursor(Qt::PointingHandCursor);
+    eExportBtn->setStyleSheet(QString(R"(
+        QPushButton{
+            background:%1; color: rgba(255,255,255,0.92);
+            border:1px solid rgba(0,0,0,0.18);
+            border-radius: 12px; padding: 10px 16px; font-weight: 800;
+        }
+        QPushButton:hover{ background: %2; }
+    )").arg(C_PRIMARY, C_TOPBAR));
 
     eBarL->addWidget(eSearch, 1);
-    eBarL->addWidget(eStatut);
-    eBarL->addWidget(eBsl);
-    eBarL->addWidget(eFilters);
+    eBarL->addWidget(eTrierCb);
+    eBarL->addWidget(eExportBtn);
     ep1->addWidget(eBar);
 
     QFrame* expCard = makeCard();
     QVBoxLayout* expCardL = new QVBoxLayout(expCard);
     expCardL->setContentsMargins(10,10,10,10);
 
-    QTableWidget* expTable = new QTableWidget(6, 7);
-    expTable->setHorizontalHeaderLabels({"ID", "Expérience", "Protocole", "Responsable", "Date", "Statut", "BSL"});
+    QTableWidget* expTable = new QTableWidget(5, 6);
+    expTable->setHorizontalHeaderLabels({"Nom", "Type", "Responsable", "Date début", "Date fin", "Statut"});
     expTable->verticalHeader()->setVisible(false);
+    expTable->setShowGrid(true);
+    expTable->setAlternatingRowColors(true);
+    expTable->setStyleSheet(QString("QTableWidget{ alternate-background-color:%1; background-color:%2; }").arg(C_ROW_EVEN, C_ROW_ODD));
     expTable->horizontalHeader()->setStretchLastSection(true);
     expTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     expTable->setSelectionMode(QAbstractItemView::SingleSelection);
     expTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    expTable->setItemDelegateForColumn(5, new ExpBadgeDelegate(expTable));
+
+    expTable->setColumnWidth(0, 220);
+    expTable->setColumnWidth(1, 140);
+    expTable->setColumnWidth(2, 130);
+    expTable->setColumnWidth(3, 120);
+    expTable->setColumnWidth(4, 120);
+    expTable->setColumnWidth(5, 140);
 
     auto putE = [&](int r,int c,const QString& v){
         QTableWidgetItem* it = new QTableWidgetItem(v);
@@ -3323,14 +3507,35 @@ MainWindow::MainWindow(QWidget *parent)
         expTable->setItem(r,c,it);
     };
 
-    putE(0,0,"E-001"); putE(0,1,"Culture cellulaire"); putE(0,2,"PROTO-CC-01"); putE(0,3,"Dr. Amal");  putE(0,4,"07/02/2026"); putE(0,5,"En cours");   putE(0,6,"BSL-2");
-    putE(1,0,"E-002"); putE(1,1,"Extraction ADN");     putE(1,2,"PROTO-DNA-03");putE(1,3,"Mme. Sara"); putE(1,4,"05/02/2026"); putE(1,5,"Terminée"); putE(1,6,"BSL-1");
-    putE(2,0,"E-003"); putE(2,1,"PCR temps réel");     putE(2,2,"PROTO-PCR-07");putE(2,3,"Dr. Nader"); putE(2,4,"10/02/2026"); putE(2,5,"Planifiée");putE(2,6,"BSL-2");
-    putE(3,0,"E-004"); putE(3,1,"Séquençage");         putE(3,2,"PROTO-SEQ-02");putE(3,3,"Dr. Hichem");putE(3,4,"28/01/2026"); putE(3,5,"Suspendue");putE(3,6,"BSL-3");
-    putE(4,0,"E-005"); putE(4,1,"Dosage protéique");   putE(4,2,"PROTO-PROT-01");putE(4,3,"M. Karim"); putE(4,4,"02/02/2026"); putE(4,5,"En cours");  putE(4,6,"BSL-1");
-    putE(5,0,"E-006"); putE(5,1,"Stérilité");          putE(5,2,"PROTO-STER-04");putE(5,3,"Dr. Amal");  putE(5,4,"01/02/2026"); putE(5,5,"Terminée"); putE(5,6,"BSL-2");
+    auto setExpStatus = [&](int r, ExpStatus s){
+        QTableWidgetItem* badge = new QTableWidgetItem;
+        badge->setData(Qt::UserRole, (int)s);
+        expTable->setItem(r, 5, badge);
+    };
+
+    putE(0,0,"Culture cellulaire");       putE(0,1,"Cellulaire");     putE(0,2,"Dr Sami");    putE(0,3,"01/03/2024"); putE(0,4,"30/03/2024"); setExpStatus(0, ExpStatus::EnCours);
+    putE(1,0,"Séquençage ADN");           putE(1,1,"Génétique");      putE(1,2,"Dr Martin");  putE(1,3,"15/02/2024"); putE(1,4,"30/04/2024"); setExpStatus(1, ExpStatus::Termine);
+    putE(2,0,"Analyse protéomique");      putE(2,1,"Protéomique");    putE(2,2,"Dr Leroy");   putE(2,3,"10/04/2024"); putE(2,4,"20/05/2024"); setExpStatus(2, ExpStatus::EnAttente);
+    putE(3,0,"Test pharmacologique");     putE(3,1,"Pharmacologie");  putE(3,2,"Dr Dubois");  putE(3,3,"05/03/2024"); putE(3,4,"15/06/2024"); setExpStatus(3, ExpStatus::EnCours);
+    putE(4,0,"Étude comportementale");    putE(4,1,"Neuroscience");   putE(4,2,"Dr Moreau");  putE(4,3,"20/01/2024"); putE(4,4,"10/03/2024"); setExpStatus(4, ExpStatus::Termine);
 
     for(int r=0;r<expTable->rowCount();++r) expTable->setRowHeight(r, 46);
+
+    // Search by titre or protocole
+    QObject::connect(eSearch, &QLineEdit::textChanged, this, [=](const QString& text){
+        QString filter = text.trimmed().toLower();
+        for (int r = 0; r < expTable->rowCount(); ++r) {
+            bool match = false;
+            if (filter.isEmpty()) { match = true; }
+            else {
+                for (int c = 0; c < expTable->columnCount(); ++c) {
+                    QTableWidgetItem* it = expTable->item(r, c);
+                    if (it && it->text().toLower().contains(filter)) { match = true; break; }
+                }
+            }
+            expTable->setRowHidden(r, !match);
+        }
+    });
 
     expCardL->addWidget(expTable);
     ep1->addWidget(expCard, 1);
@@ -3344,9 +3549,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     QPushButton* expAdd     = actionBtn("Ajouter",      "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
     QPushButton* expEdit    = actionBtn("Modifier",     "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
-    QPushButton* expDetails = actionBtn("Détails",      "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DialogHelpButton), true);
+    QPushButton* expDetails = actionBtn("Détails",      "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DesktopIcon), true);
     QPushButton* expDel     = actionBtn("Supprimer",    "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
-    QPushButton* expStats   = actionBtn("Statistiques", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ComputerIcon), true);
+    QPushButton* expStats   = actionBtn("Statistiques", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_MessageBoxInformation), true);
 
     QObject::connect(expDel, &QPushButton::clicked, this, [=](){
         int r = expTable->currentRow();
@@ -3354,8 +3559,10 @@ MainWindow::MainWindow(QWidget *parent)
             QMessageBox::information(this, "Information", "Veuillez sélectionner une ligne à supprimer.");
             return;
         }
-        QString resume = QString("ID : %1 | Expérience : %2 | Protocole : %3")
-                             .arg(expTable->item(r,0)->text(), expTable->item(r,1)->text(), expTable->item(r,2)->text());
+        QString resume = QString("Expérience : %1 | Type : %2 | Responsable : %3")
+                     .arg(expTable->item(r,0)->text(),
+                      expTable->item(r,1)->text(),
+                      expTable->item(r,2)->text());
         ConfirmDeleteDialog confirm(style(), resume, this);
         if (confirm.exec() == QDialog::Accepted) expTable->removeRow(r);
     });
@@ -3364,8 +3571,13 @@ MainWindow::MainWindow(QWidget *parent)
     expBottomL->addWidget(expEdit);
     expBottomL->addWidget(expDetails);
     expBottomL->addWidget(expDel);
-    expBottomL->addWidget(expStats);
     expBottomL->addStretch(1);
+    expBottomL->addWidget(expStats);
+
+    expBottomL->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_DirIcon)));
+    expBottomL->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_FileIcon)));
+    expBottomL->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_DialogSaveButton)));
+    expBottomL->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_BrowserReload)));
 
     ep1->addWidget(expBottom);
     stack->addWidget(exp1);
@@ -3418,10 +3630,6 @@ MainWindow::MainWindow(QWidget *parent)
     e2LeftL->setContentsMargins(12,12,12,12);
     e2LeftL->setSpacing(10);
 
-    QLineEdit* eId = new QLineEdit;
-    eId->setPlaceholderText("E-XXX");
-    eId->setFixedWidth(160);
-
     QLineEdit* eName = new QLineEdit;
     eName->setPlaceholderText("Nom de l’expérience");
 
@@ -3442,7 +3650,6 @@ MainWindow::MainWindow(QWidget *parent)
     eDate->setStyleSheet("QDateEdit{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 900; }");
 
     e2LeftL->addWidget(expTitle("Informations"));
-    e2LeftL->addWidget(expRow(QStyle::SP_FileIcon, "ID", eId));
     e2LeftL->addWidget(expRow(QStyle::SP_DirIcon,  "Expérience", eName));
     e2LeftL->addWidget(expRow(QStyle::SP_FileDialogDetailedView, "Protocole", eProto));
     e2LeftL->addWidget(expRow(QStyle::SP_FileDialogInfoView, "Date", eDate));
@@ -3652,8 +3859,8 @@ QPushButton:hover{ background: %2; }
     QVBoxLayout* pubCardL = new QVBoxLayout(pubCard);
     pubCardL->setContentsMargins(10,10,10,10);
 
-    QTableWidget* pubTable = new QTableWidget(6, 7);
-    pubTable->setHorizontalHeaderLabels({"ID","Titre","Auteurs","Journal/Conf.","Année","DOI","Statut"});
+    QTableWidget* pubTable = new QTableWidget(6, 6);
+    pubTable->setHorizontalHeaderLabels({"Titre","Auteurs","Journal/Conf.","Année","DOI","Statut"});
     pubTable->verticalHeader()->setVisible(false);
     pubTable->horizontalHeader()->setStretchLastSection(true);
     pubTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -3666,12 +3873,12 @@ QPushButton:hover{ background: %2; }
         pubTable->setItem(r,c,it);
     };
 
-    putPUB(0,0,"PUB-001"); putPUB(0,1,"Analyse génomique des souches"); putPUB(0,2,"A. Ben Ali; S. Trabelsi"); putPUB(0,3,"Nature Methods"); putPUB(0,4,"2026"); putPUB(0,5,"10.1000/xyz001"); putPUB(0,6,"Soumise");
-    putPUB(1,0,"PUB-002"); putPUB(1,1,"PCR temps réel : optimisation"); putPUB(1,2,"H. Chaachou; M. Karim"); putPUB(1,3,"BioTech Conf"); putPUB(1,4,"2025"); putPUB(1,5,"10.1000/xyz002"); putPUB(1,6,"Acceptée");
-    putPUB(2,0,"PUB-003"); putPUB(2,1,"Culture cellulaire avancée"); putPUB(2,2,"Dr. Amal; Dr. Nader"); putPUB(2,3,"Cell Reports"); putPUB(2,4,"2025"); putPUB(2,5,"10.1000/xyz003"); putPUB(2,6,"Publiée");
-    putPUB(3,0,"PUB-004"); putPUB(3,1,"Traçabilité scientifique en labo"); putPUB(3,2,"S. Sara; H. Hichem"); putPUB(3,3,"Lab Quality"); putPUB(3,4,"2024"); putPUB(3,5,"10.1000/xyz004"); putPUB(3,6,"Brouillon");
-    putPUB(4,0,"PUB-005"); putPUB(4,1,"Séquençage : protocole comparatif"); putPUB(4,2,"A. Ben Ali; K. Yassmine"); putPUB(4,3,"Genomics Journal"); putPUB(4,4,"2024"); putPUB(4,5,"10.1000/xyz005"); putPUB(4,6,"Soumise");
-    putPUB(5,0,"PUB-006"); putPUB(5,1,"Dosage protéique : étude"); putPUB(5,2,"M. Karim; Dr. Amal"); putPUB(5,3,"Protein Conf"); putPUB(5,4,"2023"); putPUB(5,5,"10.1000/xyz006"); putPUB(5,6,"Rejetée");
+    putPUB(0,0,"Analyse génomique des souches"); putPUB(0,1,"A. Ben Ali; S. Trabelsi"); putPUB(0,2,"Nature Methods"); putPUB(0,3,"2026"); putPUB(0,4,"10.1000/xyz001"); putPUB(0,5,"Soumise");
+    putPUB(1,0,"PCR temps réel : optimisation"); putPUB(1,1,"H. Chaachou; M. Karim"); putPUB(1,2,"BioTech Conf");   putPUB(1,3,"2025"); putPUB(1,4,"10.1000/xyz002"); putPUB(1,5,"Acceptée");
+    putPUB(2,0,"Culture cellulaire avancée");    putPUB(2,1,"Dr. Amal; Dr. Nader");   putPUB(2,2,"Cell Reports");  putPUB(2,3,"2025"); putPUB(2,4,"10.1000/xyz003"); putPUB(2,5,"Publiée");
+    putPUB(3,0,"Traçabilité scientifique en labo"); putPUB(3,1,"S. Sara; H. Hichem"); putPUB(3,2,"Lab Quality"); putPUB(3,3,"2024"); putPUB(3,4,"10.1000/xyz004"); putPUB(3,5,"Brouillon");
+    putPUB(4,0,"Séquençage : protocole comparatif"); putPUB(4,1,"A. Ben Ali; K. Yassmine"); putPUB(4,2,"Genomics Journal"); putPUB(4,3,"2024"); putPUB(4,4,"10.1000/xyz005"); putPUB(4,5,"Soumise");
+    putPUB(5,0,"Dosage protéique : étude");          putPUB(5,1,"M. Karim; Dr. Amal");     putPUB(5,2,"Protein Conf");   putPUB(5,3,"2023"); putPUB(5,4,"10.1000/xyz006"); putPUB(5,5,"Rejetée");
 
     for(int r=0;r<pubTable->rowCount();++r) pubTable->setRowHeight(r, 46);
 
@@ -3698,10 +3905,10 @@ QPushButton:hover{ background: %2; }
             QMessageBox::information(this, "Information", "Veuillez sélectionner une publication à supprimer.");
             return;
         }
-        QString resume = QString("ID : %1 | Titre : %2 | Année : %3")
-                             .arg(pubTable->item(r,0)->text(),
-                                  pubTable->item(r,1)->text(),
-                                  pubTable->item(r,4)->text());
+           QString resume = QString("Titre : %1 | Année : %2 | Statut : %3")
+                            .arg(pubTable->item(r,0)->text(),
+                                pubTable->item(r,3)->text(),
+                                pubTable->item(r,5)->text());
         ConfirmDeleteDialog confirm(style(), resume, this);
         if (confirm.exec() == QDialog::Accepted) pubTable->removeRow(r);
     });
@@ -3765,10 +3972,6 @@ QPushButton:hover{ background: %2; }
     pub2LeftL->setContentsMargins(12,12,12,12);
     pub2LeftL->setSpacing(10);
 
-    QLineEdit* lePubId = new QLineEdit;
-    lePubId->setPlaceholderText("PUB-XXX");
-    lePubId->setFixedWidth(180);
-
     QLineEdit* leTitle = new QLineEdit;
     leTitle->setPlaceholderText("Titre de la publication");
 
@@ -3786,7 +3989,6 @@ QPushButton:hover{ background: %2; }
     sbYear->setStyleSheet("QSpinBox{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 900; }");
 
     pub2LeftL->addWidget(pubTitle("Informations"));
-    pub2LeftL->addWidget(pubRow(QStyle::SP_FileIcon, "ID", lePubId));
     pub2LeftL->addWidget(pubRow(QStyle::SP_FileDialogDetailedView, "Titre", leTitle));
     pub2LeftL->addWidget(pubRow(QStyle::SP_DirIcon, "Auteurs", leAuthors));
     pub2LeftL->addWidget(pubRow(QStyle::SP_ComputerIcon, "Type", cbPubType));
@@ -3959,7 +4161,7 @@ QPushButton:hover{ background: %2; }
     eqBarL->setSpacing(10);
 
     QLineEdit* eqSearch = new QLineEdit;
-    eqSearch->setPlaceholderText("Rechercher (ID, nom, fabricant, modèle...)");
+    eqSearch->setPlaceholderText("Rechercher (equipement)");
     eqSearch->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
 
     QComboBox* cbEquipType = new QComboBox;
@@ -3993,8 +4195,8 @@ QPushButton:hover{ background: %2; }
     QVBoxLayout* eqCardL = new QVBoxLayout(eqCard);
     eqCardL->setContentsMargins(10,10,10,10);
 
-    QTableWidget* eqTable = new QTableWidget(5, 10);
-    eqTable->setHorizontalHeaderLabels({"", "ID", "Nom", "Fabricant", "Modèle",
+    QTableWidget* eqTable = new QTableWidget(5, 9);
+    eqTable->setHorizontalHeaderLabels({"", "Nom", "Fabricant", "Modèle",
                                          "Localisation", "Date achat", "Prochaine maintenance", "Statut", "Calibration"});
     eqTable->verticalHeader()->setVisible(false);
     eqTable->setShowGrid(true);
@@ -4004,19 +4206,19 @@ QPushButton:hover{ background: %2; }
     eqTable->setSelectionMode(QAbstractItemView::SingleSelection);
     eqTable->horizontalHeader()->setStretchLastSection(true);
     eqTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    eqTable->setItemDelegateForColumn(8, new StatusBadgeDelegate(eqTable));
+    eqTable->setItemDelegateForColumn(7, new StatusBadgeDelegate(eqTable));
 
     eqTable->setColumnWidth(0, 36);
-    eqTable->setColumnWidth(1, 90);
-    eqTable->setColumnWidth(2, 150);
-    eqTable->setColumnWidth(3, 130);
+    eqTable->setColumnWidth(1, 150);
+    eqTable->setColumnWidth(2, 130);
+    eqTable->setColumnWidth(3, 110);
     eqTable->setColumnWidth(4, 110);
-    eqTable->setColumnWidth(5, 110);
-    eqTable->setColumnWidth(6, 120);
-    eqTable->setColumnWidth(7, 150);
-    eqTable->setColumnWidth(8, 140);
+    eqTable->setColumnWidth(5, 120);
+    eqTable->setColumnWidth(6, 150);
+    eqTable->setColumnWidth(7, 140);
+    eqTable->setColumnWidth(8, 120);
 
-    auto setEqRow=[&](int r, const QString& id, const QString& name,
+    auto setEqRow=[&](int r, const QString& name,
                       const QString& manufacturer, const QString& model, const QString& location,
                       const QString& purchaseDate, const QString& nextMaint, EquipmentStatus stt,
                       const QString& calibDate)
@@ -4032,30 +4234,45 @@ QPushButton:hover{ background: %2; }
             return it;
         };
 
-        eqTable->setItem(r, 1, mk(id));
-        eqTable->setItem(r, 2, mk(name));
-        eqTable->setItem(r, 3, mk(manufacturer));
-        eqTable->setItem(r, 4, mk(model));
-        eqTable->setItem(r, 5, mk(location));
-        eqTable->setItem(r, 6, mk(purchaseDate));
-        eqTable->setItem(r, 7, mk(nextMaint));
+        eqTable->setItem(r, 1, mk(name));
+        eqTable->setItem(r, 2, mk(manufacturer));
+        eqTable->setItem(r, 3, mk(model));
+        eqTable->setItem(r, 4, mk(location));
+        eqTable->setItem(r, 5, mk(purchaseDate));
+        eqTable->setItem(r, 6, mk(nextMaint));
 
         QTableWidgetItem* badge = new QTableWidgetItem;
         badge->setData(Qt::UserRole, (int)stt);
-        eqTable->setItem(r, 8, badge);
+        eqTable->setItem(r, 7, badge);
 
-        eqTable->setItem(r, 9, mk(calibDate));
+        eqTable->setItem(r, 8, mk(calibDate));
         eqTable->setRowHeight(r, 46);
     };
 
-    setEqRow(0, "EQ-001", "PCR Machine",   "Thermo Fisher", "TX-500",  "Lab 101", "15/01/2023", "15/03/2026", EquipmentStatus::Available, "15/06/2026");
-    setEqRow(1, "EQ-002", "Centrifugeuse", "Eppendorf",     "5424R",   "Lab 102", "20/03/2023", "20/02/2026", EquipmentStatus::InUse, "20/05/2026");
-    setEqRow(2, "EQ-003", "Microscope",    "Zeiss",         "AX-10",   "Lab 101", "10/06/2022", "10/02/2026", EquipmentStatus::UnderMaintenance, "10/04/2026");
-    setEqRow(3, "EQ-004", "Incubateur",    "Thermo Fisher", "HI-3000", "Lab 201", "05/09/2023", "05/03/2026", EquipmentStatus::Available, "05/09/2026");
-    setEqRow(4, "EQ-005", "PCR Machine",   "Bio-Rad",       "PCR-200", "Lab 103", "12/11/2021", "12/01/2026", EquipmentStatus::OutOfOrder, "12/01/2026");
+    setEqRow(0, "PCR Machine",   "Thermo Fisher", "TX-500",  "Lab 101", "15/01/2023", "15/03/2026", EquipmentStatus::Available, "15/06/2026");
+    setEqRow(1, "Centrifugeuse", "Eppendorf",     "5424R",   "Lab 102", "20/03/2023", "20/02/2026", EquipmentStatus::InUse, "20/05/2026");
+    setEqRow(2, "Microscope",    "Zeiss",         "AX-10",   "Lab 101", "10/06/2022", "10/02/2026", EquipmentStatus::UnderMaintenance, "10/04/2026");
+    setEqRow(3, "Incubateur",    "Thermo Fisher", "HI-3000", "Lab 201", "05/09/2023", "05/03/2026", EquipmentStatus::Available, "05/09/2026");
+    setEqRow(4, "PCR Machine",   "Bio-Rad",       "PCR-200", "Lab 103", "12/11/2021", "12/01/2026", EquipmentStatus::OutOfOrder, "12/01/2026");
 
     eqCardL->addWidget(eqTable);
     eq1->addWidget(eqCard, 1);
+
+    // Search by equipment name, fabricant, modèle
+    QObject::connect(eqSearch, &QLineEdit::textChanged, this, [=](const QString& text){
+        QString filter = text.trimmed().toLower();
+        for (int r = 0; r < eqTable->rowCount(); ++r) {
+            bool match = false;
+            if (filter.isEmpty()) { match = true; }
+            else {
+                for (int c = 1; c <= 8; ++c) {
+                    QTableWidgetItem* it = eqTable->item(r, c);
+                    if (it && it->text().toLower().contains(filter)) { match = true; break; }
+                }
+            }
+            eqTable->setRowHidden(r, !match);
+        }
+    });
 
     QFrame* eqBottom = new QFrame;
     eqBottom->setFixedHeight(64);
@@ -4067,7 +4284,7 @@ QPushButton:hover{ background: %2; }
     QPushButton* eqAdd   = actionBtn("Ajouter", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
     QPushButton* eqEdit  = actionBtn("Modifier", "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
     QPushButton* eqDel   = actionBtn("Supprimer", "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
-    QPushButton* eqDet   = actionBtn("Détails", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DesktopIcon), true);
+    QPushButton* eqDet   = actionBtn("Statistique", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_MessageBoxInformation), true);
 
     QObject::connect(eqDel, &QPushButton::clicked, this, [=](){
         int r = eqTable->currentRow();
@@ -4075,10 +4292,10 @@ QPushButton:hover{ background: %2; }
             QMessageBox::information(this, "Information", "Veuillez sélectionner un équipement à supprimer.");
             return;
         }
-        QString resume = QString("ID : %1 | Équipement : %2 | Statut : %3")
-                             .arg(eqTable->item(r,1)->text(),
-                                  eqTable->item(r,2)->text(),
-                                  equipmentStatusText(static_cast<EquipmentStatus>(eqTable->item(r,8)->data(Qt::UserRole).toInt())));
+           QString resume = QString("Équipement : %1 | Localisation : %2 | Statut : %3")
+                            .arg(eqTable->item(r,1)->text(),
+                                eqTable->item(r,4)->text(),
+                                equipmentStatusText(static_cast<EquipmentStatus>(eqTable->item(r,7)->data(Qt::UserRole).toInt())));
         ConfirmDeleteDialog confirm(style(), resume, this);
         if (confirm.exec() == QDialog::Accepted) eqTable->removeRow(r);
     });
@@ -4087,6 +4304,10 @@ QPushButton:hover{ background: %2; }
     eqBottomL->addWidget(eqEdit);
     eqBottomL->addWidget(eqDel);
     eqBottomL->addWidget(eqDet);
+
+    QPushButton* eqExportPdf = actionBtn("Exporter PDF", "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogDetailedView), true);
+    eqBottomL->addWidget(eqExportPdf);
+
     eqBottomL->addStretch(1);
 
     eqBottomL->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_DirIcon)));
@@ -4208,12 +4429,7 @@ QPushButton:hover{ background: %2; }
     addDrop->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     addDrop->setStyleSheet("QToolButton{ color: rgba(0,0,0,0.55); font-weight: 900; }");
 
-    QLabel* idLbl = new QLabel("EQ-006");
-    idLbl->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
-
     eqTinyTopL->addWidget(addDrop);
-    eqTinyTopL->addSpacing(10);
-    eqTinyTopL->addWidget(idLbl);
     eqTinyTopL->addStretch(1);
     eqRight2L->addWidget(eqTinyTop);
 
@@ -4532,7 +4748,7 @@ QPushButton:hover{ background: %2; }
     QLabel* equipIcon = new QLabel;
     equipIcon->setPixmap(st->standardIcon(QStyle::SP_ComputerIcon).pixmap(48,48));
 
-    QLabel* equipTitle = new QLabel("<b>PCR Machine - Thermo Fisher</b><br><small style='color: rgba(0,0,0,0.55);'>ID: EQ-001</small>");
+    QLabel* equipTitle = new QLabel("<b>PCR Machine - Thermo Fisher</b>");
     QFont titleFont = equipTitle->font();
     titleFont.setPointSize(16);
     equipTitle->setFont(titleFont);
@@ -4818,7 +5034,7 @@ QPushButton:hover{ background: %2; }
     empBarL->setSpacing(10);
 
     QLineEdit* empSearch = new QLineEdit;
-    empSearch->setPlaceholderText("Rechercher (CIN, nom, role, laboratoire...)");
+    empSearch->setPlaceholderText("Rechercher (CIN)");
     empSearch->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
 
     QComboBox* empRole = new QComboBox; empRole->addItems({"Role", "Chercheur", "Technicien"});
@@ -4849,8 +5065,8 @@ QPushButton:hover{ background: %2; }
     QVBoxLayout* empCardL = new QVBoxLayout(empCard);
     empCardL->setContentsMargins(10,10,10,10);
 
-    QTableWidget* empTable = new QTableWidget(6, 12);
-    empTable->setHorizontalHeaderLabels({"", "Employe ID", "CIN", "Nom", "Prenom", "Role", "Specialisation", "Qualification", "Publications", "Temps", "Laboratoire", "Projet"});
+    QTableWidget* empTable = new QTableWidget(6, 11);
+    empTable->setHorizontalHeaderLabels({"", "CIN", "Nom", "Prenom", "Role", "Specialisation", "Qualification", "Publications", "Temps", "Laboratoire", "Projet"});
     empTable->verticalHeader()->setVisible(false);
     empTable->setShowGrid(true);
     empTable->setAlternatingRowColors(true);
@@ -4859,22 +5075,21 @@ QPushButton:hover{ background: %2; }
     empTable->setSelectionMode(QAbstractItemView::SingleSelection);
     empTable->horizontalHeader()->setStretchLastSection(true);
     empTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    empTable->setItemDelegateForColumn(9, new EmployeeBadgeDelegate(empTable));
+    empTable->setItemDelegateForColumn(8, new EmployeeBadgeDelegate(empTable));
 
     empTable->setColumnWidth(0, 36);
-    empTable->setColumnWidth(1, 100);
-    empTable->setColumnWidth(2, 110);
+    empTable->setColumnWidth(1, 110);
+    empTable->setColumnWidth(2, 120);
     empTable->setColumnWidth(3, 120);
     empTable->setColumnWidth(4, 120);
-    empTable->setColumnWidth(5, 120);
+    empTable->setColumnWidth(5, 140);
     empTable->setColumnWidth(6, 140);
-    empTable->setColumnWidth(7, 140);
-    empTable->setColumnWidth(8, 110);
-    empTable->setColumnWidth(9, 120);
-    empTable->setColumnWidth(10, 110);
-    empTable->setColumnWidth(11, 140);
+    empTable->setColumnWidth(7, 110);
+    empTable->setColumnWidth(8, 120);
+    empTable->setColumnWidth(9, 110);
+    empTable->setColumnWidth(10, 140);
 
-    auto setEmpRow=[&](int r, const QString& empId, const QString& cin,
+    auto setEmpRow=[&](int r, const QString& cin,
                        const QString& nom, const QString& prenom,
                        const QString& role, const QString& spec,
                        const QString& qualif, const QString& pubs,
@@ -4891,36 +5106,51 @@ QPushButton:hover{ background: %2; }
             return it;
         };
 
-        empTable->setItem(r, 1, mk(empId));
-        empTable->setItem(r, 2, mk(cin));
-        empTable->setItem(r, 3, mk(nom));
-        empTable->setItem(r, 4, mk(prenom));
-        empTable->setItem(r, 5, mk(role));
-        empTable->setItem(r, 6, mk(spec));
-        empTable->setItem(r, 7, mk(qualif));
+        empTable->setItem(r, 1, mk(cin));
+        empTable->setItem(r, 2, mk(nom));
+        empTable->setItem(r, 3, mk(prenom));
+        empTable->setItem(r, 4, mk(role));
+        empTable->setItem(r, 5, mk(spec));
+        empTable->setItem(r, 6, mk(qualif));
         QTableWidgetItem* p = mk(pubs);
         p->setTextAlignment(Qt::AlignRight|Qt::AlignVCenter);
-        empTable->setItem(r, 8, p);
+        empTable->setItem(r, 7, p);
 
         QTableWidgetItem* badge = new QTableWidgetItem;
         badge->setData(Qt::UserRole, (int)ft);
-        empTable->setItem(r, 9, badge);
+        empTable->setItem(r, 8, badge);
 
-        empTable->setItem(r,10, mk(lab));
-        empTable->setItem(r,11, mk(proj));
+        empTable->setItem(r, 9, mk(lab));
+        empTable->setItem(r,10, mk(proj));
 
         empTable->setRowHeight(r, 46);
     };
 
-    setEmpRow(0, "E001", "AA123456", "Ali", "Ben Salem", "Chercheur", "Biomol", "PhD",  "25", FTStatus::FullTime, "Lab A", "Projet GENOME");
-    setEmpRow(1, "E002", "BB654321", "Sara", "Bouaziz", "Technicien", "Chimie",  "BSc",  "5",  FTStatus::PartTime, "Lab B", "-");
-    setEmpRow(2, "E003", "CC998877", "Youssef", "K.",    "Chercheur", "Bioinfo", "PhD",  "12", FTStatus::Contract, "Lab C", "Projet AI-BIO");
-    setEmpRow(3, "E004", "DD112233", "Meriem", "H.",     "Technicien","General", "BTS",  "2",  FTStatus::FullTime, "Lab A", "-");
-    setEmpRow(4, "E005", "EE667788", "Omar",   "A.",     "Chercheur", "Biomol",  "PhD",  "40", FTStatus::OnLeave,  "Lab B", "Projet PROTEO");
-    setEmpRow(5, "E006", "FF334455", "Nada",   "B.",     "Chercheur", "Chimie",  "MSc",  "10", FTStatus::FullTime, "Lab C", "Projet MATERIA");
+    setEmpRow(0, "AA123456", "Ali", "Ben Salem", "Chercheur", "Biomol", "PhD",  "25", FTStatus::FullTime, "Lab A", "Projet GENOME");
+    setEmpRow(1, "BB654321", "Sara", "Bouaziz", "Technicien", "Chimie",  "BSc",  "5",  FTStatus::PartTime, "Lab B", "-");
+    setEmpRow(2, "CC998877", "Youssef", "K.",    "Chercheur", "Bioinfo", "PhD",  "12", FTStatus::Contract, "Lab C", "Projet AI-BIO");
+    setEmpRow(3, "DD112233", "Meriem", "H.",     "Technicien","General", "BTS",  "2",  FTStatus::FullTime, "Lab A", "-");
+    setEmpRow(4, "EE667788", "Omar",   "A.",     "Chercheur", "Biomol",  "PhD",  "40", FTStatus::OnLeave,  "Lab B", "Projet PROTEO");
+    setEmpRow(5, "FF334455", "Nada",   "B.",     "Chercheur", "Chimie",  "MSc",  "10", FTStatus::FullTime, "Lab C", "Projet MATERIA");
 
     empCardL->addWidget(empTable);
     emp1->addWidget(empCard, 1);
+
+    // Search by CIN and other fields
+    QObject::connect(empSearch, &QLineEdit::textChanged, this, [=](const QString& text){
+        QString filter = text.trimmed().toLower();
+        for (int r = 0; r < empTable->rowCount(); ++r) {
+            bool match = false;
+            if (filter.isEmpty()) { match = true; }
+            else {
+                for (int c = 1; c <= 10; ++c) {
+                    QTableWidgetItem* it = empTable->item(r, c);
+                    if (it && it->text().toLower().contains(filter)) { match = true; break; }
+                }
+            }
+            empTable->setRowHidden(r, !match);
+        }
+    });
 
     QFrame* empBottom = new QFrame;
     empBottom->setFixedHeight(64);
@@ -5011,7 +5241,28 @@ QPushButton:hover{ background: %2; }
         empLeft2L->addWidget(b);
     };
 
-    empLeftAction("Role", QStyle::SP_FileIcon, "Chercheur / Technicien");
+    {
+        QLabel* roleHead = new QLabel("Role");
+        roleHead->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+        empLeft2L->addWidget(roleHead);
+
+        QComboBox* empRoleLeft = new QComboBox;
+        empRoleLeft->addItems({"Chercheur", "Technicien"});
+        empRoleLeft->setCursor(Qt::PointingHandCursor);
+        empRoleLeft->setStyleSheet(R"(
+            QComboBox{
+                background: rgba(255,255,255,0.70);
+                border: 1px solid rgba(0,0,0,0.12);
+                border-radius: 12px;
+                padding: 10px 12px;
+                color: rgba(0,0,0,0.60);
+                font-weight: 800;
+            }
+            QComboBox:hover{ background: rgba(255,255,255,0.85); }
+            QComboBox::drop-down{ border:0; padding-right:8px; }
+        )");
+        empLeft2L->addWidget(empRoleLeft);
+    }
 
     QToolButton* empSpecBtn = new QToolButton;
     empSpecBtn->setIcon(st->standardIcon(QStyle::SP_DirIcon));
@@ -5077,12 +5328,7 @@ QPushButton:hover{ background: %2; }
     empAddDrop->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     empAddDrop->setStyleSheet("QToolButton{ color: rgba(0,0,0,0.55); font-weight: 900; }");
 
-    QLabel* empIdLbl = new QLabel("E007");
-    empIdLbl->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
-
     empTinyTopL->addWidget(empAddDrop);
-    empTinyTopL->addSpacing(10);
-    empTinyTopL->addWidget(empIdLbl);
     empTinyTopL->addStretch(1);
     empRight2L->addWidget(empTinyTop);
 
@@ -5541,8 +5787,8 @@ QPushButton:hover{ background: %2; }
         int total = empTable->rowCount();
 
         for (int r=0; r<empTable->rowCount(); ++r) {
-            const QString role = empTable->item(r, 5)->text();
-            const QString spec = empTable->item(r, 6)->text();
+            const QString role = empTable->item(r, 4)->text();
+            const QString spec = empTable->item(r, 5)->text();
             roleCount[role] += 1;
             specCount[spec] += 1;
         }
@@ -5650,12 +5896,12 @@ QPushButton:hover{ background: %2; }
             QMessageBox::information(this, "Information", "Sélectionnez une publication.");
             return false;
         }
-        pubDetTitle->setText(pubTable->item(r,1)->text());
-        pubDetAuthors->setText(pubTable->item(r,2)->text());
-        pubDetJournal->setText(pubTable->item(r,3)->text());
-        pubDetYear->setText(pubTable->item(r,4)->text());
-        pubDetDoi->setText(pubTable->item(r,5)->text());
-        pubDetStatus->setText(pubTable->item(r,6)->text());
+        pubDetTitle->setText(pubTable->item(r,0)->text());
+        pubDetAuthors->setText(pubTable->item(r,1)->text());
+        pubDetJournal->setText(pubTable->item(r,2)->text());
+        pubDetYear->setText(pubTable->item(r,3)->text());
+        pubDetDoi->setText(pubTable->item(r,4)->text());
+        pubDetStatus->setText(pubTable->item(r,5)->text());
         pubDetAbstract->setText("Résumé non renseigné.");
         return true;
     };
@@ -5683,7 +5929,6 @@ QPushButton:hover{ background: %2; }
     expTitleFont.setBold(true);
     expDetTitle->setFont(expTitleFont);
 
-    QLabel* expDetId = nullptr;
     QLabel* expDetProto = nullptr;
     QLabel* expDetResp = nullptr;
     QLabel* expDetDate = nullptr;
@@ -5706,7 +5951,6 @@ QPushButton:hover{ background: %2; }
     };
 
     expDetailsL->addWidget(expDetTitle);
-    expDetailsL->addWidget(expDetailRow("ID", expDetId));
     expDetailsL->addWidget(expDetailRow("Protocole", expDetProto));
     expDetailsL->addWidget(expDetailRow("Responsable", expDetResp));
     expDetailsL->addWidget(expDetailRow("Date", expDetDate));
@@ -5733,13 +5977,12 @@ QPushButton:hover{ background: %2; }
             QMessageBox::information(this, "Information", "Sélectionnez une expérience.");
             return false;
         }
-        expDetTitle->setText(expTable->item(r,1)->text());
-        expDetId->setText(expTable->item(r,0)->text());
-        expDetProto->setText(expTable->item(r,2)->text());
-        expDetResp->setText(expTable->item(r,3)->text());
-        expDetDate->setText(expTable->item(r,4)->text());
-        expDetStatus->setText(expTable->item(r,5)->text());
-        expDetBsl->setText(expTable->item(r,6)->text());
+        expDetTitle->setText(expTable->item(r,0)->text());
+        expDetProto->setText(expTable->item(r,1)->text());
+        expDetResp->setText(expTable->item(r,2)->text());
+        expDetDate->setText(expTable->item(r,3)->text());
+        expDetStatus->setText(expTable->item(r,4)->text());
+        expDetBsl->setText(expTable->item(r,5)->text());
         return true;
     };
 
@@ -5766,7 +6009,6 @@ QPushButton:hover{ background: %2; }
     projTitleFont.setBold(true);
     projDetTitle->setFont(projTitleFont);
 
-    QLabel* projDetId = nullptr;
     QLabel* projDetDomain = nullptr;
     QLabel* projDetOwner = nullptr;
     QLabel* projDetBudget = nullptr;
@@ -5789,7 +6031,6 @@ QPushButton:hover{ background: %2; }
     };
 
     projDetailsL->addWidget(projDetTitle);
-    projDetailsL->addWidget(projDetailRow("ID", projDetId));
     projDetailsL->addWidget(projDetailRow("Domaine", projDetDomain));
     projDetailsL->addWidget(projDetailRow("Responsable", projDetOwner));
     projDetailsL->addWidget(projDetailRow("Budget", projDetBudget));
@@ -5817,7 +6058,6 @@ QPushButton:hover{ background: %2; }
             return false;
         }
         projDetTitle->setText(projTable->item(r,1)->text());
-        projDetId->setText(projTable->item(r,0)->text());
         projDetDomain->setText(projTable->item(r,2)->text());
         projDetOwner->setText(projTable->item(r,3)->text());
         projDetBudget->setText(projTable->item(r,4)->text());
@@ -5887,10 +6127,6 @@ QPushButton:hover{ background: %2; }
         setWindowTitle("Gestion Projet");
         stack->setCurrentIndex(PROJ_LIST);
         QMessageBox::information(this, "Projet", "Enregistrement (à connecter à la base de données).");
-    });
-    QObject::connect(projStatB, &QPushButton::clicked, this, [=](){
-        setWindowTitle("Statistiques Projet");
-        stack->setCurrentIndex(PROJ_STATS);
     });
     QObject::connect(projDetails, &QPushButton::clicked, this, [=](){
         if (!updateProjDetailsFromRow()) return;
@@ -6063,10 +6299,10 @@ QPushButton:hover{ background: %2; }
             QMessageBox::information(this, "Suppression", "Selectionnez un employe dans la liste.");
             return;
         }
-        QString resume = QString("ID : %1 | Nom : %2 | Role : %3")
-                             .arg(empTable->item(r,1)->text(),
-                                  empTable->item(r,3)->text(),
-                                  empTable->item(r,5)->text());
+           QString resume = QString("CIN : %1 | Nom : %2 | Role : %3")
+                            .arg(empTable->item(r,1)->text(),
+                                empTable->item(r,2)->text(),
+                                empTable->item(r,4)->text());
         ConfirmDeleteDialog confirm(style(), resume, this);
         if (confirm.exec() == QDialog::Accepted) {
             empTable->removeRow(r);
