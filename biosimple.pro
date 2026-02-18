@@ -1,4 +1,4 @@
-QT       += core gui
+QT       += core gui sql
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -10,10 +10,12 @@ CONFIG += c++17
 
 SOURCES += \
     biosimple.cpp \
+    connection.cpp \
     main.cpp
 
 HEADERS += \
-    biosimple.h
+    biosimple.h \
+    connection.h
 
 
 # Default rules for deployment.
