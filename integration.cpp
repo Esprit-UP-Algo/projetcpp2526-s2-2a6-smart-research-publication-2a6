@@ -1,6 +1,5 @@
 // ===================== biosimple.cpp (UN SEUL FICHIER - BioSimple + Gestion Projet - 3 Widgets) =====================
-#include "biosimple.h"
-#include "connection.h"
+#include "integration.h"
 #include <QTextEdit>
 
 #include <QPainterPath>
