@@ -1,4 +1,4 @@
-#include "biosimple.h"
+#include "integration.h"
 #include "connection.h"
 #include <QApplication>
 #include <QMessageBox>
@@ -7,9 +7,8 @@ int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
     MainWindow w;
-    Connection c;
-
-    bool test=c.createconnect();
+    Connection* c = Connection::instance();
+    bool test=c->createConnect();
     if(test)
     {w.show();
         QMessageBox::information(nullptr, QObject::tr("database is open"),
@@ -17,11 +16,11 @@ int main(int argc, char *argv[])
                                              "Click Cancel to exit."), QMessageBox::Cancel);
 
     }
-    else{
+    else
         QMessageBox::critical(nullptr, QObject::tr("database is not open"),
                               QObject::tr("connection failed.\n"
                                           "Click Cancel to exit."), QMessageBox::Cancel);
-    }
+
     w.show();
     return a.exec();
 }
