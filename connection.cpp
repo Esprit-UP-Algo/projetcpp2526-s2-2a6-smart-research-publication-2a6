@@ -1,64 +1,19 @@
-
-
-
-
 #include "connection.h"
-#include <QSqlError>
-#include <QDebug>
 
-// Initialisation du pointeur d'instance
-Connection* Connection::p_instance = nullptr;
-
-// Constructeur privé
 Connection::Connection()
 {
-    // Initialisation de la base de données
-    db = QSqlDatabase::addDatabase("QODBC");
 }
 
-// Méthode statique pour obtenir l'instance unique
-Connection* Connection::instance()
-{
-    if (p_instance == nullptr) {
-        p_instance = new Connection();
-    }
-    return p_instance;
-}
-
-// Méthode pour établir la connexion
-bool Connection::createConnect()
+bool Connection::createconnect()
 {
     bool test = false;
+    QSqlDatabase db = QSqlDatabase::addDatabase("QODBC");
+    db.setDatabaseName("Smartvision"); // insert the data source name
+    db.setUserName("Aminebouzidi");        // insert user name
+    db.setPassword("123");            // insert password
 
-    db.setDatabaseName("smartvision");//inserer le nom de la source de données
-    db.setUserName("AmineBouzidi");//inserer nom de l'utilisateur
-    db.setPassword("123");//inserer mot de passe de cet utilisateur
-
-    if (db.open()) {
+    if (db.open())
         test = true;
-        qDebug() << "Connexion à la base de données réussie";
-    } else {
-        qDebug() << "Erreur de connexion:" << db.lastError().text();
-    }
 
     return test;
 }
-
-// Fermer la connexion
-void Connection::closeConnection()
-{
-    if (db.isOpen()) {
-        db.close();
-    }
-}
-
-// Destructeur privé
-Connection::~Connection()
-{
-    closeConnection();
-}
-
-
-
-
-

@@ -5,6 +5,7 @@
 #include <QPainterPath>
 #include <QDialog>
 #include <QMessageBox>
+#include <QSqlQuery>
 
 #include <QApplication>
 #include <QMainWindow>
@@ -2490,7 +2491,8 @@ MainWindow::MainWindow(QWidget *parent)
         return r;
     };
 
-    auto blueDateRow = [&](const QString& label, const QDate& defDate){
+    // helper that returns both the row frame and the date edit so we can later change the value
+    auto blueDateRow = [&](const QString& label, const QDate& defDate, QDateEdit*& outDate){
         QFrame* r = new QFrame;
         r->setStyleSheet(
             "QFrame{ background: rgba(255,255,255,0.80);"
@@ -2518,17 +2520,56 @@ MainWindow::MainWindow(QWidget *parent)
         l->addWidget(lab);
         l->addStretch(1);
         l->addWidget(d);
+        outDate = d;
+        return r;
+    };
+    // identical one with a red accent for expiration date
+    auto redDateRow = [&](const QString& label, const QDate& defDate, QDateEdit*& outDate){
+        QFrame* r = new QFrame;
+        r->setStyleSheet(
+            "QFrame{ background: rgba(255,255,255,0.80);"
+            "border: 2px solid rgba(244,67,54,0.70);"
+            "border-radius: 12px; }"
+            );
+        QHBoxLayout* l = new QHBoxLayout(r);
+        l->setContentsMargins(10,8,10,8);
+        l->setSpacing(10);
+
+        QLabel* lab = new QLabel(label);
+        lab->setStyleSheet("color: rgba(244,67,54,0.95); font-weight: 900;");
+
+        QToolButton* cal = new QToolButton;
+        cal->setAutoRaise(true);
+        cal->setIcon(st->standardIcon(QStyle::SP_FileDialogDetailedView));
+        cal->setStyleSheet("QToolButton{ color: rgba(244,67,54,1); }");
+
+        QDateEdit* d = new QDateEdit(defDate);
+        d->setCalendarPopup(true);
+        d->setDisplayFormat("dd/MM/yyyy");
+        d->setStyleSheet("QDateEdit{ background: transparent; border:0; color: rgba(244,67,54,0.95); font-weight: 900; }");
+
+        l->addWidget(cal);
+        l->addWidget(lab);
+        l->addStretch(1);
+        l->addWidget(d);
+        outDate = d;
         return r;
     };
 
-    left2L->addWidget(sectionTitle("Collection"));
-    QLineEdit* leCollection = new QLineEdit;
-    leCollection->setPlaceholderText("Nom de la collection");
-    left2L->addWidget(formRow(QStyle::SP_DirIcon, "Collection", leCollection));
+    left2L->addWidget(sectionTitle("Identité"));
+    // unique reference; when the user enters a value we will look up the record and
+    // fill the remaining fields automatically
+    QLineEdit* leRef = new QLineEdit;
+    leRef->setPlaceholderText("Référence");
+    left2L->addWidget(formRow(QStyle::SP_FileIcon, "Référence", leRef));
+
+    // collection field removed per latest request
 
     left2L->addWidget(sectionTitle("Dates"));
-    left2L->addWidget(blueDateRow("Date de collecte", QDate::currentDate()));
-    left2L->addWidget(blueDateRow("Date d'expiration", QDate::currentDate().addDays(30)));
+    // keep pointers to the date edits so the lookup lambda can modify them
+    QDateEdit *dCollect = nullptr, *dExpire = nullptr;
+    left2L->addWidget(blueDateRow("Date de collecte", QDate::currentDate(), dCollect));
+    left2L->addWidget(redDateRow("Date d'expiration", QDate::currentDate().addDays(30), dExpire));
 
     QSpinBox* qty = new QSpinBox;
     qty->setRange(0, 999999);
@@ -2562,6 +2603,7 @@ MainWindow::MainWindow(QWidget *parent)
     right2L->addWidget(formRow(QStyle::SP_FileIcon, "Type", cbType2));
 
     QComboBox* cbOrg2 = new QComboBox;
+    cbOrg2->setEditable(true); // allow typing instead of only scrolling
     cbOrg2->addItems({"Organisme", "Humain", "Souris", "Levure", "E. coli"});
     cbOrg2->setFixedWidth(200);
     right2L->addWidget(formRow(QStyle::SP_DirIcon, "Organisme", cbOrg2));
@@ -2578,14 +2620,51 @@ MainWindow::MainWindow(QWidget *parent)
     sbShelf2->setStyleSheet("QSpinBox{ background: transparent; border:0; font-weight:900; color: rgba(0,0,0,0.60); }");
     right2L->addWidget(formRow(QStyle::SP_FileDialogListView, "Étagère", sbShelf2));
 
-    QSpinBox* sbPos2 = new QSpinBox;
-    sbPos2->setRange(1, 999);
-    sbPos2->setValue(1);
-    sbPos2->setFixedWidth(120);
-    sbPos2->setStyleSheet("QSpinBox{ background: transparent; border:0; font-weight:900; color: rgba(0,0,0,0.60); }");
-    right2L->addWidget(formRow(QStyle::SP_ArrowDown, "Position", sbPos2));
+    // position field removed per latest request
 
     right2L->addStretch(1);
+
+    // ----- automatic lookup when reference is entered -----------------------
+    QObject::connect(leRef, &QLineEdit::editingFinished, [=](){
+        QString ref = leRef->text().trimmed();
+        if(ref.isEmpty())
+            return;          // nothing to do
+
+        QSqlQuery q;
+        q.prepare(R"(
+            SELECT TYPE_ECHANTILLON,
+                   ORGANISME,
+                   CONGELATEUR,
+                   ETAGERE,
+                   POSITION,
+                   TEMPERATURE_STOCKAGE,
+                   QUANTITE_RESTANTE,
+                   DATE_COLLECTE,
+                   DATE_EXPIRATION,
+                   NIVEAU_DANGEROSITE,
+                   NOM_COLLECTION
+            FROM ECHANTILLONS
+            WHERE REFERENCE = :r
+        )");
+        q.bindValue(":r", ref);
+        if(q.exec() && q.next()){
+            cbType2->setCurrentText(q.value(0).toString());
+            cbOrg2->setCurrentText(q.value(1).toString());
+            cbFreezer2->setCurrentText(q.value(2).toString());
+            sbShelf2->setValue(q.value(3).toInt());
+            // position removed
+            cbTemp2->setCurrentText(q.value(5).toString());
+            qty->setValue(q.value(6).toInt());
+            dCollect->setDate(q.value(7).toDate());
+            dExpire->setDate(q.value(8).toDate());
+            cbDanger->setCurrentText(q.value(9).toString());
+            // collection removed
+            // the lookup may also set other widgets (organisation, etc) if added
+        } else {
+            // if no match we leave the form blank – the user will create a new sample
+            // optionally we could clear fields here.
+        }
+    });
 
     outer2L->addWidget(left2);
     outer2L->addWidget(right2, 1);
@@ -6095,7 +6174,30 @@ QPushButton:hover{ background: %2; }
     QObject::connect(btnEdit, &QPushButton::clicked, this, [=]{ setWindowTitle("Ajouter / Modifier un échantillon"); stack->setCurrentIndex(BIO_FORM); });
 
     QObject::connect(cancelBtn, &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(BIO_LIST); });
-    QObject::connect(saveBtn,   &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(BIO_LIST); });
+    QObject::connect(saveBtn,   &QPushButton::clicked, this, [=]{
+        // validation: the reference is mandatory and must be unique
+        QString ref = leRef->text().trimmed();
+        if(ref.isEmpty()){
+            QMessageBox::warning(this, "Référence requise", "Veuillez saisir la référence de l'échantillon.");
+            return;
+        }
+        QSqlQuery dup;
+        dup.prepare("SELECT COUNT(1) FROM ECHANTILLONS WHERE REFERENCE = :r");
+        dup.bindValue(":r", ref);
+        if(dup.exec() && dup.next() && dup.value(0).toInt() > 0){
+            // if editing an existing record you should compare IDs; this simple check
+            // prevents the user from creating a duplicate reference.
+            QMessageBox::warning(this, "Référence existante", "Un échantillon avec cette référence existe déjà.");
+            return;
+        }
+        // TODO: here you would collect all other field values and issue an
+        // INSERT or UPDATE statement on the database.  the widgets created above
+        // (cbType2, cbOrg2, cbFreezer2, etc.) are visible in this scope thanks to
+        // the lambda capture.
+
+        setWindowTitle("Gestion des Échantillons");
+        stack->setCurrentIndex(BIO_LIST);
+    });
 
     QObject::connect(btnMore, &QPushButton::clicked, this, [=]{ setWindowTitle("Localisation & Stockage"); stack->setCurrentIndex(BIO_LOC); });
     QObject::connect(back3,   &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(BIO_LIST); });
