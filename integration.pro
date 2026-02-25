@@ -11,12 +11,14 @@ CONFIG += c++17
 SOURCES += \
     integration.cpp\
     connection.cpp \
+    publication.cpp \
     crudebiosimple.cpp \
     main.cpp
 
 HEADERS += \
     integration.h\
     connection.h \
+    publication.h \
     crudebiosimple.h
 
 
