@@ -1,6 +1,7 @@
 // ===================== biosimple.cpp (UN SEUL FICHIER - BioSimple + Gestion Projet - 3 Widgets) =====================
 #include "integration.h"
 #include "crudebiosimple.h"
+#include "publication.h"
 #include <QTextEdit>
 
 #include <QPainterPath>
@@ -4111,7 +4112,7 @@ MainWindow::MainWindow(QWidget *parent)
     pubSearch->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
 
     QComboBox* pubType = new QComboBox;
-    pubType->addItems({"Type", "Article", "Conférence", "Poster", "Thèse"});
+    pubType->addItems({"Statut", "Brouillon", "Soumise", "Acceptée", "Publiée", "Rejetée"});
 
     QComboBox* pubYear = new QComboBox;
     pubYear->addItems({"Année", "2026", "2025", "2024", "2023", "2022"});
@@ -4138,28 +4139,72 @@ QPushButton:hover{ background: %2; }
     QVBoxLayout* pubCardL = new QVBoxLayout(pubCard);
     pubCardL->setContentsMargins(10,10,10,10);
 
-    QTableWidget* pubTable = new QTableWidget(6, 6);
-    pubTable->setHorizontalHeaderLabels({"Titre","Auteurs","Journal/Conf.","Année","DOI","Statut"});
+    QTableWidget* pubTable = new QTableWidget(0, 8);
+    pubTable->setHorizontalHeaderLabels({"ID","Titre","Journal/Conf.","Année","DOI","Statut","Id_projet","Employee_id"});
     pubTable->verticalHeader()->setVisible(false);
     pubTable->horizontalHeader()->setStretchLastSection(true);
     pubTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     pubTable->setSelectionMode(QAbstractItemView::SingleSelection);
     pubTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    pubTable->setColumnHidden(0, true);
 
-    auto putPUB = [&](int r,int c,const QString& v){
-        QTableWidgetItem* it = new QTableWidgetItem(v);
-        it->setTextAlignment(Qt::AlignLeft|Qt::AlignVCenter);
-        pubTable->setItem(r,c,it);
+    auto reloadPublications = [=](){
+        QString errorMessage;
+        QSqlQueryModel* model = Publication::readAll(nullptr, &errorMessage);
+        if (!model) {
+            QMessageBox::warning(this, "Publication", "Chargement impossible :\n" + errorMessage);
+            return;
+        }
+
+        pubTable->setRowCount(0);
+        for (int r = 0; r < model->rowCount(); ++r) {
+            pubTable->insertRow(r);
+            for (int c = 0; c < pubTable->columnCount(); ++c) {
+                QTableWidgetItem* it = new QTableWidgetItem(model->data(model->index(r, c)).toString());
+                it->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+                pubTable->setItem(r, c, it);
+            }
+            pubTable->setRowHeight(r, 46);
+        }
+        delete model;
     };
 
-    putPUB(0,0,"Analyse génomique des souches"); putPUB(0,1,"A. Ben Ali; S. Trabelsi"); putPUB(0,2,"Nature Methods"); putPUB(0,3,"2026"); putPUB(0,4,"10.1000/xyz001"); putPUB(0,5,"Soumise");
-    putPUB(1,0,"PCR temps réel : optimisation"); putPUB(1,1,"H. Chaachou; M. Karim"); putPUB(1,2,"BioTech Conf");   putPUB(1,3,"2025"); putPUB(1,4,"10.1000/xyz002"); putPUB(1,5,"Acceptée");
-    putPUB(2,0,"Culture cellulaire avancée");    putPUB(2,1,"Dr. Amal; Dr. Nader");   putPUB(2,2,"Cell Reports");  putPUB(2,3,"2025"); putPUB(2,4,"10.1000/xyz003"); putPUB(2,5,"Publiée");
-    putPUB(3,0,"Traçabilité scientifique en labo"); putPUB(3,1,"S. Sara; H. Hichem"); putPUB(3,2,"Lab Quality"); putPUB(3,3,"2024"); putPUB(3,4,"10.1000/xyz004"); putPUB(3,5,"Brouillon");
-    putPUB(4,0,"Séquençage : protocole comparatif"); putPUB(4,1,"A. Ben Ali; K. Yassmine"); putPUB(4,2,"Genomics Journal"); putPUB(4,3,"2024"); putPUB(4,4,"10.1000/xyz005"); putPUB(4,5,"Soumise");
-    putPUB(5,0,"Dosage protéique : étude");          putPUB(5,1,"M. Karim; Dr. Amal");     putPUB(5,2,"Protein Conf");   putPUB(5,3,"2023"); putPUB(5,4,"10.1000/xyz006"); putPUB(5,5,"Rejetée");
+    auto applyPublicationFilters = [=](){
+        const QString search = pubSearch->text().trimmed().toLower();
+        const QString status = pubType->currentText();
+        const QString year = pubYear->currentText();
 
-    for(int r=0;r<pubTable->rowCount();++r) pubTable->setRowHeight(r, 46);
+        for (int r = 0; r < pubTable->rowCount(); ++r) {
+            const QString id = pubTable->item(r,0) ? pubTable->item(r,0)->text().toLower() : QString();
+            const QString titre = pubTable->item(r,1) ? pubTable->item(r,1)->text().toLower() : QString();
+            const QString journal = pubTable->item(r,2) ? pubTable->item(r,2)->text().toLower() : QString();
+            const QString annee = pubTable->item(r,3) ? pubTable->item(r,3)->text() : QString();
+            const QString doi = pubTable->item(r,4) ? pubTable->item(r,4)->text().toLower() : QString();
+            const QString statut = pubTable->item(r,5) ? pubTable->item(r,5)->text() : QString();
+            const QString projet = pubTable->item(r,6) ? pubTable->item(r,6)->text().toLower() : QString();
+            const QString employe = pubTable->item(r,7) ? pubTable->item(r,7)->text().toLower() : QString();
+
+            const bool matchesSearch = search.isEmpty()
+                || id.contains(search)
+                || titre.contains(search)
+                || journal.contains(search)
+                || annee.toLower().contains(search)
+                || doi.contains(search)
+                || projet.contains(search)
+                || employe.contains(search);
+
+            const bool matchesStatus = (status == "Statut") || (statut == status);
+            const bool matchesYear = (year == "Année") || (annee == year);
+            pubTable->setRowHidden(r, !(matchesSearch && matchesStatus && matchesYear));
+        }
+    };
+
+    QObject::connect(pubSearch, &QLineEdit::textChanged, this, [=](){ applyPublicationFilters(); });
+    QObject::connect(pubType, &QComboBox::currentTextChanged, this, [=](){ applyPublicationFilters(); });
+    QObject::connect(pubYear, &QComboBox::currentTextChanged, this, [=](){ applyPublicationFilters(); });
+
+    reloadPublications();
+    applyPublicationFilters();
 
     pubCardL->addWidget(pubTable);
     pb1->addWidget(pubCard, 1);
@@ -4185,11 +4230,22 @@ QPushButton:hover{ background: %2; }
             return;
         }
            QString resume = QString("Titre : %1 | Année : %2 | Statut : %3")
-                            .arg(pubTable->item(r,0)->text(),
+                            .arg(pubTable->item(r,1)->text(),
                                 pubTable->item(r,3)->text(),
                                 pubTable->item(r,5)->text());
         ConfirmDeleteDialog confirm(style(), resume, this);
-        if (confirm.exec() == QDialog::Accepted) pubTable->removeRow(r);
+        if (confirm.exec() != QDialog::Accepted) {
+            return;
+        }
+
+        QString errorMessage;
+        if (!Publication::remove(pubTable->item(r,0)->text().toInt(), &errorMessage)) {
+            QMessageBox::warning(this, "Suppression", "Échec de suppression :\n" + errorMessage);
+            return;
+        }
+
+        reloadPublications();
+        applyPublicationFilters();
     });
 
     pubBottomL->addWidget(pubAdd);
@@ -4251,15 +4307,12 @@ QPushButton:hover{ background: %2; }
     pub2LeftL->setContentsMargins(12,12,12,12);
     pub2LeftL->setSpacing(10);
 
+    QSpinBox* sbPubId = new QSpinBox;
+    sbPubId->setRange(0, 1000000000);
+    sbPubId->setVisible(false);
+
     QLineEdit* leTitle = new QLineEdit;
     leTitle->setPlaceholderText("Titre de la publication");
-
-    QLineEdit* leAuthors = new QLineEdit;
-    leAuthors->setPlaceholderText("Auteurs (séparés par ; )");
-
-    QComboBox* cbPubType = new QComboBox;
-    cbPubType->addItems({"Type", "Article", "Conférence", "Poster", "Thèse"});
-    cbPubType->setFixedWidth(220);
 
     QSpinBox* sbYear = new QSpinBox;
     sbYear->setRange(1950, 2100);
@@ -4269,8 +4322,6 @@ QPushButton:hover{ background: %2; }
 
     pub2LeftL->addWidget(pubTitle("Informations"));
     pub2LeftL->addWidget(pubRow(QStyle::SP_FileDialogDetailedView, "Titre", leTitle));
-    pub2LeftL->addWidget(pubRow(QStyle::SP_DirIcon, "Auteurs", leAuthors));
-    pub2LeftL->addWidget(pubRow(QStyle::SP_ComputerIcon, "Type", cbPubType));
     pub2LeftL->addWidget(pubRow(QStyle::SP_FileDialogInfoView, "Année", sbYear));
     pub2LeftL->addStretch(1);
 
@@ -4289,6 +4340,16 @@ QPushButton:hover{ background: %2; }
     cbStatus->addItems({"Statut", "Brouillon", "Soumise", "Acceptée", "Publiée", "Rejetée"});
     cbStatus->setFixedWidth(220);
 
+    QSpinBox* sbIdProjet = new QSpinBox;
+    sbIdProjet->setRange(0, 1000000000);
+    sbIdProjet->setFixedWidth(220);
+    sbIdProjet->setStyleSheet("QSpinBox{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 900; }");
+
+    QSpinBox* sbEmployeeId = new QSpinBox;
+    sbEmployeeId->setRange(0, 1000000000);
+    sbEmployeeId->setFixedWidth(220);
+    sbEmployeeId->setStyleSheet("QSpinBox{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 900; }");
+
     QTextEdit* teAbstract = new QTextEdit;
     teAbstract->setPlaceholderText("Résumé / Notes / Mots-clés (traçabilité scientifique)");
     teAbstract->setStyleSheet("QTextEdit{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 800; }");
@@ -4297,6 +4358,8 @@ QPushButton:hover{ background: %2; }
     pub2RightL->addWidget(pubRow(QStyle::SP_DirHomeIcon, "Journal/Conf.", leJournal));
     pub2RightL->addWidget(pubRow(QStyle::SP_FileDialogContentsView, "DOI", leDOI));
     pub2RightL->addWidget(pubRow(QStyle::SP_MessageBoxInformation, "Statut", cbStatus));
+    pub2RightL->addWidget(pubRow(QStyle::SP_FileDialogToParent, "Id_projet", sbIdProjet));
+    pub2RightL->addWidget(pubRow(QStyle::SP_DirHomeIcon, "Employee_id", sbEmployeeId));
     pub2RightL->addWidget(teAbstract, 1);
 
     outPUB2L->addWidget(pub2Left);
@@ -6131,19 +6194,21 @@ QPushButton:hover{ background: %2; }
         return row;
     };
 
-    QLabel* pubDetAuthors = nullptr;
     QLabel* pubDetJournal = nullptr;
     QLabel* pubDetYear = nullptr;
     QLabel* pubDetDoi = nullptr;
     QLabel* pubDetStatus = nullptr;
+    QLabel* pubDetIdProjet = nullptr;
+    QLabel* pubDetEmployeeId = nullptr;
     QLabel* pubDetAbstract = nullptr;
 
     pubDetailsL->addWidget(pubDetTitle);
-    pubDetailsL->addWidget(pubDetailRow("Auteurs", pubDetAuthors));
     pubDetailsL->addWidget(pubDetailRow("Journal/Conf.", pubDetJournal));
     pubDetailsL->addWidget(pubDetailRow("Année", pubDetYear));
     pubDetailsL->addWidget(pubDetailRow("DOI", pubDetDoi));
     pubDetailsL->addWidget(pubDetailRow("Statut", pubDetStatus));
+    pubDetailsL->addWidget(pubDetailRow("Id_projet", pubDetIdProjet));
+    pubDetailsL->addWidget(pubDetailRow("Employee_id", pubDetEmployeeId));
 
     QLabel* abstractLabel = new QLabel("Résumé :");
     abstractLabel->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
@@ -6169,19 +6234,75 @@ QPushButton:hover{ background: %2; }
 
     stack->addWidget(pubDetailsPage);
 
+    auto clearPublicationForm = [=]() {
+        sbPubId->setReadOnly(false);
+        sbPubId->setButtonSymbols(QAbstractSpinBox::UpDownArrows);
+        sbPubId->setValue(0);
+        leTitle->clear();
+        sbYear->setValue(QDate::currentDate().year());
+        leJournal->clear();
+        leDOI->clear();
+        cbStatus->setCurrentText("Statut");
+        teAbstract->clear();
+        sbIdProjet->setValue(0);
+        sbEmployeeId->setValue(0);
+    };
+
+    auto fillPublicationFormFromSelection = [=]() -> bool {
+        const int row = pubTable->currentRow();
+        if (row < 0) {
+            QMessageBox::information(this, "Information", "Sélectionnez une publication à modifier.");
+            return false;
+        }
+
+        Publication publication;
+        QString errorMessage;
+        const int id = pubTable->item(row, 0)->text().toInt();
+        if (!Publication::readById(id, publication, &errorMessage)) {
+            QMessageBox::warning(this, "Publication", "Lecture impossible :\n" + errorMessage);
+            return false;
+        }
+
+        sbPubId->setValue(publication.id());
+        sbPubId->setReadOnly(true);
+        sbPubId->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        leTitle->setText(publication.titre());
+        sbYear->setValue(publication.annee());
+        leJournal->setText(publication.journal());
+        leDOI->setText(publication.doi());
+        if (cbStatus->findText(publication.status()) >= 0)
+            cbStatus->setCurrentText(publication.status());
+        else
+            cbStatus->setCurrentText("Statut");
+        teAbstract->setPlainText(publication.abstractText());
+        sbIdProjet->setValue(publication.idProjet());
+        sbEmployeeId->setValue(publication.employeeId());
+        return true;
+    };
+
     auto updatePubDetailsFromRow = [=]()->bool{
         int r = pubTable->currentRow();
         if (r < 0) {
             QMessageBox::information(this, "Information", "Sélectionnez une publication.");
             return false;
         }
-        pubDetTitle->setText(pubTable->item(r,0)->text());
-        pubDetAuthors->setText(pubTable->item(r,1)->text());
-        pubDetJournal->setText(pubTable->item(r,2)->text());
-        pubDetYear->setText(pubTable->item(r,3)->text());
-        pubDetDoi->setText(pubTable->item(r,4)->text());
-        pubDetStatus->setText(pubTable->item(r,5)->text());
-        pubDetAbstract->setText("Résumé non renseigné.");
+
+        Publication publication;
+        QString errorMessage;
+        const int id = pubTable->item(r,0)->text().toInt();
+        if (!Publication::readById(id, publication, &errorMessage)) {
+            QMessageBox::warning(this, "Publication", "Lecture impossible :\n" + errorMessage);
+            return false;
+        }
+
+        pubDetTitle->setText(publication.titre());
+        pubDetJournal->setText(publication.journal());
+        pubDetYear->setText(QString::number(publication.annee()));
+        pubDetDoi->setText(publication.doi());
+        pubDetStatus->setText(publication.status());
+        pubDetIdProjet->setText(QString::number(publication.idProjet()));
+        pubDetEmployeeId->setText(QString::number(publication.employeeId()));
+        pubDetAbstract->setText(publication.abstractText().isEmpty() ? "Résumé non renseigné." : publication.abstractText());
         return true;
     };
 
@@ -6804,13 +6925,11 @@ QPushButton:hover{ background: %2; }
 
     // LIST -> FORM
     QObject::connect(pubAdd, &QPushButton::clicked, this, [=](){
+        clearPublicationForm();
         stack->setCurrentIndex(PUB_FORM);
     });
     QObject::connect(pubEdit, &QPushButton::clicked, this, [=](){
-        if (pubTable->currentRow() < 0) {
-            QMessageBox::information(this, "Information", "Sélectionnez une publication à modifier.");
-            return;
-        }
+        if (!fillPublicationFormFromSelection()) return;
         stack->setCurrentIndex(PUB_FORM);
     });
 
@@ -6826,10 +6945,44 @@ QPushButton:hover{ background: %2; }
 
     // FORM -> LIST
     QObject::connect(pubCancel, &QPushButton::clicked, this, [=](){
+        clearPublicationForm();
         stack->setCurrentIndex(PUB_LIST);
     });
     QObject::connect(pubSave, &QPushButton::clicked, this, [=](){
-        // (démo) : tu peux ajouter ici l’insertion dans pubTable si tu veux
+        if (leTitle->text().trimmed().isEmpty()) {
+            QMessageBox::warning(this, "Validation", "Le titre est obligatoire.");
+            return;
+        }
+        if (cbStatus->currentText() == "Statut") {
+            QMessageBox::warning(this, "Validation", "Veuillez sélectionner un statut.");
+            return;
+        }
+
+        Publication publication(
+            sbPubId->value(),
+            leTitle->text().trimmed(),
+            leJournal->text().trimmed(),
+            sbYear->value(),
+            leDOI->text().trimmed(),
+            cbStatus->currentText(),
+            teAbstract->toPlainText().trimmed(),
+            sbIdProjet->value(),
+            sbEmployeeId->value()
+            );
+
+        QString errorMessage;
+        const bool ok = sbPubId->isReadOnly()
+                            ? publication.update(&errorMessage)
+                            : publication.create(&errorMessage);
+
+        if (!ok) {
+            QMessageBox::warning(this, "Publication", "Échec d'enregistrement :\n" + errorMessage);
+            return;
+        }
+
+        reloadPublications();
+        applyPublicationFilters();
+        clearPublicationForm();
         stack->setCurrentIndex(PUB_LIST);
     });
 
