@@ -1,5 +1,6 @@
 // ===================== biosimple.cpp (UN SEUL FICHIER - BioSimple + Gestion Projet - 3 Widgets) =====================
 #include "integration.h"
+#include "crudebiosimple.h"
 #include <QTextEdit>
 
 #include <QPainterPath>
@@ -40,6 +41,12 @@
 #include <QPixmap>
 #include <QFont>
 #include <QColor>
+#include <QTimer>
+#include <QPropertyAnimation>
+#include <QGraphicsOpacityEffect>
+#include <QGraphicsColorizeEffect>
+#include <QEasingCurve>
+#include <QStackedLayout>
 
 #include <cmath>
 #include <algorithm>
@@ -200,6 +207,144 @@ static QToolButton* tinySquareBtn(const QIcon& icon)
     return b;
 }
 
+// ===================== BUTTON COLOR ANIMATOR (global event filter) =====================
+// On hover: smoothly tints the button with a bright accent color.
+// On leave: removes the tint smoothly.
+class ButtonAnimator : public QObject {
+public:
+    explicit ButtonAnimator(QObject* parent = nullptr) : QObject(parent) {}
+
+    bool eventFilter(QObject* obj, QEvent* ev) override {
+        auto* btn = qobject_cast<QPushButton*>(obj);
+        if (!btn) return false;
+
+        if (ev->type() == QEvent::Enter) {
+            // Kill any running animation on this button
+            if (btn->graphicsEffect()) btn->setGraphicsEffect(nullptr);
+            auto* eff = new QGraphicsColorizeEffect(btn);
+            eff->setColor(QColor(72, 210, 190));  // bright teal accent
+            eff->setStrength(0.0);
+            btn->setGraphicsEffect(eff);
+            auto* a = new QPropertyAnimation(eff, "strength", btn);
+            a->setDuration(220);
+            a->setStartValue(0.0);
+            a->setEndValue(0.50);
+            a->setEasingCurve(QEasingCurve::OutCubic);
+            a->start(QAbstractAnimation::DeleteWhenStopped);
+        }
+        else if (ev->type() == QEvent::Leave) {
+            if (auto* eff = qobject_cast<QGraphicsColorizeEffect*>(btn->graphicsEffect())) {
+                auto* a = new QPropertyAnimation(eff, "strength", btn);
+                a->setDuration(200);
+                a->setStartValue(eff->strength());
+                a->setEndValue(0.0);
+                a->setEasingCurve(QEasingCurve::InCubic);
+                QObject::connect(a, &QPropertyAnimation::finished, btn,
+                    [btn]{ btn->setGraphicsEffect(nullptr); });
+                a->start(QAbstractAnimation::DeleteWhenStopped);
+            }
+        }
+        return false;
+    }
+};
+
+// ===================== ANIMATED SYRINGE BACKGROUND =====================
+class SyringeBackground : public QWidget {
+public:
+    explicit SyringeBackground(QWidget* parent = nullptr) : QWidget(parent) {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAutoFillBackground(false);
+        QTimer* t = new QTimer(this);
+        QObject::connect(t, &QTimer::timeout, this, [this]{ m_angle += 0.35; update(); });
+        t->start(16); // ~60 fps
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override {
+        if (width() <= 0 || height() <= 0) return;
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+
+        struct S { double xR, yR, size, off, spd, op; };
+        static const S items[] = {
+            { 0.05, 0.12, 100,   0,  0.28, 0.08 },
+            { 0.22, 0.70,  75,  50,  0.18, 0.06 },
+            { 0.48, 0.08, 120,  95,  0.22, 0.07 },
+            { 0.72, 0.60,  85, 140,  0.32, 0.08 },
+            { 0.90, 0.22, 110, 185,  0.14, 0.06 },
+            { 0.58, 0.85,  70, 230,  0.38, 0.07 },
+            { 0.13, 0.48,  90, 275,  0.20, 0.06 },
+            { 0.38, 0.38, 100, 320,  0.28, 0.07 },
+            { 0.82, 0.78,  80,  65,  0.24, 0.06 },
+            { 0.33, 0.18, 115, 155,  0.16, 0.07 },
+            { 0.65, 0.30,  88, 200,  0.30, 0.06 },
+            { 0.10, 0.88,  95, 260,  0.20, 0.08 },
+        };
+
+        for (const auto& s : items)
+            drawSyringe(p, s.xR * width(), s.yR * height(),
+                        s.size, s.off + m_angle * s.spd, s.op);
+    }
+
+private:
+    double m_angle = 0.0;
+
+    void drawSyringe(QPainter& p, double cx, double cy,
+                     double sz, double rotDeg, double opacity) {
+        p.save();
+        p.translate(cx, cy);
+        p.rotate(rotDeg);
+        p.setOpacity(opacity);
+
+        const double bW = sz * 0.22;  // barrel width
+        const double bL = sz * 0.65;  // barrel length
+        const double nL = sz * 0.32;  // needle length
+        const double hW = sz * 0.07;  // hub width
+
+        // --- barrel ---
+        p.setPen(QPen(QColor(10, 95, 88), 1.5));
+        p.setBrush(QColor(200, 230, 238, 210));
+        p.drawRoundedRect(QRectF(-bL/2, -bW/2, bL, bW), bW/3, bW/3);
+
+        // --- liquid fill (blue) ---
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(90, 160, 215, 170));
+        p.drawRoundedRect(QRectF(-bL/2 + 3, -bW/2 + 3, bL * 0.50, bW - 6), 2, 2);
+
+        // --- needle hub ---
+        p.setPen(QPen(QColor(120, 150, 162), 1));
+        p.setBrush(QColor(175, 200, 208));
+        p.drawRect(QRectF(bL/2, -bW/3, hW, bW * 0.67));
+
+        // --- needle (tapered) ---
+        QPainterPath nd;
+        nd.moveTo(bL/2 + hW,        -sz * 0.026);
+        nd.lineTo(bL/2 + hW + nL,    0);
+        nd.lineTo(bL/2 + hW,         sz * 0.026);
+        nd.closeSubpath();
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(170, 215, 225));
+        p.drawPath(nd);
+
+        // --- plunger rod ---
+        p.setPen(QPen(QColor(185, 55, 55), 1));
+        p.setBrush(QColor(195, 70, 70));
+        p.drawRect(QRectF(-bL/2 - sz*0.12, -bW/10, sz*0.12, bW/5));
+
+        // --- plunger head ---
+        p.drawRoundedRect(QRectF(-bL/2 - sz*0.145, -bW/2 + 1, sz*0.055, bW - 2), 3, 3);
+
+        // --- graduation marks ---
+        p.setPen(QPen(QColor(10, 95, 88, 110), 1.0));
+        for (int i = 1; i <= 4; ++i) {
+            double x = -bL/2 + bL * i / 5.0;
+            p.drawLine(QPointF(x, -bW/2 + 1), QPointF(x, -bW/2 + bW * 0.40));
+        }
+
+        p.restore();
+    }
+};
+
 // ===================== LOGO TRÈS GRAND CENTRÉ =====================
 // ===================== CENTERED LOGO CARD =====================
 // Builds the centered logo panel with the app name.
@@ -246,6 +391,42 @@ static QFrame* makeBigLogoPanel()
         logo->setStyleSheet("color:#bbb; font-size:18px;");
     }
 
+    // --- Logo pulse animation (breathing opacity) ---
+    QGraphicsOpacityEffect* logoEffect = new QGraphicsOpacityEffect(logo);
+    logo->setGraphicsEffect(logoEffect);
+    // Logo pulse: 2 cycles then stops (stays at full opacity)
+    QPropertyAnimation* logoPulse = new QPropertyAnimation(logoEffect, "opacity", box);
+    logoPulse->setDuration(1800);
+    logoPulse->setStartValue(0.55);
+    logoPulse->setEndValue(1.0);
+    logoPulse->setEasingCurve(QEasingCurve::SineCurve);
+    logoPulse->setLoopCount(2);
+    QObject::connect(logoPulse, &QPropertyAnimation::finished, logo, [logoEffect](){
+        logoEffect->setOpacity(1.0);
+    });
+    logoPulse->start();
+
+    // --- Logo rotation: one full spin (360°) then fixes in place ---
+    if (!px.isNull()) {
+        double* angle = new double(0.0);
+        QTimer* spinTimer = new QTimer(box);
+        QObject::connect(spinTimer, &QTimer::timeout, logo, [logo, px, angle, spinTimer](){
+            *angle += 1.2;
+            if (*angle >= 360.0) {
+                // Snap back to upright and stop
+                logo->setPixmap(px.scaled(150, 150, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                spinTimer->stop();
+                delete angle;
+                return;
+            }
+            QTransform tr;
+            tr.rotate(*angle);
+            logo->setPixmap(px.scaled(150, 150, Qt::KeepAspectRatio, Qt::SmoothTransformation)
+                                .transformed(tr, Qt::SmoothTransformation));
+        });
+        spinTimer->start(16); // 60 fps, completes in ~5 s
+    }
+
     v->addWidget(logo, 0, Qt::AlignCenter);
 
     // ===== TEXTE SmartVision CENTRÉ =====
@@ -258,6 +439,21 @@ static QFrame* makeBigLogoPanel()
     title->setFont(ft);
 
     title->setStyleSheet("color: #C6B29A;"); // beige
+
+    // --- Title color animation (beige <-> white) ---
+    QGraphicsOpacityEffect* titleEffect = new QGraphicsOpacityEffect(title);
+    title->setGraphicsEffect(titleEffect);
+    // Title pulse: 2 cycles then stays visible
+    QPropertyAnimation* titlePulse = new QPropertyAnimation(titleEffect, "opacity", box);
+    titlePulse->setDuration(2400);
+    titlePulse->setStartValue(0.3);
+    titlePulse->setEndValue(1.0);
+    titlePulse->setEasingCurve(QEasingCurve::SineCurve);
+    titlePulse->setLoopCount(2);
+    QObject::connect(titlePulse, &QPropertyAnimation::finished, title, [titleEffect](){
+        titleEffect->setOpacity(1.0);
+    });
+    titlePulse->start();
 
     v->addWidget(title, 0, Qt::AlignCenter);
 
@@ -2152,6 +2348,11 @@ MainWindow::MainWindow(QWidget *parent)
 
     QStyle* st = style();
 
+    // ── BioSimple CRUD instance + edit-mode state ──
+    CrudeBioSimple* crud     = new CrudeBioSimple;
+    bool*    bioEditMode     = new bool(false);
+    QString* bioEditRef      = new QString;
+
     root->setStyleSheet(QString(R"(
         #root { background:%1; }
         QLabel { color: %2; }
@@ -2198,7 +2399,20 @@ MainWindow::MainWindow(QWidget *parent)
         QListWidget{ background: transparent; border:none; }
     )").arg(C_BG, C_TEXT_DARK, C_TABLE_HDR));
 
-    QVBoxLayout* rootLayout = new QVBoxLayout(root);
+    // Stacking layout: syringe animation behind all content
+    QStackedLayout* rootSL = new QStackedLayout(root);
+    rootSL->setStackingMode(QStackedLayout::StackAll);
+    rootSL->setContentsMargins(0, 0, 0, 0);
+
+    SyringeBackground* bgAnim = new SyringeBackground;
+    rootSL->addWidget(bgAnim);
+
+    QWidget* mainContent = new QWidget;
+    mainContent->setAutoFillBackground(false);
+    rootSL->addWidget(mainContent);
+    rootSL->setCurrentIndex(1);
+
+    QVBoxLayout* rootLayout = new QVBoxLayout(mainContent);
     rootLayout->setContentsMargins(0,0,0,0);
     rootLayout->setSpacing(0);
 
@@ -2208,6 +2422,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     QStackedWidget* stack = new QStackedWidget;
     rootLayout->addWidget(stack);
+
+    // ---- Global button hover color animation ----
+    qApp->installEventFilter(new ButtonAnimator(this));
 
     // ==========================================================
     // PAGE 0 : LOGIN
@@ -2270,13 +2487,9 @@ MainWindow::MainWindow(QWidget *parent)
     search->setPlaceholderText("Rechercher (type)");
     search->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
 
-    QComboBox* cbType = new QComboBox; cbType->addItems({"Type", "DNA", "RNA", "Protéine"});
-    QComboBox* cbTemp = new QComboBox; cbTemp->addItems({"Température", "-80°C", "-20°C", "Temp. ambiante"});
-    QComboBox* cbBsl  = new QComboBox; cbBsl->addItems({"BSL", "BSL-1", "BSL-2", "BSL-3"});
-
-    QPushButton* filters = new QPushButton(st->standardIcon(QStyle::SP_FileDialogDetailedView), "  Filtres");
-    filters->setCursor(Qt::PointingHandCursor);
-    filters->setStyleSheet(QString(R"(
+    QPushButton* chatbotBtn = new QPushButton(st->standardIcon(QStyle::SP_MessageBoxInformation), "  Chatbot");
+    chatbotBtn->setCursor(Qt::PointingHandCursor);
+    chatbotBtn->setStyleSheet(QString(R"(
         QPushButton{
             background:%1; color: rgba(255,255,255,0.92);
             border:1px solid rgba(0,0,0,0.18);
@@ -2286,18 +2499,15 @@ MainWindow::MainWindow(QWidget *parent)
     )").arg(C_PRIMARY, C_TOPBAR));
 
     bar1L->addWidget(search, 1);
-    bar1L->addWidget(cbType);
-    bar1L->addWidget(cbTemp);
-    bar1L->addWidget(cbBsl);
-    bar1L->addWidget(filters);
+    bar1L->addWidget(chatbotBtn);
     p1->addWidget(bar1);
 
     QFrame* card1 = makeCard();
     QVBoxLayout* card1L = new QVBoxLayout(card1);
     card1L->setContentsMargins(10,10,10,10);
 
-    QTableWidget* table = new QTableWidget(5, 9);
-    table->setHorizontalHeaderLabels({"", "Type", "Organisme", "Température", "Quantité restante", "Date de collecte", "Date d'expiration", "Statut", "Niveau de dangerosité"});
+    QTableWidget* table = new QTableWidget(0, 10);
+    table->setHorizontalHeaderLabels({"Référence", "Emplacement de stockage", "Type", "Organisme", "Température", "Quantité restante", "Date de collecte", "Date d'expiration", "Statut", "Niveau de dangerosité"});
     table->verticalHeader()->setVisible(false);
     table->setShowGrid(true);
     table->setAlternatingRowColors(true);
@@ -2306,63 +2516,21 @@ MainWindow::MainWindow(QWidget *parent)
     table->setSelectionMode(QAbstractItemView::SingleSelection);
     table->horizontalHeader()->setStretchLastSection(true);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    table->setItemDelegateForColumn(7, new BadgeDelegate(table));
+    table->setItemDelegateForColumn(8, new BadgeDelegate(table));
 
-    table->setColumnWidth(0, 36);
-    table->setColumnWidth(1, 110);
-    table->setColumnWidth(2, 140);
+    table->setColumnWidth(0, 140);
+    table->setColumnWidth(1, 170);
+    table->setColumnWidth(2, 110);
     table->setColumnWidth(3, 140);
-    table->setColumnWidth(4, 140);
-    table->setColumnWidth(5, 150);
-    table->setColumnWidth(6, 160);
-    table->setColumnWidth(7, 150);
-    table->setColumnWidth(8, 170);
+    table->setColumnWidth(4, 120);
+    table->setColumnWidth(5, 130);
+    table->setColumnWidth(6, 150);
+    table->setColumnWidth(7, 160);
+    table->setColumnWidth(8, 150);
+    table->setColumnWidth(9, 170);
 
-    auto setRow=[&](int r,
-                      const QString& type,
-                      const QString& org,
-                      const QString& storage,
-                      const QString& qty,
-                      const QString& dateCollecte,
-                      const QString& date,
-                      ExpireStatus stt,
-                      const QString& bsl)
-    {
-        QTableWidgetItem* iconItem = new QTableWidgetItem;
-        iconItem->setIcon(st->standardIcon(QStyle::SP_ArrowRight));
-        iconItem->setTextAlignment(Qt::AlignCenter);
-        table->setItem(r, 0, iconItem);
-
-        auto mk = [&](const QString& t){
-            QTableWidgetItem* it = new QTableWidgetItem(t);
-            it->setTextAlignment(Qt::AlignLeft|Qt::AlignVCenter);
-            return it;
-        };
-
-        table->setItem(r, 1, mk(type));
-        table->setItem(r, 2, mk(org));
-        table->setItem(r, 3, mk(storage));
-
-        QTableWidgetItem* q = mk(qty);
-        q->setTextAlignment(Qt::AlignRight|Qt::AlignVCenter);
-        table->setItem(r, 4, q);
-
-        table->setItem(r, 5, mk(dateCollecte));
-        table->setItem(r, 6, mk(date));
-
-        QTableWidgetItem* badge = new QTableWidgetItem;
-        badge->setData(Qt::UserRole, (int)stt);
-        table->setItem(r, 7, badge);
-
-        table->setItem(r, 8, mk(bsl));
-        table->setRowHeight(r, 46);
-    };
-
-    setRow(0,  "DNA",      "E. coli", "-80°C",           "150", "01/01/2024", "16/05/2024", ExpireStatus::Ok,      "BSL-1");
-    setRow(1,  "RNA",      "Humain",  "-20°C",            "75", "01/01/2024", "01/05/2024", ExpireStatus::Soon,    "BSL-2");
-    setRow(2,  "Protéine", "Levure",  "-20°C",            "40", "01/01/2024", "20/04/2024", ExpireStatus::Expired, "BSL-3");
-    setRow(3,  "DNA",      "Souris",  "Temp. ambiante",    "5", "01/01/2024", "24/04/2024", ExpireStatus::Ok,      "BSL-2");
-    setRow(4,  "DNA",      "Humain",  "-80°C",           "200", "01/01/2024", "20/02/2024", ExpireStatus::Bsl,     "BSL-3");
+    // Initial load from database (called once here; refreshed after each CRUD op)
+    crud->loadAll(table);
 
     card1L->addWidget(table);
     p1->addWidget(card1, 1);
@@ -2374,7 +2542,7 @@ MainWindow::MainWindow(QWidget *parent)
             bool match = false;
             if (filter.isEmpty()) { match = true; }
             else {
-                for (int c = 1; c <= 8; ++c) {
+                for (int c = 0; c <= 9; ++c) {
                     QTableWidgetItem* it = table->item(r, c);
                     if (it && it->text().toLower().contains(filter)) { match = true; break; }
                 }
@@ -2395,21 +2563,7 @@ MainWindow::MainWindow(QWidget *parent)
     QPushButton* btnDel   = actionBtn("Supprimer",    "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
     QPushButton* btnStats = actionBtn("Statistiques", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_ComputerIcon), true);
 
-    QObject::connect(btnDel, &QPushButton::clicked, this, [=](){
-        int r = table->currentRow();
-        if (r < 0) {
-            QMessageBox::information(this, "Information", "Veuillez sélectionner une ligne à supprimer.");
-            return;
-        }
-        auto cell = [&](int c)->QString{
-            QTableWidgetItem* it = table->item(r, c);
-            return it ? it->text() : "";
-        };
-        QString resume = QString("Type : %1   |   Organisme : %2   |   Stockage : %3   |   Expiration : %4")
-                             .arg(cell(1), cell(2), cell(3), cell(5));
-        ConfirmDeleteDialog confirm(style(), resume, this);
-        if (confirm.exec() == QDialog::Accepted) table->removeRow(r);
-    });
+    // btnDel is wired in the NAVIGATION BioSimple section below
 
     bottom1L->addWidget(btnAdd);
     bottom1L->addWidget(btnEdit);
@@ -2571,17 +2725,31 @@ MainWindow::MainWindow(QWidget *parent)
     left2L->addWidget(blueDateRow("Date de collecte", QDate::currentDate(), dCollect));
     left2L->addWidget(redDateRow("Date d'expiration", QDate::currentDate().addDays(30), dExpire));
 
+    // Quantité + unité µg
+    QFrame* qtyFrame = new QFrame;
+    QHBoxLayout* qtyHL = new QHBoxLayout(qtyFrame);
+    qtyHL->setContentsMargins(0,0,0,0); qtyHL->setSpacing(4);
     QSpinBox* qty = new QSpinBox;
     qty->setRange(0, 999999);
     qty->setValue(0);
-    qty->setFixedWidth(120);
+    qty->setFixedWidth(90);
     qty->setStyleSheet("QSpinBox{ background: transparent; border:0; font-weight:900; color: rgba(0,0,0,0.60); }");
-    left2L->addWidget(formRow(QStyle::SP_ArrowUp, "Quantité", qty));
+    QLabel* lbUg = new QLabel("µg");
+    lbUg->setStyleSheet("color: rgba(0,0,0,0.50); font-weight:700;");
+    qtyHL->addWidget(qty); qtyHL->addWidget(lbUg); qtyHL->addStretch(1);
+    left2L->addWidget(formRow(QStyle::SP_ArrowUp, "Quantité", qtyFrame));
 
-    QComboBox* cbTemp2 = new QComboBox;
-    cbTemp2->addItems({"Température", "-80°C", "-20°C", "Temp. ambiante"});
-    cbTemp2->setFixedWidth(170);
-    left2L->addWidget(formRow(QStyle::SP_BrowserStop, "Température", cbTemp2));
+    // Température + unité °C
+    QFrame* tempFrame = new QFrame;
+    QHBoxLayout* tempHL = new QHBoxLayout(tempFrame);
+    tempHL->setContentsMargins(0,0,0,0); tempHL->setSpacing(4);
+    QLineEdit* cbTemp2 = new QLineEdit;
+    cbTemp2->setPlaceholderText("ex: -80");
+    cbTemp2->setFixedWidth(80);
+    QLabel* lbDeg = new QLabel("°C");
+    lbDeg->setStyleSheet("color: rgba(0,0,0,0.50); font-weight:700;");
+    tempHL->addWidget(cbTemp2); tempHL->addWidget(lbDeg); tempHL->addStretch(1);
+    left2L->addWidget(formRow(QStyle::SP_BrowserStop, "Température", tempFrame));
 
     QComboBox* cbDanger = new QComboBox;
     cbDanger->addItems({"Niveau de danger", "BSL-1", "BSL-2", "BSL-3"});
@@ -2602,67 +2770,100 @@ MainWindow::MainWindow(QWidget *parent)
     cbType2->setFixedWidth(200);
     right2L->addWidget(formRow(QStyle::SP_FileIcon, "Type", cbType2));
 
-    QComboBox* cbOrg2 = new QComboBox;
-    cbOrg2->setEditable(true); // allow typing instead of only scrolling
-    cbOrg2->addItems({"Organisme", "Humain", "Souris", "Levure", "E. coli"});
+    QLineEdit* cbOrg2 = new QLineEdit;
+    cbOrg2->setPlaceholderText("Organisme");
     cbOrg2->setFixedWidth(200);
     right2L->addWidget(formRow(QStyle::SP_DirIcon, "Organisme", cbOrg2));
 
-    QComboBox* cbFreezer2 = new QComboBox;
-    cbFreezer2->addItems({"Congélateur", "Congélateur-01", "Congélateur-02", "Congélateur-03"});
-    cbFreezer2->setFixedWidth(200);
-    right2L->addWidget(formRow(QStyle::SP_DriveHDIcon, "Congélateur", cbFreezer2));
+    // Emplacement : bouton + popup Congélateur/Étagère
+    QPushButton* emplacBtn = new QPushButton("Emplacement de stockage");
+    emplacBtn->setFixedWidth(200);
+    emplacBtn->setCursor(Qt::PointingHandCursor);
+    emplacBtn->setStyleSheet(
+        "QPushButton{ background:rgba(255,255,255,0.72); border:1px solid rgba(0,0,0,0.15);"
+        " border-radius:8px; padding:4px 10px; text-align:left;"
+        " color:rgba(0,0,0,0.40); font-size:13px; }"
+        "QPushButton:hover{ background:rgba(255,255,255,0.92); }"
+    );
+    right2L->addWidget(formRow(QStyle::SP_DriveHDIcon, "Emplacement", emplacBtn));
 
-    QSpinBox* sbShelf2 = new QSpinBox;
-    sbShelf2->setRange(1, 99);
-    sbShelf2->setValue(1);
-    sbShelf2->setFixedWidth(120);
-    sbShelf2->setStyleSheet("QSpinBox{ background: transparent; border:0; font-weight:900; color: rgba(0,0,0,0.60); }");
-    right2L->addWidget(formRow(QStyle::SP_FileDialogListView, "Étagère", sbShelf2));
+    QFrame* emplacPopup = new QFrame;
+    emplacPopup->setStyleSheet(
+        "QFrame{ background:rgba(255,255,255,0.95); border:1px solid rgba(0,0,0,0.12);"
+        " border-radius:10px; }"
+    );
+    QVBoxLayout* emplacPopupL = new QVBoxLayout(emplacPopup);
+    emplacPopupL->setContentsMargins(10,8,10,8);
+    emplacPopupL->setSpacing(6);
 
-    // position field removed per latest request
+    QLineEdit* leCongelateur = new QLineEdit;
+    leCongelateur->setPlaceholderText("Congélateur (ex: C01)");
+    QLineEdit* leEtagere = new QLineEdit;
+    leEtagere->setPlaceholderText("Étagère (ex: A3)");
+    emplacPopupL->addWidget(leCongelateur);
+    emplacPopupL->addWidget(leEtagere);
+    emplacPopup->setVisible(false);
+    right2L->addWidget(emplacPopup);
+
+    // Toggle popup
+    QObject::connect(emplacBtn, &QPushButton::clicked, [=]{
+        emplacPopup->setVisible(!emplacPopup->isVisible());
+    });
+    // Update button label as user types
+    auto syncEmplacBtn = [=]{
+        QString c = leCongelateur->text().trimmed();
+        QString e = leEtagere->text().trimmed();
+        if (c.isEmpty() && e.isEmpty()) {
+            emplacBtn->setText("Emplacement de stockage");
+            emplacBtn->setStyleSheet(
+                "QPushButton{ background:rgba(255,255,255,0.72); border:1px solid rgba(0,0,0,0.15);"
+                " border-radius:8px; padding:4px 10px; text-align:left;"
+                " color:rgba(0,0,0,0.40); font-size:13px; }"
+                "QPushButton:hover{ background:rgba(255,255,255,0.92); }"
+            );
+        } else {
+            emplacBtn->setText(QString("Cong:%1/Etag:%2").arg(c, e));
+            emplacBtn->setStyleSheet(
+                "QPushButton{ background:rgba(255,255,255,0.72); border:1px solid rgba(0,0,0,0.15);"
+                " border-radius:8px; padding:4px 10px; text-align:left;"
+                " color:rgba(0,0,0,0.75); font-size:13px; font-weight:600; }"
+                "QPushButton:hover{ background:rgba(255,255,255,0.92); }"
+            );
+        }
+    };
+    QObject::connect(leCongelateur, &QLineEdit::textChanged, syncEmplacBtn);
+    QObject::connect(leEtagere,     &QLineEdit::textChanged, syncEmplacBtn);
 
     right2L->addStretch(1);
 
-    // ----- automatic lookup when reference is entered -----------------------
+    // ----- automatic lookup when reference is entered (add mode only) ------
     QObject::connect(leRef, &QLineEdit::editingFinished, [=](){
+        if (*bioEditMode) return;          // editing: fields already populated
         QString ref = leRef->text().trimmed();
-        if(ref.isEmpty())
-            return;          // nothing to do
+        if (ref.isEmpty()) return;
 
-        QSqlQuery q;
-        q.prepare(R"(
-            SELECT TYPE_ECHANTILLON,
-                   ORGANISME,
-                   CONGELATEUR,
-                   ETAGERE,
-                   POSITION,
-                   TEMPERATURE_STOCKAGE,
-                   QUANTITE_RESTANTE,
-                   DATE_COLLECTE,
-                   DATE_EXPIRATION,
-                   NIVEAU_DANGEROSITE,
-                   NOM_COLLECTION
-            FROM ECHANTILLONS
-            WHERE REFERENCE = :r
-        )");
-        q.bindValue(":r", ref);
-        if(q.exec() && q.next()){
-            cbType2->setCurrentText(q.value(0).toString());
-            cbOrg2->setCurrentText(q.value(1).toString());
-            cbFreezer2->setCurrentText(q.value(2).toString());
-            sbShelf2->setValue(q.value(3).toInt());
-            // position removed
-            cbTemp2->setCurrentText(q.value(5).toString());
-            qty->setValue(q.value(6).toInt());
-            dCollect->setDate(q.value(7).toDate());
-            dExpire->setDate(q.value(8).toDate());
-            cbDanger->setCurrentText(q.value(9).toString());
-            // collection removed
-            // the lookup may also set other widgets (organisation, etc) if added
-        } else {
-            // if no match we leave the form blank – the user will create a new sample
-            // optionally we could clear fields here.
+        BioSample s = crud->get(ref);
+        if (!s.isEmpty()) {
+            cbType2->setCurrentText(s.type);
+            cbOrg2->setText(s.organisme);
+            // Parse "Cong:xx/Etag:xx" format
+            {
+                QString emp = s.emplacement;
+                int slash = emp.indexOf("/Etag:");
+                if (emp.startsWith("Cong:") && slash >= 0) {
+                    leCongelateur->setText(emp.mid(5, slash - 5));
+                    leEtagere->setText(emp.mid(slash + 6));
+                } else {
+                    leCongelateur->setText(emp);
+                    leEtagere->clear();
+                }
+                emplacPopup->setVisible(!emp.isEmpty());
+            }
+            cbTemp2->setText(s.temperature);
+            qty->setValue(s.quantite);
+            cbDanger->setCurrentText(s.niveauDanger);
+            if (s.dateCollecte.isValid())   dCollect->setDate(s.dateCollecte);
+            if (s.dateExpiration.isValid()) dExpire->setDate(s.dateExpiration);
         }
     });
 
@@ -6168,46 +6369,234 @@ QPushButton:hover{ background: %2; }
     gp4->setContentsMargins(uiMargin(this), uiMargin(this), uiMargin(this), uiMargin(this));
 
     // ==========================================================
-    // NAVIGATION BioSimple
     // ==========================================================
-    QObject::connect(btnAdd,  &QPushButton::clicked, this, [=]{ setWindowTitle("Ajouter / Modifier un échantillon"); stack->setCurrentIndex(BIO_FORM); });
-    QObject::connect(btnEdit, &QPushButton::clicked, this, [=]{ setWindowTitle("Ajouter / Modifier un échantillon"); stack->setCurrentIndex(BIO_FORM); });
+    // NAVIGATION BioSimple — CRUD complet
+    // ==========================================================
 
-    QObject::connect(cancelBtn, &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(BIO_LIST); });
-    QObject::connect(saveBtn,   &QPushButton::clicked, this, [=]{
-        // validation: the reference is mandatory and must be unique
+    // ── AJOUTER : vider le formulaire, passer en mode création ──
+    QObject::connect(btnAdd, &QPushButton::clicked, this, [=]{
+        *bioEditMode = false;
+        bioEditRef->clear();
+        leRef->clear();
+        leRef->setReadOnly(false);
+        cbType2->setCurrentIndex(0);
+        cbOrg2->clear();
+        leCongelateur->clear();
+        leEtagere->clear();
+        emplacPopup->setVisible(false);
+        qty->setValue(0);
+        cbTemp2->clear();
+        cbDanger->setCurrentIndex(0);
+        dCollect->setDate(QDate::currentDate());
+        dExpire->setDate(QDate::currentDate().addDays(30));
+        setWindowTitle("Ajouter un échantillon");
+        stack->setCurrentIndex(BIO_FORM);
+    });
+
+    // ── MODIFIER : charger la ligne sélectionnée dans le formulaire ──
+    QObject::connect(btnEdit, &QPushButton::clicked, this, [=]{
+        int r = table->currentRow();
+        if (r < 0) {
+            QMessageBox::information(this, "Information",
+                "Veuillez sélectionner un échantillon à modifier.");
+            return;
+        }
+        // REFERENCE stored in col-0 UserRole by CrudeBioSimple::loadAll
+        QString ref = table->item(r, 0)
+                          ? table->item(r, 0)->data(Qt::UserRole).toString()
+                          : QString();
+        if (ref.isEmpty()) {
+            QMessageBox::warning(this, "Erreur", "Référence introuvable dans la ligne.");
+            return;
+        }
+        BioSample s = crud->get(ref);
+        *bioEditMode = true;
+        *bioEditRef  = ref;
+        leRef->setText(s.reference);
+        leRef->setReadOnly(true);          // reference cannot change on update
+        cbType2->setCurrentText(s.type);
+        cbOrg2->setText(s.organisme);
+        {
+            QString emp = s.emplacement;
+            int slash = emp.indexOf("/Etag:");
+            if (emp.startsWith("Cong:") && slash >= 0) {
+                leCongelateur->setText(emp.mid(5, slash - 5));
+                leEtagere->setText(emp.mid(slash + 6));
+            } else {
+                leCongelateur->setText(emp);
+                leEtagere->clear();
+            }
+            emplacPopup->setVisible(true);
+        }
+        qty->setValue(s.quantite);
+        cbTemp2->setText(s.temperature);
+        cbDanger->setCurrentText(s.niveauDanger);
+        if (s.dateCollecte.isValid())   dCollect->setDate(s.dateCollecte);
+        if (s.dateExpiration.isValid()) dExpire->setDate(s.dateExpiration);
+        setWindowTitle("Modifier un échantillon");
+        stack->setCurrentIndex(BIO_FORM);
+    });
+
+    // ── SUPPRIMER : confirmation puis DELETE en BDD ──
+    QObject::connect(btnDel, &QPushButton::clicked, this, [=]{
+        int r = table->currentRow();
+        if (r < 0) {
+            QMessageBox::information(this, "Information",
+                "Veuillez sélectionner une ligne à supprimer.");
+            return;
+        }
+        QString ref = table->item(r, 0)
+                          ? table->item(r, 0)->data(Qt::UserRole).toString()
+                          : QString();
+        auto cell = [&](int c) -> QString {
+            auto* it = table->item(r, c);
+            return it ? it->text() : "";
+        };
+        QString resume =
+            QString("Réf : %1   |   Type : %2   |   Organisme : %3   |   Expiration : %4")
+                .arg(cell(0), cell(2), cell(3), cell(7));
+        ConfirmDeleteDialog confirm(style(), resume, this);
+        if (confirm.exec() == QDialog::Accepted) {
+            if (ref.isEmpty() || !crud->remove(ref)) {
+                QMessageBox::critical(this, "Erreur",
+                    "Impossible de supprimer cet échantillon.");
+                return;
+            }
+            crud->loadAll(table);
+        }
+    });
+
+    // ── ENREGISTRER : INSERT ou UPDATE selon le mode ──
+    QObject::connect(saveBtn, &QPushButton::clicked, this, [=]{
         QString ref = leRef->text().trimmed();
-        if(ref.isEmpty()){
-            QMessageBox::warning(this, "Référence requise", "Veuillez saisir la référence de l'échantillon.");
+        if (ref.isEmpty()) {
+            QMessageBox::warning(this, "Référence requise",
+                "Veuillez saisir la référence de l'échantillon.");
             return;
         }
-        QSqlQuery dup;
-        dup.prepare("SELECT COUNT(1) FROM ECHANTILLONS WHERE REFERENCE = :r");
-        dup.bindValue(":r", ref);
-        if(dup.exec() && dup.next() && dup.value(0).toInt() > 0){
-            // if editing an existing record you should compare IDs; this simple check
-            // prevents the user from creating a duplicate reference.
-            QMessageBox::warning(this, "Référence existante", "Un échantillon avec cette référence existe déjà.");
+        if (cbType2->currentText() == "Type" || cbType2->currentIndex() == 0) {
+            QMessageBox::warning(this, "Type requis",
+                "Veuillez sélectionner le type d'échantillon.");
             return;
         }
-        // TODO: here you would collect all other field values and issue an
-        // INSERT or UPDATE statement on the database.  the widgets created above
-        // (cbType2, cbOrg2, cbFreezer2, etc.) are visible in this scope thanks to
-        // the lambda capture.
+        // Build BioSample from form
+        BioSample s;
+        s.reference      = ref;
+        s.type           = cbType2->currentText();
+        s.organisme      = cbOrg2->text().trimmed();
+        s.emplacement    = QString("Cong:%1/Etag:%2")
+                           .arg(leCongelateur->text().trimmed(),
+                                leEtagere->text().trimmed());
+        s.quantite       = qty->value();
+        s.temperature    = cbTemp2->text().trimmed();
+        s.niveauDanger   = (cbDanger->currentText() == "Niveau de danger")
+                           ? "" : cbDanger->currentText();
+        s.dateCollecte   = dCollect->date();
+        s.dateExpiration = dExpire->date();
 
+        s.idProjet = 1; // handled by add() auto-seed
+
+        bool ok = false;
+        if (*bioEditMode) {
+            // ── UPDATE ──
+            ok = crud->update(s);
+            if (ok)
+                QMessageBox::information(this, "Succès",
+                    QString("Échantillon « %1 » modifié avec succès.").arg(ref));
+            else
+                QMessageBox::critical(this, "Erreur Oracle",
+                    QString("Échec de la mise à jour :\n%1").arg(crud->lastError()));
+        } else {
+            // ── INSERT — check duplicate first ──
+            QSqlQuery dup;
+            dup.prepare("SELECT COUNT(1) FROM BIOSAMPLE WHERE REFERENCE_ECHANTILLON = ?");
+            dup.addBindValue(ref);
+            if (dup.exec() && dup.next() && dup.value(0).toInt() > 0) {
+                QMessageBox::warning(this, "Référence existante",
+                    "Un échantillon avec cette référence existe déjà.");
+                return;
+            }
+            ok = crud->add(s);
+            if (ok)
+                QMessageBox::information(this, "Succès",
+                    QString("Échantillon « %1 » ajouté avec succès.").arg(ref));
+            else
+                QMessageBox::critical(this, "Erreur Oracle",
+                    QString("Échec de l'ajout :\n%1").arg(crud->lastError()));
+        }
+
+        if (ok) {
+            crud->loadAll(table);
+            setWindowTitle("Gestion des Échantillons");
+            stack->setCurrentIndex(BIO_LIST);
+        }
+    });
+
+    // ── ANNULER ──
+    QObject::connect(cancelBtn, &QPushButton::clicked, this, [=]{
         setWindowTitle("Gestion des Échantillons");
         stack->setCurrentIndex(BIO_LIST);
     });
 
-    QObject::connect(btnMore, &QPushButton::clicked, this, [=]{ setWindowTitle("Localisation & Stockage"); stack->setCurrentIndex(BIO_LOC); });
-    QObject::connect(back3,   &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(BIO_LIST); });
+    // ── Localisation & Stockage ──
+    QObject::connect(btnMore,  &QPushButton::clicked, this, [=]{
+        setWindowTitle("Localisation & Stockage");
+        stack->setCurrentIndex(BIO_LOC);
+    });
+    QObject::connect(back3, &QPushButton::clicked, this, [=]{
+        setWindowTitle("Gestion des Échantillons");
+        stack->setCurrentIndex(BIO_LIST);
+    });
+    QObject::connect(details3, &QPushButton::clicked, this, [=]{
+        setWindowTitle("Localisation & Stockage");
+        stack->setCurrentIndex(BIO_RACK);
+    });
+    QObject::connect(back4, &QPushButton::clicked, this, [=]{
+        setWindowTitle("Localisation & Stockage");
+        stack->setCurrentIndex(BIO_LOC);
+    });
 
-    QObject::connect(details3, &QPushButton::clicked, this, [=]{ setWindowTitle("Localisation & Stockage"); stack->setCurrentIndex(BIO_RACK); });
-    QObject::connect(back4,    &QPushButton::clicked, this, [=]{ setWindowTitle("Localisation & Stockage"); stack->setCurrentIndex(BIO_LOC); });
+    // ── STATISTIQUES — mise à jour depuis la BDD avant affichage ──
+    auto updateBioStats = [=]{
+        // Donut chart : répartition par type
+        auto typeMap = crud->countByType();
+        QList<DonutChart::Slice> slices;
+        if (typeMap.contains("DNA"))
+            slices.append({(double)typeMap["DNA"],      QColor("#9FBEB9"), "DNA"});
+        if (typeMap.contains("RNA"))
+            slices.append({(double)typeMap["RNA"],      W_GREEN,           "RNA"});
+        if (typeMap.contains("Protéine"))
+            slices.append({(double)typeMap["Protéine"], W_ORANGE,          "Protéine"});
+        // Fallback si base vide
+        if (slices.isEmpty())
+            slices = {{95, QColor("#9FBEB9"), "DNA"},
+                      {55, W_GREEN,           "RNA"},
+                      {30, W_ORANGE,          "Protéine"}};
+        pie->setData(slices);
 
-    QObject::connect(btnSec,   &QPushButton::clicked, this, [=]{ setWindowTitle("Statistiques"); stack->setCurrentIndex(BIO_STATS); });
-    QObject::connect(btnStats, &QPushButton::clicked, this, [=]{ setWindowTitle("Statistiques"); stack->setCurrentIndex(BIO_STATS); });
-    QObject::connect(back5,    &QPushButton::clicked, this, [=]{ setWindowTitle("Gestion des Échantillons"); stack->setCurrentIndex(BIO_LIST); });
+        // Bar chart : échantillons par mois
+        auto monthVec = crud->countByMonth();
+        QList<BarChart::Bar> barList;
+        for (auto& p : monthVec)
+            barList.append({(double)p.first, p.second});
+        if (!barList.isEmpty())
+            bars->setData(barList);
+    };
+
+    QObject::connect(btnSec,   &QPushButton::clicked, this, [=]{
+        updateBioStats();
+        setWindowTitle("Statistiques BioSimple");
+        stack->setCurrentIndex(BIO_STATS);
+    });
+    QObject::connect(btnStats, &QPushButton::clicked, this, [=]{
+        updateBioStats();
+        setWindowTitle("Statistiques BioSimple");
+        stack->setCurrentIndex(BIO_STATS);
+    });
+    QObject::connect(back5, &QPushButton::clicked, this, [=]{
+        setWindowTitle("Gestion des Échantillons");
+        stack->setCurrentIndex(BIO_LIST);
+    });
 
     // ==========================================================
     // NAVIGATION Gestion Projet (3 widgets)
@@ -6459,4 +6848,5 @@ QPushButton:hover{ background: %2; }
 
     setWindowTitle("SmartVision - Connexion");
     stack->setCurrentIndex(LOGIN);
+
 }

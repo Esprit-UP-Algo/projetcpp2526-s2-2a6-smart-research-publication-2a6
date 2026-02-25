@@ -11,11 +11,13 @@ CONFIG += c++17
 SOURCES += \
     integration.cpp\
     connection.cpp \
+    crudebiosimple.cpp \
     main.cpp
 
 HEADERS += \
     integration.h\
-    connection.h
+    connection.h \
+    crudebiosimple.h
 
 
 # Default rules for deployment.
