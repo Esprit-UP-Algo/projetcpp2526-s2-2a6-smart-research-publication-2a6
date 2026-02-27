@@ -1,4 +1,4 @@
-QT       += core gui sql
+QT       += core gui sql network
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -11,13 +11,17 @@ CONFIG += c++17
 SOURCES += \
     integration.cpp\
     connection.cpp \
+    publication.cpp \
     crudebiosimple.cpp \
+    chatbotbiosimple.cpp \
     main.cpp
 
 HEADERS += \
     integration.h\
     connection.h \
-    crudebiosimple.h
+    publication.h \
+    crudebiosimple.h \
+    chatbotbiosimple.h
 
 
 # Default rules for deployment.

@@ -1,6 +1,8 @@
 // ===================== biosimple.cpp (UN SEUL FICHIER - BioSimple + Gestion Projet - 3 Widgets) =====================
 #include "integration.h"
 #include "crudebiosimple.h"
+#include "publication.h"
+#include "chatbotbiosimple.h"
 #include <QTextEdit>
 
 #include <QPainterPath>
@@ -69,6 +71,106 @@ static const QColor  W_GREEN      = QColor("#2E6F63");
 static const QColor  W_ORANGE     = QColor("#B5672C");
 static const QColor  W_RED        = QColor("#8B2F3C");
 static const QColor  W_GRAY       = QColor("#7A8B8A");
+
+// ── Animated toast notification ─────────────────────────────────────────────
+static void showToast(QWidget* parent, const QString& msg, bool success = true)
+{
+    QWidget* toast = new QWidget(parent,
+        Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    toast->setAttribute(Qt::WA_TranslucentBackground);
+    toast->setAttribute(Qt::WA_DeleteOnClose);
+
+    // ── Card container ──
+    QWidget* card = new QWidget(toast);
+    card->setObjectName("toastCard");
+    card->setStyleSheet(QString(
+        "QWidget#toastCard{"
+        " background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+        "   stop:0 %1, stop:1 %2);"
+        " border-radius: 14px;"
+        " border: 1.5px solid rgba(255,255,255,0.18);"
+        "}").arg(success ? "#0A5F58" : "#7B1D2A",
+                 success ? "#12443B" : "#5C1020"));
+
+    QHBoxLayout* lay = new QHBoxLayout(card);
+    lay->setContentsMargins(18, 14, 22, 14);
+    lay->setSpacing(14);
+
+    // Icon circle
+    QLabel* icon = new QLabel(success ? "✓" : "✕");
+    icon->setFixedSize(38, 38);
+    icon->setAlignment(Qt::AlignCenter);
+    icon->setStyleSheet(QString(
+        "color:white; font-size:17px; font-weight:900;"
+        "background: rgba(255,255,255,0.20);"
+        "border-radius:19px; border:1.5px solid rgba(255,255,255,0.35);"));
+
+    // Text
+    QLabel* lbl = new QLabel(msg);
+    lbl->setWordWrap(true);
+    lbl->setMaximumWidth(340);
+    lbl->setStyleSheet(
+        "color:white; font-size:13px; font-weight:600;"
+        "background:transparent; border:none;");
+
+    lay->addWidget(icon);
+    lay->addWidget(lbl);
+
+    card->adjustSize();
+
+    // Outer toast is same size as card
+    QVBoxLayout* outerL = new QVBoxLayout(toast);
+    outerL->setContentsMargins(0,0,0,0);
+    outerL->addWidget(card);
+    toast->adjustSize();
+
+    // Position: centred, starts 40px above final position
+    QRect pr  = parent->geometry();
+    int   tx  = pr.left() + (pr.width() - toast->width()) / 2;
+    int   tyEnd = pr.top() + 88;
+    int   tyStart = tyEnd - 40;
+
+    toast->move(tx, tyStart);
+    toast->show();
+    toast->raise();
+
+    // ── Slide-down + fade-in ──
+    QGraphicsOpacityEffect* eff = new QGraphicsOpacityEffect(toast);
+    toast->setGraphicsEffect(eff);
+    eff->setOpacity(0.0);
+
+    QPropertyAnimation* fadeIn = new QPropertyAnimation(eff, "opacity", toast);
+    fadeIn->setDuration(280);
+    fadeIn->setStartValue(0.0);
+    fadeIn->setEndValue(1.0);
+    fadeIn->setEasingCurve(QEasingCurve::OutCubic);
+    fadeIn->start(QAbstractAnimation::DeleteWhenStopped);
+
+    QPropertyAnimation* slideIn = new QPropertyAnimation(toast, "pos", toast);
+    slideIn->setDuration(280);
+    slideIn->setStartValue(QPoint(tx, tyStart));
+    slideIn->setEndValue(QPoint(tx, tyEnd));
+    slideIn->setEasingCurve(QEasingCurve::OutCubic);
+    slideIn->start(QAbstractAnimation::DeleteWhenStopped);
+
+    // ── Auto-close: slide-up + fade-out after 2.5 s ──
+    QTimer::singleShot(2500, toast, [toast, eff, tx, tyEnd]{
+        QPropertyAnimation* fadeOut = new QPropertyAnimation(eff, "opacity", toast);
+        fadeOut->setDuration(400);
+        fadeOut->setStartValue(1.0);
+        fadeOut->setEndValue(0.0);
+        fadeOut->setEasingCurve(QEasingCurve::InCubic);
+        QObject::connect(fadeOut, &QPropertyAnimation::finished, toast, &QWidget::close);
+        fadeOut->start(QAbstractAnimation::DeleteWhenStopped);
+
+        QPropertyAnimation* slideOut = new QPropertyAnimation(toast, "pos", toast);
+        slideOut->setDuration(400);
+        slideOut->setStartValue(QPoint(tx, tyEnd));
+        slideOut->setEndValue(QPoint(tx, tyEnd - 30));
+        slideOut->setEasingCurve(QEasingCurve::InCubic);
+        slideOut->start(QAbstractAnimation::DeleteWhenStopped);
+    });
+}
 
 // ===================== STACK INDEX =====================
 // Login page
@@ -1769,106 +1871,119 @@ class ConfirmDeleteDialog : public QDialog
 {
 public:
     ConfirmDeleteDialog(QStyle* st, const QString& lineText, QWidget* parent=nullptr)
-        : QDialog(parent)
+        : QDialog(parent, Qt::Dialog | Qt::FramelessWindowHint)
     {
         setModal(true);
-        setWindowTitle("Confirmation");
-        setFixedSize(520, 220);
-        setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+        setAttribute(Qt::WA_TranslucentBackground);
+        setFixedSize(520, 230);
 
-        setStyleSheet(QString(R"(
-            QDialog{
-                background: %1;
-                border: 1px solid %2;
-                border-radius: 14px;
-            }
-            QLabel{ color: rgba(0,0,0,0.70); }
-        )").arg(C_PANEL_BG, C_PANEL_BR));
+        // ── Card ──
+        QWidget* card = new QWidget(this);
+        card->setGeometry(0, 0, 520, 230);
+        card->setStyleSheet(
+            "QWidget#card{"
+            "  background: #F4F9F8;"
+            "  border-radius: 16px;"
+            "  border: 1.5px solid #A3CAD3;"
+            "}"
+        );
+        card->setObjectName("card");
 
-        QVBoxLayout* root = new QVBoxLayout(this);
-        root->setContentsMargins(16,16,16,16);
+        QVBoxLayout* root = new QVBoxLayout(card);
+        root->setContentsMargins(16, 16, 16, 16);
         root->setSpacing(12);
 
+        // ── Header ──
         QFrame* head = new QFrame;
-        head->setFixedHeight(46);
-        head->setStyleSheet(QString("background:%1; border-radius: 12px;").arg(C_TOPBAR));
+        head->setFixedHeight(50);
+        head->setStyleSheet(
+            "QFrame{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            " stop:0 #0A5F58, stop:1 #12443B);"
+            " border-radius: 12px; }");
         QHBoxLayout* hl = new QHBoxLayout(head);
-        hl->setContentsMargins(12,8,12,8);
+        hl->setContentsMargins(14, 0, 14, 0);
+        hl->setSpacing(10);
 
-        QLabel* ic = new QLabel;
-        ic->setPixmap(st->standardIcon(QStyle::SP_MessageBoxWarning).pixmap(18,18));
+        QLabel* ic = new QLabel("⚠");
+        ic->setStyleSheet(
+            "color:#F5C842; font-size:20px; background:transparent; border:none;");
 
-        QLabel* t = new QLabel("Supprimer l’élément ?");
+        QLabel* t = new QLabel("  Supprimer l’élément ?");
         QFont ft = t->font(); ft.setBold(true); ft.setPointSize(11);
         t->setFont(ft);
-        t->setStyleSheet(QString("color:%1;").arg(C_BEIGE));
+        t->setStyleSheet("color:white; background:transparent; border:none;");
 
         hl->addWidget(ic);
-        hl->addSpacing(8);
         hl->addWidget(t);
         hl->addStretch(1);
-
         root->addWidget(head);
 
+        // ── Body ──
         QFrame* body = new QFrame;
-        body->setStyleSheet("QFrame{ background: rgba(255,255,255,0.70); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
+        body->setStyleSheet(
+            "QFrame{ background: rgba(255,255,255,0.85);"
+            " border: 1px solid rgba(10,95,88,0.20);"
+            " border-radius: 12px; }");
         QVBoxLayout* bl = new QVBoxLayout(body);
-        bl->setContentsMargins(14,12,14,12);
+        bl->setContentsMargins(14, 12, 14, 12);
         bl->setSpacing(8);
 
         QLabel* msg = new QLabel("Voulez-vous vraiment supprimer la ligne sélectionnée ?");
-        msg->setStyleSheet("color: rgba(0,0,0,0.62); font-weight: 900;");
+        msg->setStyleSheet(
+            "color:#12443B; font-weight:700; background:transparent; border:none;");
         msg->setWordWrap(true);
 
         QLabel* details = new QLabel(lineText);
-        details->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 800;");
+        details->setStyleSheet(
+            "color:#0A5F58; font-weight:600; background:transparent; border:none;");
         details->setWordWrap(true);
 
         bl->addWidget(msg);
         bl->addWidget(details);
-
         root->addWidget(body, 1);
 
+        // ── Buttons ──
         QHBoxLayout* btns = new QHBoxLayout;
-        btns->setContentsMargins(0,0,0,0);
         btns->setSpacing(10);
         btns->addStretch(1);
 
-        QPushButton* cancel = new QPushButton(st->standardIcon(QStyle::SP_DialogCancelButton), "  Annuler");
+        QPushButton* cancel = new QPushButton(
+            st->standardIcon(QStyle::SP_DialogCancelButton), "  Annuler");
         cancel->setCursor(Qt::PointingHandCursor);
-        cancel->setStyleSheet(QString(R"(
-            QPushButton{
-                background: rgba(255,255,255,0.65);
-                border: 1px solid rgba(0,0,0,0.12);
-                border-radius: 12px;
-                padding: 10px 14px;
-                font-weight: 900;
-                color: %1;
-            }
-            QPushButton:hover{ background: rgba(255,255,255,0.80); }
-        )").arg(C_TEXT_DARK));
+        cancel->setFixedHeight(40);
+        cancel->setStyleSheet(
+            "QPushButton{ background:white; border:1.5px solid #A3CAD3;"
+            " border-radius:12px; padding:8px 18px; font-weight:700;"
+            " color:#12443B; }"
+            "QPushButton:hover{ background:#E8F5F3; border-color:#0A5F58; }");
 
-        QPushButton* del = new QPushButton(st->standardIcon(QStyle::SP_TrashIcon), "  Supprimer");
+        QPushButton* del = new QPushButton(
+            st->standardIcon(QStyle::SP_TrashIcon), "  Supprimer");
         del->setCursor(Qt::PointingHandCursor);
-        del->setStyleSheet(R"(
-            QPushButton{
-                background: rgba(177,74,74,0.85);
-                border: 1px solid rgba(0,0,0,0.12);
-                border-radius: 12px;
-                padding: 10px 14px;
-                font-weight: 900;
-                color: white;
-            }
-            QPushButton:hover{ background: rgba(177,74,74,0.95); }
-        )");
+        del->setFixedHeight(40);
+        del->setStyleSheet(
+            "QPushButton{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            " stop:0 #0A5F58, stop:1 #12443B);"
+            " border:none; border-radius:12px; padding:8px 18px;"
+            " font-weight:700; color:white; }"
+            "QPushButton:hover{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            " stop:0 #0d7a71, stop:1 #1a5c50); }");
 
         QObject::connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
-        QObject::connect(del, &QPushButton::clicked, this, &QDialog::accept);
+        QObject::connect(del,    &QPushButton::clicked, this, &QDialog::accept);
 
         btns->addWidget(cancel);
         btns->addWidget(del);
-
         root->addLayout(btns);
+
+        // ── Fade-in animation ──
+        setWindowOpacity(0.0);
+        QPropertyAnimation* anim = new QPropertyAnimation(this, "windowOpacity", this);
+        anim->setDuration(220);
+        anim->setStartValue(0.0);
+        anim->setEndValue(1.0);
+        anim->setEasingCurve(QEasingCurve::OutCubic);
+        QTimer::singleShot(0, anim, [anim]{ anim->start(QAbstractAnimation::DeleteWhenStopped); });
     }
 };
 
@@ -2502,6 +2617,15 @@ MainWindow::MainWindow(QWidget *parent)
     bar1L->addWidget(chatbotBtn);
     p1->addWidget(bar1);
 
+    // ── Chatbot popup ──
+    QObject::connect(chatbotBtn, &QPushButton::clicked, this, [=]{
+        ChatBotBioSimple* bot = new ChatBotBioSimple(this);
+        // Center near the button
+        QPoint center = this->geometry().center();
+        bot->move(center.x() - bot->width()/2, center.y() - bot->height()/2);
+        bot->exec();
+    });
+
     QFrame* card1 = makeCard();
     QVBoxLayout* card1L = new QVBoxLayout(card1);
     card1L->setContentsMargins(10,10,10,10);
@@ -2529,8 +2653,13 @@ MainWindow::MainWindow(QWidget *parent)
     table->setColumnWidth(8, 150);
     table->setColumnWidth(9, 170);
 
-    // Initial load from database (called once here; refreshed after each CRUD op)
+    // Initial load from database
     crud->loadAll(table);
+
+    // Reload table every time the BioSimple tab becomes visible
+    QObject::connect(stack, &QStackedWidget::currentChanged, stack, [=](int idx){
+        if (idx == BIO_LIST) crud->loadAll(table);
+    });
 
     card1L->addWidget(table);
     p1->addWidget(card1, 1);
@@ -2765,8 +2894,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     right2L->addWidget(sectionTitle("Données"));
 
-    QComboBox* cbType2 = new QComboBox;
-    cbType2->addItems({"Type", "DNA", "RNA", "Protéine"});
+    QLineEdit* cbType2 = new QLineEdit;
+    cbType2->setPlaceholderText("Type (ex: DNA, RNA, Protéine...)");
     cbType2->setFixedWidth(200);
     right2L->addWidget(formRow(QStyle::SP_FileIcon, "Type", cbType2));
 
@@ -2844,7 +2973,7 @@ MainWindow::MainWindow(QWidget *parent)
 
         BioSample s = crud->get(ref);
         if (!s.isEmpty()) {
-            cbType2->setCurrentText(s.type);
+            cbType2->setText(s.type);
             cbOrg2->setText(s.organisme);
             // Parse "Cong:xx/Etag:xx" format
             {
@@ -4111,7 +4240,7 @@ MainWindow::MainWindow(QWidget *parent)
     pubSearch->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
 
     QComboBox* pubType = new QComboBox;
-    pubType->addItems({"Type", "Article", "Conférence", "Poster", "Thèse"});
+    pubType->addItems({"Statut", "Brouillon", "Soumise", "Acceptée", "Publiée", "Rejetée"});
 
     QComboBox* pubYear = new QComboBox;
     pubYear->addItems({"Année", "2026", "2025", "2024", "2023", "2022"});
@@ -4138,28 +4267,72 @@ QPushButton:hover{ background: %2; }
     QVBoxLayout* pubCardL = new QVBoxLayout(pubCard);
     pubCardL->setContentsMargins(10,10,10,10);
 
-    QTableWidget* pubTable = new QTableWidget(6, 6);
-    pubTable->setHorizontalHeaderLabels({"Titre","Auteurs","Journal/Conf.","Année","DOI","Statut"});
+    QTableWidget* pubTable = new QTableWidget(0, 8);
+    pubTable->setHorizontalHeaderLabels({"ID","Titre","Journal/Conf.","Année","DOI","Statut","Id_projet","Employee_id"});
     pubTable->verticalHeader()->setVisible(false);
     pubTable->horizontalHeader()->setStretchLastSection(true);
     pubTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     pubTable->setSelectionMode(QAbstractItemView::SingleSelection);
     pubTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    pubTable->setColumnHidden(0, true);
 
-    auto putPUB = [&](int r,int c,const QString& v){
-        QTableWidgetItem* it = new QTableWidgetItem(v);
-        it->setTextAlignment(Qt::AlignLeft|Qt::AlignVCenter);
-        pubTable->setItem(r,c,it);
+    auto reloadPublications = [=](){
+        QString errorMessage;
+        QSqlQueryModel* model = Publication::readAll(nullptr, &errorMessage);
+        if (!model) {
+            QMessageBox::warning(this, "Publication", "Chargement impossible :\n" + errorMessage);
+            return;
+        }
+
+        pubTable->setRowCount(0);
+        for (int r = 0; r < model->rowCount(); ++r) {
+            pubTable->insertRow(r);
+            for (int c = 0; c < pubTable->columnCount(); ++c) {
+                QTableWidgetItem* it = new QTableWidgetItem(model->data(model->index(r, c)).toString());
+                it->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+                pubTable->setItem(r, c, it);
+            }
+            pubTable->setRowHeight(r, 46);
+        }
+        delete model;
     };
 
-    putPUB(0,0,"Analyse génomique des souches"); putPUB(0,1,"A. Ben Ali; S. Trabelsi"); putPUB(0,2,"Nature Methods"); putPUB(0,3,"2026"); putPUB(0,4,"10.1000/xyz001"); putPUB(0,5,"Soumise");
-    putPUB(1,0,"PCR temps réel : optimisation"); putPUB(1,1,"H. Chaachou; M. Karim"); putPUB(1,2,"BioTech Conf");   putPUB(1,3,"2025"); putPUB(1,4,"10.1000/xyz002"); putPUB(1,5,"Acceptée");
-    putPUB(2,0,"Culture cellulaire avancée");    putPUB(2,1,"Dr. Amal; Dr. Nader");   putPUB(2,2,"Cell Reports");  putPUB(2,3,"2025"); putPUB(2,4,"10.1000/xyz003"); putPUB(2,5,"Publiée");
-    putPUB(3,0,"Traçabilité scientifique en labo"); putPUB(3,1,"S. Sara; H. Hichem"); putPUB(3,2,"Lab Quality"); putPUB(3,3,"2024"); putPUB(3,4,"10.1000/xyz004"); putPUB(3,5,"Brouillon");
-    putPUB(4,0,"Séquençage : protocole comparatif"); putPUB(4,1,"A. Ben Ali; K. Yassmine"); putPUB(4,2,"Genomics Journal"); putPUB(4,3,"2024"); putPUB(4,4,"10.1000/xyz005"); putPUB(4,5,"Soumise");
-    putPUB(5,0,"Dosage protéique : étude");          putPUB(5,1,"M. Karim; Dr. Amal");     putPUB(5,2,"Protein Conf");   putPUB(5,3,"2023"); putPUB(5,4,"10.1000/xyz006"); putPUB(5,5,"Rejetée");
+    auto applyPublicationFilters = [=](){
+        const QString search = pubSearch->text().trimmed().toLower();
+        const QString status = pubType->currentText();
+        const QString year = pubYear->currentText();
 
-    for(int r=0;r<pubTable->rowCount();++r) pubTable->setRowHeight(r, 46);
+        for (int r = 0; r < pubTable->rowCount(); ++r) {
+            const QString id = pubTable->item(r,0) ? pubTable->item(r,0)->text().toLower() : QString();
+            const QString titre = pubTable->item(r,1) ? pubTable->item(r,1)->text().toLower() : QString();
+            const QString journal = pubTable->item(r,2) ? pubTable->item(r,2)->text().toLower() : QString();
+            const QString annee = pubTable->item(r,3) ? pubTable->item(r,3)->text() : QString();
+            const QString doi = pubTable->item(r,4) ? pubTable->item(r,4)->text().toLower() : QString();
+            const QString statut = pubTable->item(r,5) ? pubTable->item(r,5)->text() : QString();
+            const QString projet = pubTable->item(r,6) ? pubTable->item(r,6)->text().toLower() : QString();
+            const QString employe = pubTable->item(r,7) ? pubTable->item(r,7)->text().toLower() : QString();
+
+            const bool matchesSearch = search.isEmpty()
+                || id.contains(search)
+                || titre.contains(search)
+                || journal.contains(search)
+                || annee.toLower().contains(search)
+                || doi.contains(search)
+                || projet.contains(search)
+                || employe.contains(search);
+
+            const bool matchesStatus = (status == "Statut") || (statut == status);
+            const bool matchesYear = (year == "Année") || (annee == year);
+            pubTable->setRowHidden(r, !(matchesSearch && matchesStatus && matchesYear));
+        }
+    };
+
+    QObject::connect(pubSearch, &QLineEdit::textChanged, this, [=](){ applyPublicationFilters(); });
+    QObject::connect(pubType, &QComboBox::currentTextChanged, this, [=](){ applyPublicationFilters(); });
+    QObject::connect(pubYear, &QComboBox::currentTextChanged, this, [=](){ applyPublicationFilters(); });
+
+    reloadPublications();
+    applyPublicationFilters();
 
     pubCardL->addWidget(pubTable);
     pb1->addWidget(pubCard, 1);
@@ -4185,11 +4358,22 @@ QPushButton:hover{ background: %2; }
             return;
         }
            QString resume = QString("Titre : %1 | Année : %2 | Statut : %3")
-                            .arg(pubTable->item(r,0)->text(),
+                            .arg(pubTable->item(r,1)->text(),
                                 pubTable->item(r,3)->text(),
                                 pubTable->item(r,5)->text());
         ConfirmDeleteDialog confirm(style(), resume, this);
-        if (confirm.exec() == QDialog::Accepted) pubTable->removeRow(r);
+        if (confirm.exec() != QDialog::Accepted) {
+            return;
+        }
+
+        QString errorMessage;
+        if (!Publication::remove(pubTable->item(r,0)->text().toInt(), &errorMessage)) {
+            QMessageBox::warning(this, "Suppression", "Échec de suppression :\n" + errorMessage);
+            return;
+        }
+
+        reloadPublications();
+        applyPublicationFilters();
     });
 
     pubBottomL->addWidget(pubAdd);
@@ -4251,15 +4435,12 @@ QPushButton:hover{ background: %2; }
     pub2LeftL->setContentsMargins(12,12,12,12);
     pub2LeftL->setSpacing(10);
 
+    QSpinBox* sbPubId = new QSpinBox;
+    sbPubId->setRange(0, 1000000000);
+    sbPubId->setVisible(false);
+
     QLineEdit* leTitle = new QLineEdit;
     leTitle->setPlaceholderText("Titre de la publication");
-
-    QLineEdit* leAuthors = new QLineEdit;
-    leAuthors->setPlaceholderText("Auteurs (séparés par ; )");
-
-    QComboBox* cbPubType = new QComboBox;
-    cbPubType->addItems({"Type", "Article", "Conférence", "Poster", "Thèse"});
-    cbPubType->setFixedWidth(220);
 
     QSpinBox* sbYear = new QSpinBox;
     sbYear->setRange(1950, 2100);
@@ -4269,8 +4450,6 @@ QPushButton:hover{ background: %2; }
 
     pub2LeftL->addWidget(pubTitle("Informations"));
     pub2LeftL->addWidget(pubRow(QStyle::SP_FileDialogDetailedView, "Titre", leTitle));
-    pub2LeftL->addWidget(pubRow(QStyle::SP_DirIcon, "Auteurs", leAuthors));
-    pub2LeftL->addWidget(pubRow(QStyle::SP_ComputerIcon, "Type", cbPubType));
     pub2LeftL->addWidget(pubRow(QStyle::SP_FileDialogInfoView, "Année", sbYear));
     pub2LeftL->addStretch(1);
 
@@ -4289,6 +4468,16 @@ QPushButton:hover{ background: %2; }
     cbStatus->addItems({"Statut", "Brouillon", "Soumise", "Acceptée", "Publiée", "Rejetée"});
     cbStatus->setFixedWidth(220);
 
+    QSpinBox* sbIdProjet = new QSpinBox;
+    sbIdProjet->setRange(0, 1000000000);
+    sbIdProjet->setFixedWidth(220);
+    sbIdProjet->setStyleSheet("QSpinBox{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 900; }");
+
+    QSpinBox* sbEmployeeId = new QSpinBox;
+    sbEmployeeId->setRange(0, 1000000000);
+    sbEmployeeId->setFixedWidth(220);
+    sbEmployeeId->setStyleSheet("QSpinBox{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 900; }");
+
     QTextEdit* teAbstract = new QTextEdit;
     teAbstract->setPlaceholderText("Résumé / Notes / Mots-clés (traçabilité scientifique)");
     teAbstract->setStyleSheet("QTextEdit{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 800; }");
@@ -4297,6 +4486,8 @@ QPushButton:hover{ background: %2; }
     pub2RightL->addWidget(pubRow(QStyle::SP_DirHomeIcon, "Journal/Conf.", leJournal));
     pub2RightL->addWidget(pubRow(QStyle::SP_FileDialogContentsView, "DOI", leDOI));
     pub2RightL->addWidget(pubRow(QStyle::SP_MessageBoxInformation, "Statut", cbStatus));
+    pub2RightL->addWidget(pubRow(QStyle::SP_FileDialogToParent, "Id_projet", sbIdProjet));
+    pub2RightL->addWidget(pubRow(QStyle::SP_DirHomeIcon, "Employee_id", sbEmployeeId));
     pub2RightL->addWidget(teAbstract, 1);
 
     outPUB2L->addWidget(pub2Left);
@@ -6131,19 +6322,21 @@ QPushButton:hover{ background: %2; }
         return row;
     };
 
-    QLabel* pubDetAuthors = nullptr;
     QLabel* pubDetJournal = nullptr;
     QLabel* pubDetYear = nullptr;
     QLabel* pubDetDoi = nullptr;
     QLabel* pubDetStatus = nullptr;
+    QLabel* pubDetIdProjet = nullptr;
+    QLabel* pubDetEmployeeId = nullptr;
     QLabel* pubDetAbstract = nullptr;
 
     pubDetailsL->addWidget(pubDetTitle);
-    pubDetailsL->addWidget(pubDetailRow("Auteurs", pubDetAuthors));
     pubDetailsL->addWidget(pubDetailRow("Journal/Conf.", pubDetJournal));
     pubDetailsL->addWidget(pubDetailRow("Année", pubDetYear));
     pubDetailsL->addWidget(pubDetailRow("DOI", pubDetDoi));
     pubDetailsL->addWidget(pubDetailRow("Statut", pubDetStatus));
+    pubDetailsL->addWidget(pubDetailRow("Id_projet", pubDetIdProjet));
+    pubDetailsL->addWidget(pubDetailRow("Employee_id", pubDetEmployeeId));
 
     QLabel* abstractLabel = new QLabel("Résumé :");
     abstractLabel->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
@@ -6169,19 +6362,75 @@ QPushButton:hover{ background: %2; }
 
     stack->addWidget(pubDetailsPage);
 
+    auto clearPublicationForm = [=]() {
+        sbPubId->setReadOnly(false);
+        sbPubId->setButtonSymbols(QAbstractSpinBox::UpDownArrows);
+        sbPubId->setValue(0);
+        leTitle->clear();
+        sbYear->setValue(QDate::currentDate().year());
+        leJournal->clear();
+        leDOI->clear();
+        cbStatus->setCurrentText("Statut");
+        teAbstract->clear();
+        sbIdProjet->setValue(0);
+        sbEmployeeId->setValue(0);
+    };
+
+    auto fillPublicationFormFromSelection = [=]() -> bool {
+        const int row = pubTable->currentRow();
+        if (row < 0) {
+            QMessageBox::information(this, "Information", "Sélectionnez une publication à modifier.");
+            return false;
+        }
+
+        Publication publication;
+        QString errorMessage;
+        const int id = pubTable->item(row, 0)->text().toInt();
+        if (!Publication::readById(id, publication, &errorMessage)) {
+            QMessageBox::warning(this, "Publication", "Lecture impossible :\n" + errorMessage);
+            return false;
+        }
+
+        sbPubId->setValue(publication.id());
+        sbPubId->setReadOnly(true);
+        sbPubId->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        leTitle->setText(publication.titre());
+        sbYear->setValue(publication.annee());
+        leJournal->setText(publication.journal());
+        leDOI->setText(publication.doi());
+        if (cbStatus->findText(publication.status()) >= 0)
+            cbStatus->setCurrentText(publication.status());
+        else
+            cbStatus->setCurrentText("Statut");
+        teAbstract->setPlainText(publication.abstractText());
+        sbIdProjet->setValue(publication.idProjet());
+        sbEmployeeId->setValue(publication.employeeId());
+        return true;
+    };
+
     auto updatePubDetailsFromRow = [=]()->bool{
         int r = pubTable->currentRow();
         if (r < 0) {
             QMessageBox::information(this, "Information", "Sélectionnez une publication.");
             return false;
         }
-        pubDetTitle->setText(pubTable->item(r,0)->text());
-        pubDetAuthors->setText(pubTable->item(r,1)->text());
-        pubDetJournal->setText(pubTable->item(r,2)->text());
-        pubDetYear->setText(pubTable->item(r,3)->text());
-        pubDetDoi->setText(pubTable->item(r,4)->text());
-        pubDetStatus->setText(pubTable->item(r,5)->text());
-        pubDetAbstract->setText("Résumé non renseigné.");
+
+        Publication publication;
+        QString errorMessage;
+        const int id = pubTable->item(r,0)->text().toInt();
+        if (!Publication::readById(id, publication, &errorMessage)) {
+            QMessageBox::warning(this, "Publication", "Lecture impossible :\n" + errorMessage);
+            return false;
+        }
+
+        pubDetTitle->setText(publication.titre());
+        pubDetJournal->setText(publication.journal());
+        pubDetYear->setText(QString::number(publication.annee()));
+        pubDetDoi->setText(publication.doi());
+        pubDetStatus->setText(publication.status());
+        pubDetIdProjet->setText(QString::number(publication.idProjet()));
+        pubDetEmployeeId->setText(QString::number(publication.employeeId()));
+        pubDetAbstract->setText(publication.abstractText().isEmpty() ? "Résumé non renseigné." : publication.abstractText());
         return true;
     };
 
@@ -6379,7 +6628,7 @@ QPushButton:hover{ background: %2; }
         bioEditRef->clear();
         leRef->clear();
         leRef->setReadOnly(false);
-        cbType2->setCurrentIndex(0);
+        cbType2->clear();
         cbOrg2->clear();
         leCongelateur->clear();
         leEtagere->clear();
@@ -6414,7 +6663,7 @@ QPushButton:hover{ background: %2; }
         *bioEditRef  = ref;
         leRef->setText(s.reference);
         leRef->setReadOnly(true);          // reference cannot change on update
-        cbType2->setCurrentText(s.type);
+        cbType2->setText(s.type);
         cbOrg2->setText(s.organisme);
         {
             QString emp = s.emplacement;
@@ -6458,10 +6707,10 @@ QPushButton:hover{ background: %2; }
         ConfirmDeleteDialog confirm(style(), resume, this);
         if (confirm.exec() == QDialog::Accepted) {
             if (ref.isEmpty() || !crud->remove(ref)) {
-                QMessageBox::critical(this, "Erreur",
-                    "Impossible de supprimer cet échantillon.");
+                showToast(this, "Impossible de supprimer cet échantillon.", false);
                 return;
             }
+            showToast(this, QString("Échantillon « %1 » supprimé.").arg(ref), true);
             crud->loadAll(table);
         }
     });
@@ -6470,19 +6719,17 @@ QPushButton:hover{ background: %2; }
     QObject::connect(saveBtn, &QPushButton::clicked, this, [=]{
         QString ref = leRef->text().trimmed();
         if (ref.isEmpty()) {
-            QMessageBox::warning(this, "Référence requise",
-                "Veuillez saisir la référence de l'échantillon.");
+            showToast(this, "Veuillez saisir la référence de l'échantillon.", false);
             return;
         }
-        if (cbType2->currentText() == "Type" || cbType2->currentIndex() == 0) {
-            QMessageBox::warning(this, "Type requis",
-                "Veuillez sélectionner le type d'échantillon.");
+        if (cbType2->text().trimmed().isEmpty()) {
+            showToast(this, "Veuillez saisir le type d'échantillon.", false);
             return;
         }
         // Build BioSample from form
         BioSample s;
         s.reference      = ref;
-        s.type           = cbType2->currentText();
+        s.type           = cbType2->text().trimmed();
         s.organisme      = cbOrg2->text().trimmed();
         s.emplacement    = QString("Cong:%1/Etag:%2")
                            .arg(leCongelateur->text().trimmed(),
@@ -6501,28 +6748,23 @@ QPushButton:hover{ background: %2; }
             // ── UPDATE ──
             ok = crud->update(s);
             if (ok)
-                QMessageBox::information(this, "Succès",
-                    QString("Échantillon « %1 » modifié avec succès.").arg(ref));
+                showToast(this, QString("Échantillon « %1 » modifié avec succès.").arg(ref), true);
             else
-                QMessageBox::critical(this, "Erreur Oracle",
-                    QString("Échec de la mise à jour :\n%1").arg(crud->lastError()));
+                showToast(this, QString("Échec de la mise à jour : %1").arg(crud->lastError()), false);
         } else {
             // ── INSERT — check duplicate first ──
             QSqlQuery dup;
             dup.prepare("SELECT COUNT(1) FROM BIOSAMPLE WHERE REFERENCE_ECHANTILLON = ?");
             dup.addBindValue(ref);
             if (dup.exec() && dup.next() && dup.value(0).toInt() > 0) {
-                QMessageBox::warning(this, "Référence existante",
-                    "Un échantillon avec cette référence existe déjà.");
+                showToast(this, "Un échantillon avec cette référence existe déjà.", false);
                 return;
             }
             ok = crud->add(s);
             if (ok)
-                QMessageBox::information(this, "Succès",
-                    QString("Échantillon « %1 » ajouté avec succès.").arg(ref));
+                showToast(this, QString("Échantillon « %1 » ajouté avec succès.").arg(ref), true);
             else
-                QMessageBox::critical(this, "Erreur Oracle",
-                    QString("Échec de l'ajout :\n%1").arg(crud->lastError()));
+                showToast(this, QString("Échec de l'ajout : %1").arg(crud->lastError()), false);
         }
 
         if (ok) {
@@ -6804,13 +7046,11 @@ QPushButton:hover{ background: %2; }
 
     // LIST -> FORM
     QObject::connect(pubAdd, &QPushButton::clicked, this, [=](){
+        clearPublicationForm();
         stack->setCurrentIndex(PUB_FORM);
     });
     QObject::connect(pubEdit, &QPushButton::clicked, this, [=](){
-        if (pubTable->currentRow() < 0) {
-            QMessageBox::information(this, "Information", "Sélectionnez une publication à modifier.");
-            return;
-        }
+        if (!fillPublicationFormFromSelection()) return;
         stack->setCurrentIndex(PUB_FORM);
     });
 
@@ -6826,10 +7066,44 @@ QPushButton:hover{ background: %2; }
 
     // FORM -> LIST
     QObject::connect(pubCancel, &QPushButton::clicked, this, [=](){
+        clearPublicationForm();
         stack->setCurrentIndex(PUB_LIST);
     });
     QObject::connect(pubSave, &QPushButton::clicked, this, [=](){
-        // (démo) : tu peux ajouter ici l’insertion dans pubTable si tu veux
+        if (leTitle->text().trimmed().isEmpty()) {
+            QMessageBox::warning(this, "Validation", "Le titre est obligatoire.");
+            return;
+        }
+        if (cbStatus->currentText() == "Statut") {
+            QMessageBox::warning(this, "Validation", "Veuillez sélectionner un statut.");
+            return;
+        }
+
+        Publication publication(
+            sbPubId->value(),
+            leTitle->text().trimmed(),
+            leJournal->text().trimmed(),
+            sbYear->value(),
+            leDOI->text().trimmed(),
+            cbStatus->currentText(),
+            teAbstract->toPlainText().trimmed(),
+            sbIdProjet->value(),
+            sbEmployeeId->value()
+            );
+
+        QString errorMessage;
+        const bool ok = sbPubId->isReadOnly()
+                            ? publication.update(&errorMessage)
+                            : publication.create(&errorMessage);
+
+        if (!ok) {
+            QMessageBox::warning(this, "Publication", "Échec d'enregistrement :\n" + errorMessage);
+            return;
+        }
+
+        reloadPublications();
+        applyPublicationFilters();
+        clearPublicationForm();
         stack->setCurrentIndex(PUB_LIST);
     });
 
