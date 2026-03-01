@@ -126,7 +126,15 @@ CREATE TABLE EXPERIENCES (
   PROJET_ID      NUMBER,
   EQUIPEMENT_ID  NUMBER,
   ECHANTILLON_ID NUMBER,
-  CONSTRAINT CK_EXP_STAT CHECK (STATUT IN ('En cours','R�ussie','�chou�e','Concluante','Archiv�e')),
+  CONSTRAINT CK_EXP_STAT CHECK (
+    STATUT IN (
+      'En cours',
+      'Concluante',
+      'Réussie','Échouée','Archivée',
+      'Reussie','Echouee','Archivee',
+      'R�ussie','�chou�e','Archiv�e'
+    )
+  ),
   CONSTRAINT CK_EXP_DATE CHECK (DATE_FIN IS NULL OR DATE_DEBUT IS NULL OR DATE_FIN >= DATE_DEBUT),
   CONSTRAINT FK_EXP_CH  FOREIGN KEY (CHERCHEUR_ID) REFERENCES EMPLOYES(EMPLOYE_ID),
   CONSTRAINT FK_EXP_PRJ FOREIGN KEY (PROJET_ID) REFERENCES PROJETS(PROJET_ID),
@@ -288,6 +296,26 @@ FROM EXPERIENCES
 WHERE ('&p_titre' IS NULL OR '&p_titre' = '' OR LOWER(TITRE) LIKE '%'||LOWER('&p_titre')||'%')
   AND ('&p_statut' IS NULL OR '&p_statut' = '' OR STATUT = '&p_statut')
 ORDER BY DATE_DEBUT DESC NULLS LAST, DATE_FIN DESC NULLS LAST;
+
+------------------------------------------------------------
+-- 5-bis) PATCH CONTRAINTE STATUT EXPERIENCES (DB EXISTANTE)
+------------------------------------------------------------
+BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE EXPERIENCES DROP CONSTRAINT CK_EXP_STAT';
+EXCEPTION
+  WHEN OTHERS THEN NULL;
+END;
+/
+
+ALTER TABLE EXPERIENCES ADD CONSTRAINT CK_EXP_STAT CHECK (
+  STATUT IN (
+    'En cours',
+    'Concluante',
+    'Réussie','Échouée','Archivée',
+    'Reussie','Echouee','Archivee',
+    'R�ussie','�chou�e','Archiv�e'
+  )
+);
 
 -- 6) PROJETS: recherche global + tri budget/date
 DEFINE p_q = '';

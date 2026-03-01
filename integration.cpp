@@ -3,6 +3,9 @@
 #include "crudebiosimple.h"
 #include "publication.h"
 #include "chatbotbiosimple.h"
+#include "crudexperience.h"
+#include "equipement.h"
+#include "cong.h"
 #include <QTextEdit>
 
 #include <QPainterPath>
@@ -2700,10 +2703,25 @@ MainWindow::MainWindow(QWidget *parent)
     bottom1L->addWidget(btnStats);
     bottom1L->addStretch(1);
 
-    bottom1L->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_DirIcon)));
-    bottom1L->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_FileIcon)));
-    bottom1L->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_DialogSaveButton)));
-    bottom1L->addWidget(tinySquareBtn(st->standardIcon(QStyle::SP_BrowserReload)));
+    {
+        QPushButton* btnAiCong = new QPushButton("\u2744  AI Cong\u00e9lateur");
+        btnAiCong->setCursor(Qt::PointingHandCursor);
+        btnAiCong->setStyleSheet(R"(
+            QPushButton{ background:qlineargradient(x1:0,y1:0,x2:1,y2:1,
+                stop:0 rgba(10,95,88,0.85),stop:1 rgba(18,68,59,0.90));
+                border:none; border-radius:12px; padding:10px 20px;
+                color:white; font-weight:900; font-size:13px; }
+            QPushButton:hover{ background:qlineargradient(x1:0,y1:0,x2:1,y2:1,
+                stop:0 rgba(14,115,106,0.95),stop:1 rgba(22,82,71,0.95)); }
+            QPushButton:pressed{ background:rgba(10,95,88,1.0); }
+        )");
+        bottom1L->addWidget(btnAiCong);
+        QObject::connect(btnAiCong, &QPushButton::clicked, this, [=](){
+            CongelateurDialog* dlg = new CongelateurDialog(this);
+            dlg->setAttribute(Qt::WA_DeleteOnClose);
+            dlg->exec();
+        });
+    }
 
     QPushButton* btnMore = new QPushButton(st->standardIcon(QStyle::SP_FileDialogContentsView), "  Localisation & Stockage");
     btnMore->setCursor(Qt::PointingHandCursor);
@@ -3890,8 +3908,12 @@ MainWindow::MainWindow(QWidget *parent)
     QVBoxLayout* expCardL = new QVBoxLayout(expCard);
     expCardL->setContentsMargins(10,10,10,10);
 
-    QTableWidget* expTable = new QTableWidget(5, 6);
-    expTable->setHorizontalHeaderLabels({"Nom", "Type", "Responsable", "Date début", "Date fin", "Statut"});
+    ExperienceCrud* expCrud     = new ExperienceCrud;
+    bool*           expEditMode = new bool(false);
+    int*            expEditId   = new int(0);
+
+    QTableWidget* expTable = new QTableWidget(0, 5);
+    expTable->setHorizontalHeaderLabels({"Nom", "Hypothèse", "Date début", "Date fin", "Statut"});
     expTable->verticalHeader()->setVisible(false);
     expTable->setShowGrid(true);
     expTable->setAlternatingRowColors(true);
@@ -3900,34 +3922,50 @@ MainWindow::MainWindow(QWidget *parent)
     expTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     expTable->setSelectionMode(QAbstractItemView::SingleSelection);
     expTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    expTable->setItemDelegateForColumn(5, new ExpBadgeDelegate(expTable));
+    expTable->setItemDelegateForColumn(4, new ExpBadgeDelegate(expTable));
 
     expTable->setColumnWidth(0, 220);
-    expTable->setColumnWidth(1, 140);
-    expTable->setColumnWidth(2, 130);
+    expTable->setColumnWidth(1, 180);
+    expTable->setColumnWidth(2, 120);
     expTable->setColumnWidth(3, 120);
-    expTable->setColumnWidth(4, 120);
-    expTable->setColumnWidth(5, 140);
+    expTable->setColumnWidth(4, 140);
 
-    auto putE = [&](int r,int c,const QString& v){
-        QTableWidgetItem* it = new QTableWidgetItem(v);
-        it->setTextAlignment(Qt::AlignLeft|Qt::AlignVCenter);
-        expTable->setItem(r,c,it);
+    auto statusFromString = [](const QString& s) -> ExpStatus {
+        if (s == "En cours")  return ExpStatus::EnCours;
+        if (s == "Concluante" || s == "Réussie") return ExpStatus::Termine;
+        if (s == "Échouée") return ExpStatus::Suspendue;
+        return ExpStatus::EnAttente;
     };
 
-    auto setExpStatus = [&](int r, ExpStatus s){
-        QTableWidgetItem* badge = new QTableWidgetItem;
-        badge->setData(Qt::UserRole, (int)s);
-        expTable->setItem(r, 5, badge);
+    auto loadExpTable = [=](){
+        expTable->setRowCount(0);
+        QList<ExperienceRecord> recs;
+        if (!expCrud->loadExperiences(recs)) return;
+        auto mk = [](const QString& v){
+            QTableWidgetItem* it = new QTableWidgetItem(v);
+            it->setTextAlignment(Qt::AlignLeft|Qt::AlignVCenter);
+            return it;
+        };
+        for (const ExperienceRecord& rec : recs) {
+            int row = expTable->rowCount();
+            expTable->insertRow(row);
+            QTableWidgetItem* nameItem = mk(rec.titre);
+            nameItem->setData(Qt::UserRole, rec.id);
+            expTable->setItem(row, 0, nameItem);
+            expTable->setItem(row, 1, mk(rec.hypothese));
+            expTable->setItem(row, 2, mk(rec.dateDebut.toString("dd/MM/yyyy")));
+            expTable->setItem(row, 3, mk(rec.dateFin.toString("dd/MM/yyyy")));
+            QTableWidgetItem* badge = new QTableWidgetItem;
+            badge->setData(Qt::UserRole, (int)statusFromString(rec.status));
+            expTable->setItem(row, 4, badge);
+            expTable->setRowHeight(row, 46);
+        }
     };
+    loadExpTable();
 
-    putE(0,0,"Culture cellulaire");       putE(0,1,"Cellulaire");     putE(0,2,"Dr Sami");    putE(0,3,"01/03/2024"); putE(0,4,"30/03/2024"); setExpStatus(0, ExpStatus::EnCours);
-    putE(1,0,"Séquençage ADN");           putE(1,1,"Génétique");      putE(1,2,"Dr Martin");  putE(1,3,"15/02/2024"); putE(1,4,"30/04/2024"); setExpStatus(1, ExpStatus::Termine);
-    putE(2,0,"Analyse protéomique");      putE(2,1,"Protéomique");    putE(2,2,"Dr Leroy");   putE(2,3,"10/04/2024"); putE(2,4,"20/05/2024"); setExpStatus(2, ExpStatus::EnAttente);
-    putE(3,0,"Test pharmacologique");     putE(3,1,"Pharmacologie");  putE(3,2,"Dr Dubois");  putE(3,3,"05/03/2024"); putE(3,4,"15/06/2024"); setExpStatus(3, ExpStatus::EnCours);
-    putE(4,0,"Étude comportementale");    putE(4,1,"Neuroscience");   putE(4,2,"Dr Moreau");  putE(4,3,"20/01/2024"); putE(4,4,"10/03/2024"); setExpStatus(4, ExpStatus::Termine);
-
-    for(int r=0;r<expTable->rowCount();++r) expTable->setRowHeight(r, 46);
+    QObject::connect(stack, &QStackedWidget::currentChanged, expTable, [=](int idx){
+        if (idx == EXP_LIST) loadExpTable();
+    });
 
     // Search by titre or protocole
     QObject::connect(eSearch, &QLineEdit::textChanged, this, [=](const QString& text){
@@ -3963,16 +4001,16 @@ MainWindow::MainWindow(QWidget *parent)
 
     QObject::connect(expDel, &QPushButton::clicked, this, [=](){
         int r = expTable->currentRow();
-        if (r < 0) {
-            QMessageBox::information(this, "Information", "Veuillez sélectionner une ligne à supprimer.");
-            return;
-        }
-        QString resume = QString("Expérience : %1 | Type : %2 | Responsable : %3")
-                     .arg(expTable->item(r,0)->text(),
-                      expTable->item(r,1)->text(),
-                      expTable->item(r,2)->text());
+        if (r < 0) { showToast(this, "Sélectionnez une expérience.", false); return; }
+        int id = expTable->item(r, 0)->data(Qt::UserRole).toInt();
+        QString resume = QString("Expérience : %1 | Hypothèse : %2")
+                         .arg(expTable->item(r,0)->text(), expTable->item(r,1)->text());
         ConfirmDeleteDialog confirm(style(), resume, this);
-        if (confirm.exec() == QDialog::Accepted) expTable->removeRow(r);
+        if (confirm.exec() != QDialog::Accepted) return;
+        QString err;
+        if (!expCrud->deleteExperience(id, &err)) { showToast(this, "Erreur : " + err, false); return; }
+        showToast(this, "Expérience supprimée.", true);
+        loadExpTable();
     });
 
     expBottomL->addWidget(expAdd);
@@ -4045,7 +4083,7 @@ MainWindow::MainWindow(QWidget *parent)
     eProto->setPlaceholderText("Code du protocole (ex: PROTO-PCR-07)");
 
     QComboBox* eStatus = new QComboBox;
-    eStatus->addItems({"Statut", "Planifiée", "En cours", "Terminée", "Suspendue"});
+    eStatus->addItems({"Statut", "En cours", "Concluante", "Réussie", "Échouée", "Archivée"});
     eStatus->setFixedWidth(200);
 
     QComboBox* eBsl2 = new QComboBox;
@@ -4638,7 +4676,7 @@ QPushButton:hover{ background: %2; }
     cbEquipType->addItems({"Équipement", "PCR", "Centrifugeuse", "Microscope", "Incubateur"});
 
     QComboBox* cbEquipStatus = new QComboBox;
-    cbEquipStatus->addItems({"Statut", "Disponible", "En usage", "Maintenance", "Hors service"});
+    cbEquipStatus->addItems({"Statut", "Actif", "Hors service", "Archivé"});
 
     QComboBox* cbEquipLoc = new QComboBox;
     cbEquipLoc->addItems({"Localisation", "Lab 101", "Lab 102", "Lab 103", "Lab 201"});
@@ -4665,7 +4703,11 @@ QPushButton:hover{ background: %2; }
     QVBoxLayout* eqCardL = new QVBoxLayout(eqCard);
     eqCardL->setContentsMargins(10,10,10,10);
 
-    QTableWidget* eqTable = new QTableWidget(5, 9);
+    EquipementCrud* eqCrud     = new EquipementCrud;
+    bool*           eqEditMode = new bool(false);
+    int*            eqEditId   = new int(0);
+
+    QTableWidget* eqTable = new QTableWidget(0, 9);
     eqTable->setHorizontalHeaderLabels({"", "Nom", "Fabricant", "Modèle",
                                          "Localisation", "Date achat", "Prochaine maintenance", "Statut", "Calibration"});
     eqTable->verticalHeader()->setVisible(false);
@@ -4688,61 +4730,75 @@ QPushButton:hover{ background: %2; }
     eqTable->setColumnWidth(7, 140);
     eqTable->setColumnWidth(8, 120);
 
-    auto setEqRow=[&](int r, const QString& name,
-                      const QString& manufacturer, const QString& model, const QString& location,
-                      const QString& purchaseDate, const QString& nextMaint, EquipmentStatus stt,
-                      const QString& calibDate)
-    {
-        QTableWidgetItem* iconItem = new QTableWidgetItem;
-        iconItem->setIcon(st->standardIcon(QStyle::SP_ArrowRight));
-        iconItem->setTextAlignment(Qt::AlignCenter);
-        eqTable->setItem(r, 0, iconItem);
+    auto equipmentBadgeFromDbStatus = [](const QString& dbStatus) {
+        const QString s = dbStatus.toLower();
+        if (s.contains("hors") || s.contains("service")) return EquipmentStatus::OutOfOrder;
+        if (s.contains("rchiv") || s.contains("archive")) return EquipmentStatus::UnderMaintenance;
+        return EquipmentStatus::Available;
+    };
 
-        auto mk = [&](const QString& t){
+    auto loadEqTable = [=](){
+        eqTable->setRowCount(0);
+        QList<EquipementRecord> recs;
+        QString err;
+        QString nomFilter = eqSearch->text().trimmed();
+        if (cbEquipType->currentIndex() > 0) {
+            if (!nomFilter.isEmpty()) nomFilter += " ";
+            nomFilter += cbEquipType->currentText();
+        }
+        const QString statusFilter = (cbEquipStatus->currentIndex() <= 0) ? QString() : cbEquipStatus->currentText();
+        const QString locFilter    = (cbEquipLoc->currentIndex() <= 0) ? QString() : cbEquipLoc->currentText();
+        if (!eqCrud->loadEquipements(recs, &err, QString(), nomFilter, statusFilter, locFilter)) {
+            showToast(this, "Erreur : " + err, false);
+            return;
+        }
+
+        auto mk = [](const QString& t){
             QTableWidgetItem* it = new QTableWidgetItem(t);
             it->setTextAlignment(Qt::AlignLeft|Qt::AlignVCenter);
             return it;
         };
 
-        eqTable->setItem(r, 1, mk(name));
-        eqTable->setItem(r, 2, mk(manufacturer));
-        eqTable->setItem(r, 3, mk(model));
-        eqTable->setItem(r, 4, mk(location));
-        eqTable->setItem(r, 5, mk(purchaseDate));
-        eqTable->setItem(r, 6, mk(nextMaint));
+        for (const EquipementRecord& rec : recs) {
+            int row = eqTable->rowCount();
+            eqTable->insertRow(row);
 
-        QTableWidgetItem* badge = new QTableWidgetItem;
-        badge->setData(Qt::UserRole, (int)stt);
-        eqTable->setItem(r, 7, badge);
+            QTableWidgetItem* iconItem = new QTableWidgetItem;
+            iconItem->setIcon(style()->standardIcon(QStyle::SP_ArrowRight));
+            iconItem->setTextAlignment(Qt::AlignCenter);
+            eqTable->setItem(row, 0, iconItem);
 
-        eqTable->setItem(r, 8, mk(calibDate));
-        eqTable->setRowHeight(r, 46);
+            QTableWidgetItem* nameItem = mk(rec.nomEquipement);
+            nameItem->setData(Qt::UserRole, rec.id);
+            eqTable->setItem(row, 1, nameItem);
+            eqTable->setItem(row, 2, mk(rec.fabricant));
+            eqTable->setItem(row, 3, mk(rec.numeroModele));
+            eqTable->setItem(row, 4, mk(rec.localisation));
+            eqTable->setItem(row, 5, mk(rec.dateAchat.isValid() ? rec.dateAchat.toString("dd/MM/yyyy") : ""));
+            eqTable->setItem(row, 6, mk(rec.dateProchaineMaintenance.isValid() ? rec.dateProchaineMaintenance.toString("dd/MM/yyyy") : ""));
+
+            QTableWidgetItem* badge = new QTableWidgetItem;
+            badge->setData(Qt::UserRole, (int)equipmentBadgeFromDbStatus(rec.statut));
+            eqTable->setItem(row, 7, badge);
+
+            eqTable->setItem(row, 8, mk(rec.dateLimiteCalibration.isValid() ? rec.dateLimiteCalibration.toString("dd/MM/yyyy") : ""));
+            eqTable->setRowHeight(row, 46);
+        }
     };
+    loadEqTable();
 
-    setEqRow(0, "PCR Machine",   "Thermo Fisher", "TX-500",  "Lab 101", "15/01/2023", "15/03/2026", EquipmentStatus::Available, "15/06/2026");
-    setEqRow(1, "Centrifugeuse", "Eppendorf",     "5424R",   "Lab 102", "20/03/2023", "20/02/2026", EquipmentStatus::InUse, "20/05/2026");
-    setEqRow(2, "Microscope",    "Zeiss",         "AX-10",   "Lab 101", "10/06/2022", "10/02/2026", EquipmentStatus::UnderMaintenance, "10/04/2026");
-    setEqRow(3, "Incubateur",    "Thermo Fisher", "HI-3000", "Lab 201", "05/09/2023", "05/03/2026", EquipmentStatus::Available, "05/09/2026");
-    setEqRow(4, "PCR Machine",   "Bio-Rad",       "PCR-200", "Lab 103", "12/11/2021", "12/01/2026", EquipmentStatus::OutOfOrder, "12/01/2026");
+    QObject::connect(stack, &QStackedWidget::currentChanged, eqTable, [=](int idx){
+        if (idx == EQUIP_LIST) loadEqTable();
+    });
 
     eqCardL->addWidget(eqTable);
     eq1->addWidget(eqCard, 1);
 
-    // Search by equipment name, fabricant, modèle
-    QObject::connect(eqSearch, &QLineEdit::textChanged, this, [=](const QString& text){
-        QString filter = text.trimmed().toLower();
-        for (int r = 0; r < eqTable->rowCount(); ++r) {
-            bool match = false;
-            if (filter.isEmpty()) { match = true; }
-            else {
-                for (int c = 1; c <= 8; ++c) {
-                    QTableWidgetItem* it = eqTable->item(r, c);
-                    if (it && it->text().toLower().contains(filter)) { match = true; break; }
-                }
-            }
-            eqTable->setRowHidden(r, !match);
-        }
-    });
+    QObject::connect(eqSearch, &QLineEdit::textChanged, this, [=](const QString&){ loadEqTable(); });
+    QObject::connect(cbEquipType, &QComboBox::currentIndexChanged, this, [=](int){ loadEqTable(); });
+    QObject::connect(cbEquipStatus, &QComboBox::currentIndexChanged, this, [=](int){ loadEqTable(); });
+    QObject::connect(cbEquipLoc, &QComboBox::currentIndexChanged, this, [=](int){ loadEqTable(); });
+    QObject::connect(eqFilters, &QPushButton::clicked, this, [=](){ loadEqTable(); });
 
     QFrame* eqBottom = new QFrame;
     eqBottom->setFixedHeight(64);
@@ -4762,12 +4818,19 @@ QPushButton:hover{ background: %2; }
             QMessageBox::information(this, "Information", "Veuillez sélectionner un équipement à supprimer.");
             return;
         }
-           QString resume = QString("Équipement : %1 | Localisation : %2 | Statut : %3")
+        const int id = eqTable->item(r,1)->data(Qt::UserRole).toInt();
+        QString resume = QString("Équipement : %1 | Localisation : %2")
                             .arg(eqTable->item(r,1)->text(),
-                                eqTable->item(r,4)->text(),
-                                equipmentStatusText(static_cast<EquipmentStatus>(eqTable->item(r,7)->data(Qt::UserRole).toInt())));
+                                 eqTable->item(r,4)->text());
         ConfirmDeleteDialog confirm(style(), resume, this);
-        if (confirm.exec() == QDialog::Accepted) eqTable->removeRow(r);
+        if (confirm.exec() != QDialog::Accepted) return;
+        QString err;
+        if (!eqCrud->deleteEquipement(id, &err)) {
+            showToast(this, "Erreur : " + err, false);
+            return;
+        }
+        showToast(this, "Équipement supprimé.", true);
+        loadEqTable();
     });
 
     eqBottomL->addWidget(eqAdd);
@@ -4849,10 +4912,11 @@ QPushButton:hover{ background: %2; }
         )");
         eqLeft2L->addWidget(head);
         eqLeft2L->addWidget(b);
+        return b;
     };
 
-    leftAction("Type d’équipement", QStyle::SP_FileIcon, "PCR Machine");
-    leftAction("Fabricant", QStyle::SP_DirIcon, "Thermo Fisher");
+    QToolButton* eqTypeSummary = leftAction("Type d’équipement", QStyle::SP_FileIcon, "—");
+    QToolButton* eqFabSummary  = leftAction("Fabricant", QStyle::SP_DirIcon, "—");
 
     QLabel* locHead = new QLabel("Localisation");
     locHead->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
@@ -4879,7 +4943,8 @@ QPushButton:hover{ background: %2; }
         return b;
     };
 
-    eqLeft2L->addWidget(colBtn(QStyle::SP_DriveHDIcon, "Salle"));
+    QToolButton* eqSalleSummary = colBtn(QStyle::SP_DriveHDIcon, "Salle : —");
+    eqLeft2L->addWidget(eqSalleSummary);
     eqLeft2L->addWidget(colBtn(QStyle::SP_FileDialogListView, "Bâtiment"));
     eqLeft2L->addWidget(colBtn(QStyle::SP_ArrowDown, "Étage"));
     eqLeft2L->addStretch(1);
@@ -4905,18 +4970,61 @@ QPushButton:hover{ background: %2; }
 
     auto comboRow = [&](QComboBox* cb){
         QFrame* r = softBox();
+        r->setMinimumHeight(54);
         QHBoxLayout* l = new QHBoxLayout(r);
         l->setContentsMargins(10,8,10,8);
+        cb->setMinimumHeight(34);
+        cb->setStyleSheet(
+            "QComboBox{ background: rgba(255,255,255,0.96); color: rgba(0,0,0,0.82);"
+            " border:1px solid rgba(0,0,0,0.20); border-radius:8px; padding:6px 10px; font-weight:700; }"
+            "QComboBox::drop-down{ border:none; width:22px; }"
+            "QComboBox QAbstractItemView{ background:white; color:black; selection-background-color: rgba(10,95,88,0.20); }"
+        );
+        if (cb->isEditable() && cb->lineEdit()) {
+            cb->lineEdit()->setStyleSheet("background: transparent; color: rgba(0,0,0,0.84); border:0; font-weight:700;");
+        }
         l->addWidget(cb);
         return r;
     };
 
+    auto sectionHint = [&](const QString& text){
+        QLabel* l = new QLabel(text);
+        l->setStyleSheet("color: rgba(0,0,0,0.78); font-weight: 900; font-size: 13px; padding-left: 2px;");
+        return l;
+    };
+
     QComboBox* fcb1 = new QComboBox; fcb1->addItems({"PCR Machine","Centrifugeuse","Microscope","Incubateur"});
     QComboBox* fcb2 = new QComboBox; fcb2->addItems({"Thermo Fisher","Eppendorf","Zeiss","Bio-Rad"});
-    QComboBox* fcb3 = new QComboBox; fcb3->addItems({"Disponible","En usage","Maintenance","Hors service"});
-    eqRight2L->addWidget(comboRow(fcb1));
-    eqRight2L->addWidget(comboRow(fcb2));
-    eqRight2L->addWidget(comboRow(fcb3));
+    QComboBox* fcb3 = new QComboBox; fcb3->addItems({"Actif","Hors service","Archivé"});
+    fcb1->setEditable(true);
+    fcb2->setEditable(true);
+    fcb1->setCurrentText("");
+    fcb2->setCurrentText("");
+    if (fcb1->lineEdit()) fcb1->lineEdit()->setPlaceholderText("Type d'équipement");
+    if (fcb2->lineEdit()) fcb2->lineEdit()->setPlaceholderText("Fabricant");
+
+    QScrollArea* eqFormScroll = new QScrollArea;
+    eqFormScroll->setWidgetResizable(true);
+    eqFormScroll->setFrameShape(QFrame::NoFrame);
+    eqFormScroll->setStyleSheet("QScrollArea{ background: transparent; border: 0; }");
+
+    QWidget* eqFormContent = new QWidget;
+    QGridLayout* eqFormGrid = new QGridLayout(eqFormContent);
+    eqFormGrid->setContentsMargins(0, 2, 0, 2);
+    eqFormGrid->setHorizontalSpacing(14);
+    eqFormGrid->setVerticalSpacing(10);
+    eqFormGrid->setColumnStretch(0, 1);
+    eqFormGrid->setColumnStretch(1, 1);
+
+    auto fieldBlock = [&](const QString& title, QWidget* inputRow){
+        QWidget* block = new QWidget;
+        QVBoxLayout* blockL = new QVBoxLayout(block);
+        blockL->setContentsMargins(0,0,0,0);
+        blockL->setSpacing(4);
+        blockL->addWidget(sectionHint(title));
+        blockL->addWidget(inputRow);
+        return block;
+    };
 
     QFrame* modelRow = softBox();
     QHBoxLayout* modelL = new QHBoxLayout(modelRow);
@@ -5002,10 +5110,47 @@ QPushButton:hover{ background: %2; }
     };
 
     QComboBox* labRoom = new QComboBox; labRoom->addItems({"Lab 101","Lab 102","Lab 103","Lab 201"});
-    labRoom->setFixedWidth(160);
+    labRoom->setMinimumWidth(180);
+    labRoom->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    labRoom->setEditable(true);
+    labRoom->setCurrentText("");
+    if (labRoom->lineEdit()) labRoom->lineEdit()->setPlaceholderText("Localisation");
+    labRoom->setStyleSheet(
+        "QComboBox{ background: rgba(255,255,255,0.96); color: rgba(0,0,0,0.82);"
+        " border:1px solid rgba(0,0,0,0.20); border-radius:8px; padding:6px 10px; font-weight:700; }"
+        "QComboBox::drop-down{ border:none; width:22px; }"
+        "QComboBox QAbstractItemView{ background:white; color:black; selection-background-color: rgba(10,95,88,0.20); }"
+    );
+    if (labRoom->lineEdit()) {
+        labRoom->lineEdit()->setStyleSheet("background: transparent; color: rgba(0,0,0,0.84); border:0; font-weight:700;");
+    }
 
-    eqRight2L->addWidget(miniRow(QStyle::SP_DirIcon, "Salle :", labRoom));
-    eqRight2L->addStretch(1);
+    eqFormGrid->addWidget(fieldBlock("Type d'équipement", comboRow(fcb1)), 0, 0);
+    eqFormGrid->addWidget(fieldBlock("Fabricant", comboRow(fcb2)), 0, 1);
+    eqFormGrid->addWidget(fieldBlock("Statut", comboRow(fcb3)), 1, 0);
+    eqFormGrid->addWidget(fieldBlock("Modèle", modelRow), 1, 1);
+    eqFormGrid->addWidget(fieldBlock("Date d'achat", dateRow), 2, 0);
+    eqFormGrid->addWidget(fieldBlock("Prochaine maintenance", maintRow), 2, 1);
+    eqFormGrid->addWidget(fieldBlock("Calibration", calRow), 3, 0);
+    eqFormGrid->addWidget(fieldBlock("Salle", miniRow(QStyle::SP_DirIcon, "Salle :", labRoom)), 3, 1);
+    eqFormGrid->setRowStretch(4, 1);
+
+    eqFormScroll->setWidget(eqFormContent);
+    eqRight2L->addWidget(eqFormScroll, 1);
+
+    auto syncEqSidebar = [=](){
+        const QString typeTxt = fcb1->currentText().trimmed();
+        const QString fabTxt  = fcb2->currentText().trimmed();
+        const QString locTxt  = labRoom->currentText().trimmed();
+        eqTypeSummary->setText("  " + (typeTxt.isEmpty() ? QString("—") : typeTxt));
+        eqFabSummary->setText("  " + (fabTxt.isEmpty() ? QString("—") : fabTxt));
+        eqSalleSummary->setText("  Salle : " + (locTxt.isEmpty() ? QString("—") : locTxt));
+    };
+
+    QObject::connect(fcb1, &QComboBox::currentTextChanged, this, [=](const QString&){ syncEqSidebar(); });
+    QObject::connect(fcb2, &QComboBox::currentTextChanged, this, [=](const QString&){ syncEqSidebar(); });
+    QObject::connect(labRoom, &QComboBox::currentTextChanged, this, [=](const QString&){ syncEqSidebar(); });
+    syncEqSidebar();
 
     eqOuter2L->addWidget(eqLeft2);
     eqOuter2L->addWidget(eqRight2, 1);
@@ -6509,8 +6654,9 @@ QPushButton:hover{ background: %2; }
         expDetProto->setText(expTable->item(r,1)->text());
         expDetResp->setText(expTable->item(r,2)->text());
         expDetDate->setText(expTable->item(r,3)->text());
-        expDetStatus->setText(expTable->item(r,4)->text());
-        expDetBsl->setText(expTable->item(r,5)->text());
+        ExpStatus est = static_cast<ExpStatus>(expTable->item(r,4)->data(Qt::UserRole).toInt());
+        expDetStatus->setText(expStatusText(est));
+        expDetBsl->setText("");
         return true;
     };
 
@@ -6754,7 +6900,7 @@ QPushButton:hover{ background: %2; }
         } else {
             // ── INSERT — check duplicate first ──
             QSqlQuery dup;
-            dup.prepare("SELECT COUNT(1) FROM BIOSAMPLE WHERE REFERENCE_ECHANTILLON = ?");
+            dup.prepare("SELECT COUNT(1) FROM ECHANTILLONS WHERE REFERENCE = ?");
             dup.addBindValue(ref);
             if (dup.exec() && dup.next() && dup.value(0).toInt() > 0) {
                 showToast(this, "Un échantillon avec cette référence existe déjà.", false);
@@ -6891,11 +7037,30 @@ QPushButton:hover{ background: %2; }
     // NAVIGATION Expériences / Protocoles (3 widgets)
     // ==========================================================
     QObject::connect(expAdd, &QPushButton::clicked, this, [=](){
-        setWindowTitle("Ajouter / Modifier une expérience");
+        *expEditMode = false; *expEditId = 0;
+        eName->clear(); eProto->clear();
+        eDate->setDate(QDate::currentDate());
+        eStatus->setCurrentIndex(0);
+        setWindowTitle("Ajouter une expérience");
         stack->setCurrentIndex(EXP_FORM);
     });
     QObject::connect(expEdit, &QPushButton::clicked, this, [=](){
-        setWindowTitle("Ajouter / Modifier une expérience");
+        int r = expTable->currentRow();
+        if (r < 0) { showToast(this, "Sélectionnez une expérience.", false); return; }
+        int id = expTable->item(r, 0)->data(Qt::UserRole).toInt();
+        ExperienceRecord rec; QString err;
+        if (!expCrud->fetchExperience(id, rec, &err)) { showToast(this, "Erreur : " + err, false); return; }
+        *expEditMode = true; *expEditId = id;
+        eName->setText(rec.titre);
+        eProto->setText(rec.hypothese);
+        eDate->setDate(rec.dateDebut.isValid() ? rec.dateDebut : QDate::currentDate());
+        if      (rec.status == "En cours")    eStatus->setCurrentIndex(1);
+        else if (rec.status == "Concluante") eStatus->setCurrentIndex(2);
+        else if (rec.status == "Réussie")    eStatus->setCurrentIndex(3);
+        else if (rec.status == "Échouée")    eStatus->setCurrentIndex(4);
+        else if (rec.status == "Archivée")   eStatus->setCurrentIndex(5);
+        else                                  eStatus->setCurrentIndex(0);
+        setWindowTitle("Modifier une expérience");
         stack->setCurrentIndex(EXP_FORM);
     });
     QObject::connect(expCancel, &QPushButton::clicked, this, [=](){
@@ -6903,9 +7068,23 @@ QPushButton:hover{ background: %2; }
         stack->setCurrentIndex(EXP_LIST);
     });
     QObject::connect(expSave, &QPushButton::clicked, this, [=](){
+        if (eName->text().trimmed().isEmpty()) { showToast(this, "Saisir le nom de l'expérience.", false); return; }
+        if (eStatus->currentIndex() == 0)      { showToast(this, "Sélectionner un statut.", false); return; }
+        ExperienceRecord rec;
+        rec.id        = *expEditId;
+        rec.titre     = eName->text().trimmed();
+        rec.hypothese = eProto->text().trimmed();
+        rec.dateDebut = eDate->date();
+        rec.dateFin   = eDate->date().addDays(30);
+        rec.status    = eStatus->currentText();
+        rec.projetId  = QVariant();
+        QString err;
+        bool ok = *expEditMode ? expCrud->updateExperience(rec, &err) : expCrud->insertExperience(rec, &err);
+        if (!ok) { showToast(this, "Erreur : " + err, false); return; }
+        showToast(this, *expEditMode ? "Expérience modifiée." : "Expérience ajoutée.", true);
+        loadExpTable();
         setWindowTitle("Expériences & Protocoles");
         stack->setCurrentIndex(EXP_LIST);
-        QMessageBox::information(this, "Expérience", "Enregistrement (à connecter à la base de données).");
     });
     QObject::connect(expStats, &QPushButton::clicked, this, [=](){
         setWindowTitle("Statistiques Expériences");
@@ -6933,24 +7112,119 @@ QPushButton:hover{ background: %2; }
     // ==========================================================
     // NAVIGATION Équipements (4 widgets)
     // ==========================================================
+    auto clearEquipForm = [=](){
+        fcb1->setCurrentText("");
+        fcb2->setCurrentText("");
+        fcb3->setCurrentIndex(0);
+        modelEdit->clear();
+        date->setDate(QDate::currentDate());
+        maintDate->setDate(QDate::currentDate());
+        calDate->setDate(QDate::currentDate());
+        labRoom->setCurrentText("");
+        const QString typeTxt = fcb1->currentText().trimmed();
+        const QString fabTxt  = fcb2->currentText().trimmed();
+        const QString locTxt  = labRoom->currentText().trimmed();
+        eqTypeSummary->setText("  " + (typeTxt.isEmpty() ? QString("—") : typeTxt));
+        eqFabSummary->setText("  " + (fabTxt.isEmpty() ? QString("—") : fabTxt));
+        eqSalleSummary->setText("  Salle : " + (locTxt.isEmpty() ? QString("—") : locTxt));
+    };
+
+    auto selectedEquipementId = [=]() -> int {
+        const int r = eqTable->currentRow();
+        if (r < 0 || !eqTable->item(r, 1)) return -1;
+        return eqTable->item(r, 1)->data(Qt::UserRole).toInt();
+    };
+
     QObject::connect(eqAdd, &QPushButton::clicked, this, [=](){
+        *eqEditMode = false;
+        *eqEditId = 0;
+        clearEquipForm();
         setWindowTitle("Ajouter / Modifier un équipement");
         stack->setCurrentIndex(EQUIP_FORM);
     });
+
     QObject::connect(eqEdit, &QPushButton::clicked, this, [=](){
+        const int id = selectedEquipementId();
+        if (id <= 0) {
+            showToast(this, "Sélectionnez un équipement.", false);
+            return;
+        }
+        EquipementRecord rec;
+        QString err;
+        if (!eqCrud->fetchEquipement(id, rec, &err)) {
+            showToast(this, "Erreur : " + err, false);
+            return;
+        }
+
+        *eqEditMode = true;
+        *eqEditId = id;
+        fcb1->setCurrentText(rec.nomEquipement);
+        fcb2->setCurrentText(rec.fabricant);
+        fcb3->setCurrentText(rec.statut);
+        modelEdit->setText(rec.numeroModele);
+        if (rec.dateAchat.isValid()) date->setDate(rec.dateAchat);
+        if (rec.dateProchaineMaintenance.isValid()) maintDate->setDate(rec.dateProchaineMaintenance);
+        if (rec.dateLimiteCalibration.isValid()) calDate->setDate(rec.dateLimiteCalibration);
+        if (!rec.localisation.trimmed().isEmpty()) labRoom->setCurrentText(rec.localisation);
+        eqTypeSummary->setText("  " + (rec.nomEquipement.trimmed().isEmpty() ? QString("—") : rec.nomEquipement.trimmed()));
+        eqFabSummary->setText("  " + (rec.fabricant.trimmed().isEmpty() ? QString("—") : rec.fabricant.trimmed()));
+        eqSalleSummary->setText("  Salle : " + (rec.localisation.trimmed().isEmpty() ? QString("—") : rec.localisation.trimmed()));
+
         setWindowTitle("Ajouter / Modifier un équipement");
         stack->setCurrentIndex(EQUIP_FORM);
     });
+
+    QObject::connect(eqTable, &QTableWidget::cellDoubleClicked, this, [=](int, int){
+        eqEdit->click();
+    });
+
     QObject::connect(eqCancel, &QPushButton::clicked, this, [=](){
+        clearEquipForm();
         setWindowTitle("Gestion des Équipements");
         stack->setCurrentIndex(EQUIP_LIST);
     });
+
     QObject::connect(eqSave, &QPushButton::clicked, this, [=](){
+        if (fcb1->currentText().trimmed().isEmpty()) {
+            showToast(this, "Le nom de l'équipement est obligatoire.", false);
+            return;
+        }
+
+        EquipementRecord rec;
+        rec.id = *eqEditId;
+        rec.nomEquipement = fcb1->currentText().trimmed();
+        rec.fabricant = fcb2->currentText().trimmed();
+        rec.numeroModele = modelEdit->text().trimmed();
+        rec.dateAchat = date->date();
+        rec.dateDerniereMaintenance = QDate();
+        rec.dateProchaineMaintenance = maintDate->date();
+        rec.statut = fcb3->currentText();
+        rec.localisation = labRoom->currentText().trimmed();
+        rec.dateLimiteCalibration = calDate->date();
+        rec.responsableId = QVariant();
+
+        QString err;
+        const bool ok = *eqEditMode ? eqCrud->updateEquipement(rec, &err)
+                                    : eqCrud->insertEquipement(rec, &err);
+        if (!ok) {
+            showToast(this, "Erreur : " + err, false);
+            return;
+        }
+
+        showToast(this, *eqEditMode ? "Équipement modifié." : "Équipement ajouté.", true);
+        *eqEditMode = false;
+        *eqEditId = 0;
+        clearEquipForm();
+        loadEqTable();
         setWindowTitle("Gestion des Équipements");
         stack->setCurrentIndex(EQUIP_LIST);
-        QMessageBox::information(this, "Équipement", "Enregistrement (à connecter à la base de données).");
     });
+
     QObject::connect(eqDet, &QPushButton::clicked, this, [=](){
+        if (selectedEquipementId() <= 0) {
+            showToast(this, "Sélectionnez un équipement.", false);
+            return;
+        }
         setWindowTitle("Détails équipement");
         stack->setCurrentIndex(EQUIP_DETAILS);
     });
@@ -6971,6 +7245,26 @@ QPushButton:hover{ background: %2; }
         stack->setCurrentIndex(EQUIP_LIST);
     });
     QObject::connect(eqEditFromDetails, &QPushButton::clicked, this, [=](){
+        const int id = selectedEquipementId();
+        if (id > 0) {
+            EquipementRecord rec;
+            QString err;
+            if (eqCrud->fetchEquipement(id, rec, &err)) {
+                *eqEditMode = true;
+                *eqEditId = id;
+                fcb1->setCurrentText(rec.nomEquipement);
+                fcb2->setCurrentText(rec.fabricant);
+                fcb3->setCurrentText(rec.statut);
+                modelEdit->setText(rec.numeroModele);
+                if (rec.dateAchat.isValid()) date->setDate(rec.dateAchat);
+                if (rec.dateProchaineMaintenance.isValid()) maintDate->setDate(rec.dateProchaineMaintenance);
+                if (rec.dateLimiteCalibration.isValid()) calDate->setDate(rec.dateLimiteCalibration);
+                if (!rec.localisation.trimmed().isEmpty()) labRoom->setCurrentText(rec.localisation);
+                eqTypeSummary->setText("  " + (rec.nomEquipement.trimmed().isEmpty() ? QString("—") : rec.nomEquipement.trimmed()));
+                eqFabSummary->setText("  " + (rec.fabricant.trimmed().isEmpty() ? QString("—") : rec.fabricant.trimmed()));
+                eqSalleSummary->setText("  Salle : " + (rec.localisation.trimmed().isEmpty() ? QString("—") : rec.localisation.trimmed()));
+            }
+        }
         setWindowTitle("Ajouter / Modifier un équipement");
         stack->setCurrentIndex(EQUIP_FORM);
     });
