@@ -22,7 +22,6 @@ SOURCES += \
 
 HEADERS += \
     integration.h\
-    signupserver.h\
     connection.h \
     publication.h \
     equipement.h \

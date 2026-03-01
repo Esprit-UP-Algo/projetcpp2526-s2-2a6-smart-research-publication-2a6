@@ -4333,7 +4333,7 @@ MainWindow::MainWindow(QWidget *parent)
     pubBarL->setSpacing(10);
 
     QLineEdit* pubSearch = new QLineEdit;
-    pubSearch->setPlaceholderText("Rechercher (titre, auteur, journal, année, DOI...)");
+    pubSearch->setPlaceholderText("Rechercher (ID, titre, journal, année, DOI, projet, employé...)");
     pubSearch->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
 
     QComboBox* pubType = new QComboBox;
