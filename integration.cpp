@@ -50,12 +50,16 @@
 #include <QFont>
 #include <QColor>
 #include <QDesktopServices>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QTimer>
 #include <QPropertyAnimation>
 #include <QGraphicsOpacityEffect>
 #include <QGraphicsColorizeEffect>
 #include <QEasingCurve>
 #include <QStackedLayout>
+#include <QUrl>
 
 #include <cmath>
 #include <algorithm>
@@ -4426,6 +4430,45 @@ QPushButton:hover{ background: %2; }
 
     pubCardL->addWidget(pubTable);
     pb1->addWidget(pubCard, 1);
+
+    QHBoxLayout* pubQrRow = new QHBoxLayout;
+    pubQrRow->setContentsMargins(0, 0, 0, 0);
+    pubQrRow->setSpacing(0);
+    pubQrRow->addStretch(1);
+
+    QFrame* pubQrCard = softBox();
+    pubQrCard->setFixedSize(104, 104);
+    QVBoxLayout* pubQrCardL = new QVBoxLayout(pubQrCard);
+    pubQrCardL->setContentsMargins(8, 8, 8, 8);
+
+    QLabel* pubQrImage = new QLabel;
+    pubQrImage->setFixedSize(88, 88);
+    pubQrImage->setAlignment(Qt::AlignCenter);
+    pubQrImage->setText("QR");
+    pubQrImage->setToolTip("https://www.biorxiv.org/");
+    pubQrImage->setStyleSheet("QLabel{ background: rgba(255,255,255,0.75); border: 1px solid rgba(0,0,0,0.10); border-radius: 8px; color: rgba(0,0,0,0.55); font-weight: 900; }");
+
+    pubQrCardL->addWidget(pubQrImage, 0, Qt::AlignCenter);
+    pubQrRow->addWidget(pubQrCard, 0, Qt::AlignRight);
+    pb1->addLayout(pubQrRow);
+
+    QNetworkAccessManager* qrManager = new QNetworkAccessManager(this);
+    const QUrl qrUrl("https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=https%3A%2F%2Fwww.biorxiv.org%2F");
+    QObject::connect(qrManager, &QNetworkAccessManager::finished, this, [=](QNetworkReply* reply){
+        const bool ok = (reply->error() == QNetworkReply::NoError);
+        if (ok) {
+            QPixmap qrPixmap;
+            if (qrPixmap.loadFromData(reply->readAll())) {
+                pubQrImage->setPixmap(qrPixmap.scaled(pubQrImage->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            } else {
+                pubQrImage->setText("QR");
+            }
+        } else {
+            pubQrImage->setText("QR");
+        }
+        reply->deleteLater();
+    });
+    qrManager->get(QNetworkRequest(qrUrl));
 
     // Bottom actions (Ajouter / Modifier / Stats / Retour optionnel)
     QFrame* pubBottom = new QFrame;
