@@ -6,11 +6,14 @@
 #include "crudexperience.h"
 #include "equipement.h"
 #include "cong.h"
+#include "signupserver.h"
 #include <QTextEdit>
 
 #include <QPainterPath>
 #include <QDialog>
 #include <QMessageBox>
+#include <QSqlDatabase>
+#include <QSqlError>
 #include <QSqlQuery>
 
 #include <QApplication>
@@ -46,6 +49,7 @@
 #include <QPixmap>
 #include <QFont>
 #include <QColor>
+#include <QDesktopServices>
 #include <QTimer>
 #include <QPropertyAnimation>
 #include <QGraphicsOpacityEffect>
@@ -659,7 +663,7 @@ static ModulesBar makeModulesBar(ModuleTab selected, QWidget* parent=nullptr)
         QPushButton:hover{ background: rgba(139, 47, 60, 0.95); }
     )"));
     out.bLogout->setFixedSize(120, 34);
-    out.bLogout->setVisible(false);
+    out.bLogout->setVisible(true);
     h->addWidget(out.bLogout);
 
     return out;
@@ -813,6 +817,11 @@ static void connectModulesSwitch(MainWindow* self, QStackedWidget* stack, const 
         uncheckOthers(globalBar.bEquipement, ModuleTab::Equipement);
         self->setWindowTitle("Gestion des Équipements");
         stack->setCurrentIndex(EQUIP_LIST);
+    });
+
+    QObject::connect(mb.bLogout, &QPushButton::clicked, self, [=](){
+        self->setWindowTitle("SmartVision - Connexion");
+        stack->setCurrentIndex(LOGIN);
     });
 }
 
@@ -2395,6 +2404,7 @@ public:
     }
 
     QPushButton* getLoginButton() const { return loginBtn; }
+    QPushButton* getCreateAccountButton() const { return createBtn; }
     QString getEmail() const { return emailEdit->text().trimmed(); }
     QString getPassword() const { return passEdit->text(); }
     bool isRemembered() const { return rememberCheck->isChecked(); }
@@ -2550,6 +2560,13 @@ MainWindow::MainWindow(QWidget *parent)
     LoginWindow* loginPage = new LoginWindow;
     stack->addWidget(loginPage);
 
+    SignupServer* signupServer = new SignupServer(this);
+    signupServer->start();
+
+    QObject::connect(loginPage->getCreateAccountButton(), &QPushButton::clicked, this, [=]() {
+        QDesktopServices::openUrl(signupServer->signupUrl());
+    });
+
     // Handle login button
     QObject::connect(loginPage->getLoginButton(), &QPushButton::clicked, this, [=](){
         const QString email = loginPage->getEmail();
@@ -2559,6 +2576,41 @@ MainWindow::MainWindow(QWidget *parent)
             // Simple validation feedback
             loginPage->emailEdit->setPlaceholderText("Champ requis!");
             loginPage->passEdit->setPlaceholderText("Champ requis!");
+            return;
+        }
+
+        QSqlDatabase db = QSqlDatabase::database();
+        if (!db.isOpen()) {
+            QMessageBox::critical(this, "Connexion BD", "La base de données n'est pas connectée.");
+            return;
+        }
+
+        QSqlQuery authQuery(db);
+        authQuery.prepare("SELECT COUNT(*) FROM APP_USERS "
+                          "WHERE LOWER(EMAIL) = LOWER(?) "
+                          "AND USER_PASSWORD = ? "
+                          "AND ACTIVE = 'O'");
+        authQuery.addBindValue(email);
+        authQuery.addBindValue(pass);
+
+        if (!authQuery.exec()) {
+            QMessageBox::critical(this,
+                                  "Erreur SQL",
+                                  "Erreur lors de la vérification des identifiants :\n" + authQuery.lastError().text());
+            return;
+        }
+
+        bool isAuthenticated = false;
+        if (authQuery.next()) {
+            isAuthenticated = authQuery.value(0).toInt() > 0;
+        }
+
+        if (!isAuthenticated) {
+            QMessageBox::warning(this,
+                                 "Connexion refusée",
+                                 "E-mail ou mot de passe invalide.");
+            loginPage->passEdit->clear();
+            loginPage->passEdit->setFocus();
             return;
         }
 

@@ -10,6 +10,7 @@ CONFIG += c++17
 
 SOURCES += \
     integration.cpp\
+    signupserver.cpp\
     connection.cpp \
     publication.cpp \
     equipement.cpp \
@@ -21,6 +22,7 @@ SOURCES += \
 
 HEADERS += \
     integration.h\
+    signupserver.h\
     connection.h \
     publication.h \
     equipement.h \
