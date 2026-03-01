@@ -639,10 +639,10 @@ static ModulesBar makeModulesBar(ModuleTab selected, QWidget* parent=nullptr)
 
     out.bEmployee    = modulePill("Employee",        selected == ModuleTab::Employee);
     out.bPublication = modulePill("Publication",     selected == ModuleTab::Publication);
-    out.bBioSimple   = modulePill("BioSimple",       selected == ModuleTab::BioSimple);
+    out.bBioSimple   = modulePill("BioSample",       selected == ModuleTab::BioSimple);
     out.bEquipement  = modulePill("Équipement",      selected == ModuleTab::Equipement);
-    out.bExp         = modulePill("Expériences  Protocoles", selected == ModuleTab::ExperiencesProtocoles);
-    out.bProjet      = modulePill("Gestion Projet",  selected == ModuleTab::GestionProjet);
+    out.bExp         = modulePill("Expériences", selected == ModuleTab::ExperiencesProtocoles);
+    out.bProjet      = modulePill("Projet",  selected == ModuleTab::GestionProjet);
 
     h->addWidget(out.bEmployee);
     h->addWidget(out.bPublication);
@@ -795,13 +795,13 @@ static void connectModulesSwitch(MainWindow* self, QStackedWidget* stack, const 
 
     QObject::connect(mb.bProjet, &QPushButton::clicked, self, [=](){
         uncheckOthers(globalBar.bProjet, ModuleTab::GestionProjet);
-        self->setWindowTitle("Gestion Projet");
+        self->setWindowTitle("Projet");
         stack->setCurrentIndex(PROJ_LIST);
     });
 
     QObject::connect(mb.bExp, &QPushButton::clicked, self, [=](){
         uncheckOthers(globalBar.bExp, ModuleTab::ExperiencesProtocoles);
-        self->setWindowTitle("Expériences & Protocoles");
+        self->setWindowTitle("Expériences");
         stack->setCurrentIndex(EXP_LIST);
     });
 
@@ -4126,6 +4126,7 @@ MainWindow::MainWindow(QWidget *parent)
         return r;
     };
 
+    // ── Left panel: Informations ──────────────────────────────
     QFrame* e2Left = softBox();
     e2Left->setFixedWidth(420);
     QVBoxLayout* e2LeftL = new QVBoxLayout(e2Left);
@@ -4135,57 +4136,59 @@ MainWindow::MainWindow(QWidget *parent)
     QLineEdit* eName = new QLineEdit;
     eName->setPlaceholderText("Nom de l’expérience");
 
-    QLineEdit* eProto = new QLineEdit;
-    eProto->setPlaceholderText("Code du protocole (ex: PROTO-PCR-07)");
+    QLineEdit* eHypo = new QLineEdit;
+    eHypo->setPlaceholderText("Hypothese");
 
-    QComboBox* eStatus = new QComboBox;
-    eStatus->addItems({"Statut", "En cours", "Concluante", "Réussie", "Échouée", "Archivée"});
-    eStatus->setFixedWidth(200);
+    QComboBox* eProjet = new QComboBox;
+    eProjet->addItem("Projet", QVariant());
 
-    QComboBox* eBsl2 = new QComboBox;
-    eBsl2->addItems({"BSL", "BSL-1", "BSL-2", "BSL-3"});
-    eBsl2->setFixedWidth(200);
-
-    QDateEdit* eDate = new QDateEdit(QDate::currentDate());
-    eDate->setCalendarPopup(true);
-    eDate->setDisplayFormat("dd/MM/yyyy");
-    eDate->setStyleSheet("QDateEdit{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 900; }");
+    auto loadProjetsIntoCombo = [=]() {
+        const int savedId = eProjet->currentData().isNull() ? -1 : eProjet->currentData().toInt();
+        eProjet->blockSignals(true);
+        eProjet->clear();
+        eProjet->addItem("Projet", QVariant());
+        QSqlQuery pq;
+        if (pq.exec("SELECT ID_PROJET, NOM_DU_PROJET FROM PROJET ORDER BY ID_PROJET")) {
+            while (pq.next())
+                eProjet->addItem(pq.value(1).toString(), pq.value(0).toInt());
+        }
+        int idx = eProjet->findData(savedId);
+        if (idx >= 0) eProjet->setCurrentIndex(idx);
+        eProjet->blockSignals(false);
+    };
 
     e2LeftL->addWidget(expTitle("Informations"));
-    e2LeftL->addWidget(expRow(QStyle::SP_DirIcon,  "Expérience", eName));
-    e2LeftL->addWidget(expRow(QStyle::SP_FileDialogDetailedView, "Protocole", eProto));
-    e2LeftL->addWidget(expRow(QStyle::SP_FileDialogInfoView, "Date", eDate));
-    e2LeftL->addWidget(expRow(QStyle::SP_MessageBoxInformation, "Statut", eStatus));
-    e2LeftL->addWidget(expRow(QStyle::SP_MessageBoxWarning, "Niveau BSL", eBsl2));
+    e2LeftL->addWidget(expRow(QStyle::SP_DirIcon, "Expérience", eName));
+    e2LeftL->addWidget(expRow(QStyle::SP_FileDialogDetailedView, "Hypothese", eHypo));
+    e2LeftL->addWidget(expRow(QStyle::SP_DirIcon, "Projet", eProjet));
     e2LeftL->addStretch(1);
 
+    // ── Right panel: Planification ────────────────────────────
     QFrame* e2Right = softBox();
     QVBoxLayout* e2RightL = new QVBoxLayout(e2Right);
     e2RightL->setContentsMargins(12,12,12,12);
     e2RightL->setSpacing(10);
 
-    QLineEdit* eOwner = new QLineEdit;
-    eOwner->setPlaceholderText("Responsable");
+    auto makeDateEdit = [&](QDate d) {
+        QDateEdit* de = new QDateEdit(d);
+        de->setCalendarPopup(true);
+        de->setDisplayFormat("dd/MM/yy");
+        de->setStyleSheet("QDateEdit{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 900; }");
+        return de;
+    };
 
-    QSpinBox* eDuree = new QSpinBox;
-    eDuree->setRange(0, 9999);
-    eDuree->setValue(0);
-    eDuree->setSuffix(" min");
-    eDuree->setFixedWidth(180);
-    eDuree->setStyleSheet("QSpinBox{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 900; }");
+    QDateEdit* eDateDebut = makeDateEdit(QDate::currentDate());
+    QDateEdit* eDateFin   = makeDateEdit(QDate::currentDate().addDays(1));
 
-    QLineEdit* eLieu = new QLineEdit;
-    eLieu->setPlaceholderText("Lieu / Salle / Paillasse");
+    QComboBox* eStatus = new QComboBox;
+    eStatus->addItems({"Statut", "En cours", "Concluante", "Réussie", "Échouée", "Archivée"});
+    eStatus->setFixedWidth(200);
 
-    QTextEdit* eNotes = new QTextEdit;
-    eNotes->setPlaceholderText("Notes / étapes / observations (traçabilité)");
-    eNotes->setStyleSheet("QTextEdit{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 800; }");
-
-    e2RightL->addWidget(expTitle("Traçabilité"));
-    e2RightL->addWidget(expRow(QStyle::SP_DirHomeIcon, "Responsable", eOwner));
-    e2RightL->addWidget(expRow(QStyle::SP_ArrowUp, "Durée", eDuree));
-    e2RightL->addWidget(expRow(QStyle::SP_DriveHDIcon, "Lieu", eLieu));
-    e2RightL->addWidget(eNotes, 1);
+    e2RightL->addWidget(expTitle("Planification"));
+    e2RightL->addWidget(expRow(QStyle::SP_MessageBoxInformation, "Date début", eDateDebut));
+    e2RightL->addWidget(expRow(QStyle::SP_MessageBoxInformation, "Date fin",   eDateFin));
+    e2RightL->addWidget(expRow(QStyle::SP_MessageBoxInformation, "Statut",     eStatus));
+    e2RightL->addStretch(1);
 
     outE2L->addWidget(e2Left);
     outE2L->addWidget(e2Right, 1);
@@ -7133,9 +7136,12 @@ QPushButton:hover{ background: %2; }
     // ==========================================================
     QObject::connect(expAdd, &QPushButton::clicked, this, [=](){
         *expEditMode = false; *expEditId = 0;
-        eName->clear(); eProto->clear();
-        eDate->setDate(QDate::currentDate());
+        loadProjetsIntoCombo();
+        eName->clear(); eHypo->clear();
+        eDateDebut->setDate(QDate::currentDate());
+        eDateFin->setDate(QDate::currentDate().addDays(1));
         eStatus->setCurrentIndex(0);
+        eProjet->setCurrentIndex(0);
         setWindowTitle("Ajouter une expérience");
         stack->setCurrentIndex(EXP_FORM);
     });
@@ -7146,20 +7152,26 @@ QPushButton:hover{ background: %2; }
         ExperienceRecord rec; QString err;
         if (!expCrud->fetchExperience(id, rec, &err)) { showToast(this, "Erreur : " + err, false); return; }
         *expEditMode = true; *expEditId = id;
+        loadProjetsIntoCombo();
         eName->setText(rec.titre);
-        eProto->setText(rec.hypothese);
-        eDate->setDate(rec.dateDebut.isValid() ? rec.dateDebut : QDate::currentDate());
-        if      (rec.status == "En cours")    eStatus->setCurrentIndex(1);
+        eHypo->setText(rec.hypothese);
+        eDateDebut->setDate(rec.dateDebut.isValid() ? rec.dateDebut : QDate::currentDate());
+        eDateFin->setDate(rec.dateFin.isValid() ? rec.dateFin : QDate::currentDate().addDays(1));
+        if      (rec.status == "En cours")   eStatus->setCurrentIndex(1);
         else if (rec.status == "Concluante") eStatus->setCurrentIndex(2);
         else if (rec.status == "Réussie")    eStatus->setCurrentIndex(3);
         else if (rec.status == "Échouée")    eStatus->setCurrentIndex(4);
         else if (rec.status == "Archivée")   eStatus->setCurrentIndex(5);
-        else                                  eStatus->setCurrentIndex(0);
+        else                                 eStatus->setCurrentIndex(0);
+        if (!rec.projetId.isNull()) {
+            int idx = eProjet->findData(rec.projetId.toInt());
+            if (idx >= 0) eProjet->setCurrentIndex(idx);
+        }
         setWindowTitle("Modifier une expérience");
         stack->setCurrentIndex(EXP_FORM);
     });
     QObject::connect(expCancel, &QPushButton::clicked, this, [=](){
-        setWindowTitle("Expériences & Protocoles");
+        setWindowTitle("Expériences");
         stack->setCurrentIndex(EXP_LIST);
     });
     QObject::connect(expSave, &QPushButton::clicked, this, [=](){
@@ -7168,17 +7180,17 @@ QPushButton:hover{ background: %2; }
         ExperienceRecord rec;
         rec.id        = *expEditId;
         rec.titre     = eName->text().trimmed();
-        rec.hypothese = eProto->text().trimmed();
-        rec.dateDebut = eDate->date();
-        rec.dateFin   = eDate->date().addDays(30);
+        rec.hypothese = eHypo->text().trimmed();
+        rec.dateDebut = eDateDebut->date();
+        rec.dateFin   = eDateFin->date();
         rec.status    = eStatus->currentText();
-        rec.projetId  = QVariant();
+        rec.projetId  = eProjet->currentData().isNull() ? QVariant() : QVariant(eProjet->currentData().toInt());
         QString err;
         bool ok = *expEditMode ? expCrud->updateExperience(rec, &err) : expCrud->insertExperience(rec, &err);
         if (!ok) { showToast(this, "Erreur : " + err, false); return; }
         showToast(this, *expEditMode ? "Expérience modifiée." : "Expérience ajoutée.", true);
         loadExpTable();
-        setWindowTitle("Expériences & Protocoles");
+        setWindowTitle("Expériences");
         stack->setCurrentIndex(EXP_LIST);
     });
     QObject::connect(expStats, &QPushButton::clicked, this, [=](){
@@ -7191,11 +7203,11 @@ QPushButton:hover{ background: %2; }
         stack->setCurrentIndex(EXP_DETAILS);
     });
     QObject::connect(expBackStats, &QPushButton::clicked, this, [=](){
-        setWindowTitle("Expériences & Protocoles");
+        setWindowTitle("Expériences");
         stack->setCurrentIndex(EXP_LIST);
     });
     QObject::connect(expDetailsBack, &QPushButton::clicked, this, [=](){
-        setWindowTitle("Expériences & Protocoles");
+        setWindowTitle("Expériences");
         stack->setCurrentIndex(EXP_LIST);
     });
 
@@ -7296,7 +7308,7 @@ QPushButton:hover{ background: %2; }
         rec.statut = fcb3->currentText();
         rec.localisation = labRoom->currentText().trimmed();
         rec.dateLimiteCalibration = calDate->date();
-        rec.responsableId = QVariant();
+        rec.idExp = QVariant();
 
         QString err;
         const bool ok = *eqEditMode ? eqCrud->updateEquipement(rec, &err)

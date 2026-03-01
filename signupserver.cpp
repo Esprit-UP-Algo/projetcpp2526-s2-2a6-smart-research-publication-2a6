@@ -229,16 +229,9 @@ QByteArray SignupServer::signupHtml() const
                     <input id="prenom" required maxlength="80" />
                 </div>
 
-                <div>
+                <div class="full">
                     <label for="specialisation">Spécialisation</label>
                     <input id="specialisation" maxlength="120" />
-                </div>
-                <div>
-                    <label for="temps_plein">Temps plein</label>
-                    <select id="temps_plein" required>
-                        <option value="O">Oui</option>
-                        <option value="N">Non</option>
-                    </select>
                 </div>
 
                 <div class="full">
@@ -274,7 +267,6 @@ form.addEventListener('submit', async (e) => {
         prenom: document.getElementById('prenom').value.trim(),
         role: document.getElementById('role').value,
         specialisation: document.getElementById('specialisation').value.trim(),
-        temps_plein: document.getElementById('temps_plein').value,
         email: document.getElementById('email').value.trim(),
         password: document.getElementById('password').value
     };
@@ -388,22 +380,16 @@ void SignupServer::handleHttpRequest(const QByteArray& requestData, QTcpSocket* 
     const QString prenom = obj.value("prenom").toString().trimmed();
     const QString role = obj.value("role").toString().trimmed();
     const QString specialisation = obj.value("specialisation").toString().trimmed();
-    const QString tempsPlein = obj.value("temps_plein").toString().trimmed().toUpper();
     const QString email = obj.value("email").toString().trimmed();
     const QString password = obj.value("password").toString();
 
-    if (cin.isEmpty() || nom.isEmpty() || prenom.isEmpty() || role.isEmpty() || tempsPlein.isEmpty() || email.isEmpty() || password.isEmpty()) {
+    if (cin.isEmpty() || nom.isEmpty() || prenom.isEmpty() || role.isEmpty() || email.isEmpty() || password.isEmpty()) {
         sendJson(socket, 400, "Tous les champs obligatoires doivent être remplis.", false);
         return;
     }
 
     if (role != "Chercheur" && role != "Technicien" && role != "Responsable") {
         sendJson(socket, 400, "Rôle invalide.", false);
-        return;
-    }
-
-    if (tempsPlein != "O" && tempsPlein != "N") {
-        sendJson(socket, 400, "Valeur de temps plein invalide.", false);
         return;
     }
 
@@ -418,15 +404,24 @@ void SignupServer::handleHttpRequest(const QByteArray& requestData, QTcpSocket* 
         return;
     }
 
+    // Generate next EMPLOYEE_ID
+    QSqlQuery idQ(db);
+    if (!idQ.exec("SELECT NVL(MAX(EMPLOYEE_ID),0)+1 FROM EMPLOYES") || !idQ.next()) {
+        db.rollback();
+        sendJson(socket, 500, "Impossible de générer l'ID employé : " + idQ.lastError().text(), false);
+        return;
+    }
+    int nextEmpId = idQ.value(0).toInt();
+
     QSqlQuery query(db);
-    query.prepare("INSERT INTO EMPLOYES (CIN, NOM, PRENOM, ROLE, SPECIALISATION, TEMPS_PLEIN, ACTIF) "
-                  "VALUES (?, ?, ?, ?, ?, ?, 'O')");
+    query.prepare("INSERT INTO EMPLOYES (EMPLOYEE_ID, CIN, NOM, PRENOM, ROLE, SPECIALIZATION) "
+                  "VALUES (?, ?, ?, ?, ?, ?)");
+    query.addBindValue(nextEmpId);
     query.addBindValue(cin);
     query.addBindValue(nom);
     query.addBindValue(prenom);
     query.addBindValue(role);
-    query.addBindValue(specialisation);
-    query.addBindValue(tempsPlein);
+    query.addBindValue(specialisation.isEmpty() ? QVariant(QMetaType::fromType<QString>()) : QVariant(specialisation));
 
     if (!query.exec()) {
         db.rollback();
