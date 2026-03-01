@@ -18,6 +18,43 @@ static QVariant dateOrNull(const QDate& d)
     return d.isValid() ? QVariant(d) : QVariant(QVariant::Date); // NULL DATE
 }
 
+static QString normalizeStorageTemperature(const QString& raw)
+{
+    const QString t = raw.trimmed();
+    if (t.isEmpty() || t == "-" || t == "--") return "Ambiante";
+    const QString lower = t.toLower();
+    if (lower.contains("-80")) return "-80C";
+    if (lower.contains("-20")) return "-20C";
+    if (lower.contains("+4") || lower == "4" || lower.contains("4c")) return "+4C";
+    if (lower.contains("amb")) return "Ambiante";
+    return "Ambiante";
+}
+
+static QString normalizeSampleType(const QString& raw)
+{
+    const QString t = raw.trimmed();
+    if (t.isEmpty()) return QString();
+
+    const QString lower = t.toLower();
+    if (lower == "adn" || lower == "dna") return "ADN";
+    if (lower == "arn" || lower == "rna") return "ARN";
+    if (lower.contains("prot")) return "Protéine";
+    if (lower.contains("cell")) return "Cellule";
+    if (lower.contains("tiss")) return "Tissu";
+    if (lower.contains("organ")) return "Organisme";
+
+    return QString();
+}
+
+static QString normalizeDangerLevel(const QString& raw)
+{
+    const QString t = raw.trimmed();
+    if (t.isEmpty()) return "BSL-1";
+
+    if (t == "BSL-1" || t == "BSL-2" || t == "BSL-3") return t;
+    return QString();
+}
+
 static void logErr(const char* tag, const QSqlQuery& q)
 {
     QSqlError e = q.lastError();
@@ -52,46 +89,47 @@ bool CrudeBioSimple::add(const BioSample& s)
         return false;
     }
 
-    // Auto-seed: ensure project 1 exists (biosimple module dev — no project module yet)
-    // Pure SQL conditional INSERT — works via ODBC without PL/SQL
-    QSqlQuery seedQ(db);
-    seedQ.exec(
-        "INSERT INTO Projet (Id_projet, nom_du_projet) "
-        "SELECT 1, 'Projet par defaut' FROM DUAL "
-        "WHERE NOT EXISTS (SELECT 1 FROM Projet WHERE Id_projet = 1)"
-    );
+    const QString normalizedType = normalizeSampleType(s.type);
+    const QString normalizedDanger = normalizeDangerLevel(s.niveauDanger);
+    if (normalizedType.isEmpty()) {
+        m_lastError = "Type invalide. Valeurs autorisées: ADN, ARN, Protéine, Cellule, Tissu, Organisme.";
+        return false;
+    }
+    if (normalizedDanger.isEmpty()) {
+        m_lastError = "Niveau de danger invalide. Valeurs autorisées: BSL-1, BSL-2, BSL-3.";
+        return false;
+    }
 
-    // Oracle: no sequence/trigger, generate ID manually
+    // Oracle: generate ID manually if trigger is not used by this module
     QSqlQuery idQ(db);
-    if (!idQ.exec("SELECT NVL(MAX(ID_ECHANTILLON),0)+1 FROM BIOSAMPLE") || !idQ.next()) {
+    if (!idQ.exec("SELECT NVL(MAX(ECHANTILLON_ID),0)+1 FROM ECHANTILLONS") || !idQ.next()) {
         m_lastError = idQ.lastError().text();
         logErr("[ADD] Cannot get next ID", idQ);
         return false;
     }
     int nextId = idQ.value(0).toInt();
-    qDebug() << "[ADD] next ID_ECHANTILLON =" << nextId << " ID_PROJET =" << s.idProjet;
+    qDebug() << "[ADD] next ECHANTILLON_ID =" << nextId;
 
     QSqlQuery q(db);
     // Use positional ? parameters — more reliable with Qt ODBC driver
     q.prepare(
-        "INSERT INTO BIOSAMPLE "
-        "(ID_ECHANTILLON, REFERENCE_ECHANTILLON, TYPE_ECHANTILLON, ORGANISME_SOURCE, "
-        " EMPLACEMENT_DE_STOCKAGE, TEMPERATURE_DE_STOCKAGE, QUANTITE_RESTANTE, "
-        " DATE_DE_COLLECTE, DATE_EXPIRATION, NIVEAU_DE_DANGEROSITE, ID_PROJET) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO ECHANTILLONS "
+        "(ECHANTILLON_ID, REFERENCE, TYPE_ECHANTILLON, SOURCE, "
+        " EMPLACEMENT_STOCKAGE, TEMPERATURE_STOCKAGE, QUANTITE_RESTANTE, "
+        " DATE_COLLECTE, DATE_EXPIRATION, NIVEAU_DANGEROSITE) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
 
     q.addBindValue(nextId);
     q.addBindValue(s.reference);
-    q.addBindValue(s.type);
+    q.addBindValue(normalizedType);
     q.addBindValue(s.organisme);
     q.addBindValue(s.emplacement);
-    q.addBindValue(s.temperature.toDouble());
+    q.addBindValue(normalizeStorageTemperature(s.temperature));
     q.addBindValue(s.quantite);
     q.addBindValue(dateOrNull(s.dateCollecte));
     q.addBindValue(dateOrNull(s.dateExpiration));
-    q.addBindValue(s.niveauDanger);
-    q.addBindValue(s.idProjet);
+    q.addBindValue(normalizedDanger);
 
     if (!q.exec()) {
         m_lastError = q.lastError().text();
@@ -112,30 +150,39 @@ bool CrudeBioSimple::update(const BioSample& s)
         return false;
     }
 
+    const QString normalizedType = normalizeSampleType(s.type);
+    const QString normalizedDanger = normalizeDangerLevel(s.niveauDanger);
+    if (normalizedType.isEmpty()) {
+        m_lastError = "Type invalide. Valeurs autorisées: ADN, ARN, Protéine, Cellule, Tissu, Organisme.";
+        return false;
+    }
+    if (normalizedDanger.isEmpty()) {
+        m_lastError = "Niveau de danger invalide. Valeurs autorisées: BSL-1, BSL-2, BSL-3.";
+        return false;
+    }
+
     QSqlQuery q(db);
     q.prepare(
-        "UPDATE BIOSAMPLE SET "
+        "UPDATE ECHANTILLONS SET "
         " TYPE_ECHANTILLON        = ?, "
-        " ORGANISME_SOURCE        = ?, "
-        " EMPLACEMENT_DE_STOCKAGE = ?, "
-        " TEMPERATURE_DE_STOCKAGE = ?, "
+        " SOURCE                  = ?, "
+        " EMPLACEMENT_STOCKAGE    = ?, "
+        " TEMPERATURE_STOCKAGE    = ?, "
         " QUANTITE_RESTANTE       = ?, "
-        " DATE_DE_COLLECTE        = ?, "
+        " DATE_COLLECTE           = ?, "
         " DATE_EXPIRATION         = ?, "
-        " NIVEAU_DE_DANGEROSITE   = ?, "
-        " ID_PROJET               = ? "
-        "WHERE REFERENCE_ECHANTILLON = ?"
+        " NIVEAU_DANGEROSITE      = ? "
+        "WHERE REFERENCE = ?"
         );
 
-    q.addBindValue(s.type);
+    q.addBindValue(normalizedType);
     q.addBindValue(s.organisme);
     q.addBindValue(s.emplacement);
-    q.addBindValue(s.temperature.toDouble());
+    q.addBindValue(normalizeStorageTemperature(s.temperature));
     q.addBindValue(s.quantite);
     q.addBindValue(dateOrNull(s.dateCollecte));
     q.addBindValue(dateOrNull(s.dateExpiration));
-    q.addBindValue(s.niveauDanger);
-    q.addBindValue(s.idProjet);
+    q.addBindValue(normalizedDanger);
     q.addBindValue(s.reference);
 
     if (!q.exec()) {
@@ -158,7 +205,7 @@ bool CrudeBioSimple::remove(const QString& reference)
     }
 
     QSqlQuery q(db);
-    q.prepare("DELETE FROM BIOSAMPLE WHERE REFERENCE_ECHANTILLON = :ref");
+    q.prepare("DELETE FROM ECHANTILLONS WHERE REFERENCE = :ref");
     q.bindValue(":ref", reference);
 
     if (!q.exec()) {
@@ -183,10 +230,10 @@ BioSample CrudeBioSimple::get(const QString& reference)
 
     QSqlQuery q(db);
     q.prepare(
-        "SELECT REFERENCE_ECHANTILLON, TYPE_ECHANTILLON, ORGANISME_SOURCE, "
-        "       EMPLACEMENT_DE_STOCKAGE, TEMPERATURE_DE_STOCKAGE, QUANTITE_RESTANTE, "
-        "       DATE_DE_COLLECTE, DATE_EXPIRATION, NIVEAU_DE_DANGEROSITE, ID_PROJET "
-        "FROM BIOSAMPLE WHERE REFERENCE_ECHANTILLON = :ref"
+        "SELECT REFERENCE, TYPE_ECHANTILLON, SOURCE, "
+        "       EMPLACEMENT_STOCKAGE, TEMPERATURE_STOCKAGE, QUANTITE_RESTANTE, "
+        "       DATE_COLLECTE, DATE_EXPIRATION, NIVEAU_DANGEROSITE "
+        "FROM ECHANTILLONS WHERE REFERENCE = :ref"
         );
     q.bindValue(":ref", reference);
 
@@ -226,10 +273,10 @@ void CrudeBioSimple::loadAll(QTableWidget* table)
 
     QSqlQuery q(db);
     if (!q.exec(
-            "SELECT REFERENCE_ECHANTILLON, TYPE_ECHANTILLON, ORGANISME_SOURCE, "
-            "       EMPLACEMENT_DE_STOCKAGE, TEMPERATURE_DE_STOCKAGE, QUANTITE_RESTANTE, "
-            "       DATE_DE_COLLECTE, DATE_EXPIRATION, NIVEAU_DE_DANGEROSITE "
-            "FROM BIOSAMPLE ORDER BY REFERENCE_ECHANTILLON"
+            "SELECT REFERENCE, TYPE_ECHANTILLON, SOURCE, "
+            "       EMPLACEMENT_STOCKAGE, TEMPERATURE_STOCKAGE, QUANTITE_RESTANTE, "
+            "       DATE_COLLECTE, DATE_EXPIRATION, NIVEAU_DANGEROSITE "
+            "FROM ECHANTILLONS ORDER BY REFERENCE"
             )) {
         logErr("[LOAD ERROR]", q);
         return;
@@ -290,7 +337,7 @@ void CrudeBioSimple::loadAll(QTableWidget* table)
 QMap<QString, int> CrudeBioSimple::countByType()
 {
     QMap<QString, int> result;
-    QSqlQuery q("SELECT TYPE_ECHANTILLON, COUNT(*) FROM BIOSAMPLE GROUP BY TYPE_ECHANTILLON");
+    QSqlQuery q("SELECT TYPE_ECHANTILLON, COUNT(*) FROM ECHANTILLONS GROUP BY TYPE_ECHANTILLON");
     while (q.next())
         result[q.value(0).toString()] = q.value(1).toInt();
     return result;
@@ -307,11 +354,11 @@ QVector<QPair<int, QString>> CrudeBioSimple::countByMonth()
         result.append({0, months[i]});
 
     QSqlQuery q(
-        "SELECT EXTRACT(MONTH FROM DATE_DE_COLLECTE), COUNT(*) "
-        "FROM BIOSAMPLE "
-        "WHERE DATE_DE_COLLECTE IS NOT NULL "
-        "GROUP BY EXTRACT(MONTH FROM DATE_DE_COLLECTE) "
-        "ORDER BY EXTRACT(MONTH FROM DATE_DE_COLLECTE)"
+        "SELECT EXTRACT(MONTH FROM DATE_COLLECTE), COUNT(*) "
+        "FROM ECHANTILLONS "
+        "WHERE DATE_COLLECTE IS NOT NULL "
+        "GROUP BY EXTRACT(MONTH FROM DATE_COLLECTE) "
+        "ORDER BY EXTRACT(MONTH FROM DATE_COLLECTE)"
         );
 
     while (q.next()) {
@@ -324,7 +371,7 @@ QVector<QPair<int, QString>> CrudeBioSimple::countByMonth()
 
 int CrudeBioSimple::totalCount()
 {
-    QSqlQuery q("SELECT COUNT(*) FROM BIOSAMPLE");
+    QSqlQuery q("SELECT COUNT(*) FROM ECHANTILLONS");
     if (q.exec() && q.next()) return q.value(0).toInt();
     return 0;
 }

@@ -1,0 +1,12 @@
+debug/integration.o
+debug/connection.o
+debug/publication.o
+debug/crudebiosimple.o
+debug/crudexperience.o
+debug/chatbotbiosimple.o
+debug/cong.o
+debug/main.o
+debug/qrc_resources.o
+debug/moc_integration.o
+debug/moc_chatbotbiosimple.o
+debug/moc_cong.o

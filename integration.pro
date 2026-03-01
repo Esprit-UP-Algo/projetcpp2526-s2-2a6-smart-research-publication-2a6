@@ -12,16 +12,22 @@ SOURCES += \
     integration.cpp\
     connection.cpp \
     publication.cpp \
+    equipement.cpp \
     crudebiosimple.cpp \
+    crudexperience.cpp \
     chatbotbiosimple.cpp \
+    cong.cpp \
     main.cpp
 
 HEADERS += \
     integration.h\
     connection.h \
     publication.h \
+    equipement.h \
     crudebiosimple.h \
-    chatbotbiosimple.h
+    crudexperience.h \
+    chatbotbiosimple.h \
+    cong.h
 
 
 # Default rules for deployment.
