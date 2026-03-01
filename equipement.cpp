@@ -97,7 +97,7 @@ bool EquipementCrud::loadResponsables(QList<ResponsableItem>& out, QString* erro
 {
     out.clear();
     QSqlQuery q;
-    q.prepare("SELECT EMPLOYE_ID, NOM, PRENOM FROM EMPLOYES ORDER BY NOM, PRENOM");
+    q.prepare("SELECT EMPLOYEE_ID, NOM, PRENOM FROM EMPLOYES ORDER BY NOM, PRENOM");
     if (!q.exec()) {
         if (error) *error = q.lastError().text();
         return false;
@@ -123,10 +123,10 @@ bool EquipementCrud::loadEquipements(QList<EquipementRecord>& out,
 
     QSqlQuery q;
     q.prepare(
-        "SELECT EQUIPEMENT_ID, NOM_EQUIPEMENT, FABRICANT, NUMERO_MODELE, "
+        "SELECT EQUIPEMENT_ID, NOM_EQUIPEMENT, FABRICANT, NUMERO_DE_MODELE, "
         "       DATE_ACHAT, DATE_DERNIERE_MAINTENANCE, DATE_PROCHAINE_MAINTENANCE, "
-        "       STATUT, LOCALISATION, DATE_LIMITE_CALIBRATION, RESPONSABLE_ID "
-        "FROM EQUIPEMENTS "
+        "       STATUT, LOCALISATION, DATE_LIMITE_CALIBRATION, ID_EXP "
+        "FROM EQUIPEMENT "
         "WHERE (:fab IS NULL OR :fab = '' OR LOWER(FABRICANT) LIKE '%' || LOWER(:fab) || '%') "
         "  AND (:nom IS NULL OR :nom = '' OR LOWER(NOM_EQUIPEMENT) LIKE '%' || LOWER(:nom) || '%') "
         "  AND (:stat IS NULL OR :stat = '' OR STATUT = :stat) "
@@ -160,7 +160,7 @@ bool EquipementCrud::loadEquipements(QList<EquipementRecord>& out,
         rec.statut                   = toUiStatus(q.value(7).toString());
         rec.localisation             = q.value(8).toString();
         rec.dateLimiteCalibration    = q.value(9).toDate();
-        rec.responsableId            = q.value(10);
+        rec.idExp                    = q.value(10);
         out.push_back(rec);
     }
     return true;
@@ -170,10 +170,10 @@ bool EquipementCrud::fetchEquipement(int id, EquipementRecord& out, QString* err
 {
     QSqlQuery q;
     q.prepare(
-        "SELECT NOM_EQUIPEMENT, FABRICANT, NUMERO_MODELE, "
+        "SELECT NOM_EQUIPEMENT, FABRICANT, NUMERO_DE_MODELE, "
         "       DATE_ACHAT, DATE_DERNIERE_MAINTENANCE, DATE_PROCHAINE_MAINTENANCE, "
-        "       STATUT, LOCALISATION, DATE_LIMITE_CALIBRATION, RESPONSABLE_ID "
-        "FROM EQUIPEMENTS WHERE EQUIPEMENT_ID = :id");
+        "       STATUT, LOCALISATION, DATE_LIMITE_CALIBRATION, ID_EXP "
+        "FROM EQUIPEMENT WHERE EQUIPEMENT_ID = :id");
     q.bindValue(":id", id);
 
     if (!q.exec() || !q.next()) {
@@ -191,14 +191,14 @@ bool EquipementCrud::fetchEquipement(int id, EquipementRecord& out, QString* err
     out.statut                   = toUiStatus(q.value(6).toString());
     out.localisation             = q.value(7).toString();
     out.dateLimiteCalibration    = q.value(8).toDate();
-    out.responsableId            = q.value(9);
+    out.idExp                    = q.value(9);
     return true;
 }
 
 bool EquipementCrud::deleteEquipement(int id, QString* error)
 {
     QSqlQuery q;
-    q.prepare("DELETE FROM EQUIPEMENTS WHERE EQUIPEMENT_ID = :id");
+    q.prepare("DELETE FROM EQUIPEMENT WHERE EQUIPEMENT_ID = :id");
     q.bindValue(":id", id);
     if (!q.exec()) {
         if (error) *error = q.lastError().text();
@@ -210,7 +210,7 @@ bool EquipementCrud::deleteEquipement(int id, QString* error)
 int EquipementCrud::nextEquipementId(QString* error)
 {
     QSqlQuery q;
-    if (!q.exec("SELECT NVL(MAX(EQUIPEMENT_ID),0)+1 FROM EQUIPEMENTS") || !q.next()) {
+    if (!q.exec("SELECT NVL(MAX(EQUIPEMENT_ID),0)+1 FROM EQUIPEMENT") || !q.next()) {
         if (error) *error = q.lastError().text();
         return -1;
     }
@@ -232,13 +232,13 @@ bool EquipementCrud::insertEquipement(const EquipementRecord& in, QString* error
 
     QSqlQuery q;
     q.prepare(
-        "INSERT INTO EQUIPEMENTS "
-        "(EQUIPEMENT_ID, NOM_EQUIPEMENT, FABRICANT, NUMERO_MODELE, DATE_ACHAT, "
+        "INSERT INTO EQUIPEMENT "
+        "(EQUIPEMENT_ID, NOM_EQUIPEMENT, FABRICANT, NUMERO_DE_MODELE, DATE_ACHAT, "
         " DATE_DERNIERE_MAINTENANCE, DATE_PROCHAINE_MAINTENANCE, STATUT, "
-        " LOCALISATION, DATE_LIMITE_CALIBRATION, RESPONSABLE_ID) "
+        " LOCALISATION, DATE_LIMITE_CALIBRATION, ID_EXP) "
         "VALUES (:id, :nom, :fab, :mod, TO_DATE(:da,'YYYY-MM-DD'), "
         "        TO_DATE(:ddm,'YYYY-MM-DD'), TO_DATE(:dpm,'YYYY-MM-DD'), :stat, "
-        "        :loc, TO_DATE(:dlc,'YYYY-MM-DD'), :resp)");
+        "        :loc, TO_DATE(:dlc,'YYYY-MM-DD'), :idexp)");
 
     auto nullInt = QVariant(QMetaType::fromType<int>());
     auto nullStr = QVariant(QMetaType::fromType<QString>());
@@ -254,7 +254,7 @@ bool EquipementCrud::insertEquipement(const EquipementRecord& in, QString* error
     q.bindValue(":stat", dbStatus.isEmpty() ? QVariant("Actif") : QVariant(dbStatus));
     q.bindValue(":loc", in.localisation.isEmpty() ? nullStr : QVariant(in.localisation));
     q.bindValue(":dlc", in.dateLimiteCalibration.isValid() ? QVariant(in.dateLimiteCalibration.toString("yyyy-MM-dd")) : nullStr);
-    q.bindValue(":resp", (in.responsableId.isNull() || !in.responsableId.isValid()) ? nullInt : QVariant(in.responsableId.toInt()));
+    q.bindValue(":idexp", (in.idExp.isNull() || !in.idExp.isValid()) ? nullInt : QVariant(in.idExp.toInt()));
 
     if (!q.exec()) {
         if (error) *error = q.lastError().text();
@@ -276,17 +276,17 @@ bool EquipementCrud::updateEquipement(const EquipementRecord& in, QString* error
 
     QSqlQuery q;
     q.prepare(
-        "UPDATE EQUIPEMENTS "
+        "UPDATE EQUIPEMENT "
         "SET NOM_EQUIPEMENT = :nom, "
         "    FABRICANT = :fab, "
-        "    NUMERO_MODELE = :mod, "
+        "    NUMERO_DE_MODELE = :mod, "
         "    DATE_ACHAT = TO_DATE(:da,'YYYY-MM-DD'), "
         "    DATE_DERNIERE_MAINTENANCE = TO_DATE(:ddm,'YYYY-MM-DD'), "
         "    DATE_PROCHAINE_MAINTENANCE = TO_DATE(:dpm,'YYYY-MM-DD'), "
         "    STATUT = :stat, "
         "    LOCALISATION = :loc, "
         "    DATE_LIMITE_CALIBRATION = TO_DATE(:dlc,'YYYY-MM-DD'), "
-        "    RESPONSABLE_ID = :resp "
+        "    ID_EXP = :idexp "
         "WHERE EQUIPEMENT_ID = :id");
 
     auto nullInt = QVariant(QMetaType::fromType<int>());
@@ -302,7 +302,7 @@ bool EquipementCrud::updateEquipement(const EquipementRecord& in, QString* error
     q.bindValue(":stat", dbStatus.isEmpty() ? QVariant("Actif") : QVariant(dbStatus));
     q.bindValue(":loc", in.localisation.isEmpty() ? nullStr : QVariant(in.localisation));
     q.bindValue(":dlc", in.dateLimiteCalibration.isValid() ? QVariant(in.dateLimiteCalibration.toString("yyyy-MM-dd")) : nullStr);
-    q.bindValue(":resp", (in.responsableId.isNull() || !in.responsableId.isValid()) ? nullInt : QVariant(in.responsableId.toInt()));
+    q.bindValue(":idexp", (in.idExp.isNull() || !in.idExp.isValid()) ? nullInt : QVariant(in.idExp.toInt()));
     q.bindValue(":id", in.id);
 
     if (!q.exec()) {

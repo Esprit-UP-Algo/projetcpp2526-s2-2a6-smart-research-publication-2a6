@@ -22,7 +22,7 @@ struct EquipementRecord {
     QString  statut;
     QString  localisation;
     QDate    dateLimiteCalibration;
-    QVariant responsableId;
+    QVariant idExp;      // FK → EXPERIENCE.ID_EXP (nullable)
 };
 
 class EquipementCrud

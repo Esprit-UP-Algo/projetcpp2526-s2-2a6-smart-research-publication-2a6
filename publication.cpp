@@ -277,8 +277,8 @@ bool Publication::create(QString* errorMessage) const
     query.addBindValue(m_doi);
     query.addBindValue(m_status);
     query.addBindValue(m_abstractText);
-    query.addBindValue(m_idProjet > 0 ? QVariant(m_idProjet) : QVariant(QVariant::Int));
-    query.addBindValue(m_employeeId > 0 ? QVariant(m_employeeId) : QVariant(QVariant::Int));
+    query.addBindValue(m_idProjet > 0 ? m_idProjet : 1);
+    query.addBindValue(m_employeeId > 0 ? m_employeeId : 1);
 
     if (!query.exec()) {
         setError(errorMessage, query);
@@ -318,8 +318,8 @@ bool Publication::update(QString* errorMessage) const
     query.addBindValue(m_doi);
     query.addBindValue(m_status);
     query.addBindValue(m_abstractText);
-    query.addBindValue(m_idProjet > 0 ? QVariant(m_idProjet) : QVariant(QVariant::Int));
-    query.addBindValue(m_employeeId > 0 ? QVariant(m_employeeId) : QVariant(QVariant::Int));
+    query.addBindValue(m_idProjet > 0 ? m_idProjet : 1);
+    query.addBindValue(m_employeeId > 0 ? m_employeeId : 1);
     query.addBindValue(m_id);
 
     if (!query.exec()) {

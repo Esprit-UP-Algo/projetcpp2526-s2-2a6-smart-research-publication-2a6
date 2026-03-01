@@ -1,6 +1,8 @@
 release/integration.o
+release/signupserver.o
 release/connection.o
 release/publication.o
+release/equipement.o
 release/crudebiosimple.o
 release/crudexperience.o
 release/chatbotbiosimple.o
@@ -8,5 +10,6 @@ release/cong.o
 release/main.o
 release/qrc_resources.o
 release/moc_integration.o
+release/moc_signupserver.o
 release/moc_chatbotbiosimple.o
 release/moc_cong.o
