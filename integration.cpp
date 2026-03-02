@@ -5,6 +5,7 @@
 #include "chatbotbiosimple.h"
 #include "crudexperience.h"
 #include "equipement.h"
+#include "employes.h"
 #include "cong.h"
 #include "signupserver.h"
 #include <QTextEdit>
@@ -753,37 +754,38 @@ static QWidget* makeHeaderBlock(QStyle* st,
 // Wires module buttons to switch the stacked pages and sync global bar.
 static ModulesBar* g_globalBar = nullptr;  // Global reference to modules bar
 
-static void connectModulesSwitch(MainWindow* self, QStackedWidget* stack, const ModulesBar& mb)
+static void connectModulesSwitch(MainWindow* self, QStackedWidget* stack, ModulesBar mb)
 {
-    if (!g_globalBar) return;
+    if (!g_globalBar || !self || !stack) return;
     const ModulesBar& globalBar = *g_globalBar;
 
     // Helper: uncheck all buttons except the clicked one (in both local and global bars)
     auto uncheckOthers = [=](QPushButton* btnClicked, ModuleTab selectedTab){
+        if (!btnClicked) return;
         // Update global bar
-        if(globalBar.bEmployee != btnClicked) globalBar.bEmployee->setChecked(false);
-        if(globalBar.bPublication != btnClicked) globalBar.bPublication->setChecked(false);
-        if(globalBar.bBioSimple != btnClicked) globalBar.bBioSimple->setChecked(false);
-        if(globalBar.bEquipement != btnClicked) globalBar.bEquipement->setChecked(false);
-        if(globalBar.bExp != btnClicked) globalBar.bExp->setChecked(false);
-        if(globalBar.bProjet != btnClicked) globalBar.bProjet->setChecked(false);
+        if(globalBar.bEmployee && globalBar.bEmployee != btnClicked) globalBar.bEmployee->setChecked(false);
+        if(globalBar.bPublication && globalBar.bPublication != btnClicked) globalBar.bPublication->setChecked(false);
+        if(globalBar.bBioSimple && globalBar.bBioSimple != btnClicked) globalBar.bBioSimple->setChecked(false);
+        if(globalBar.bEquipement && globalBar.bEquipement != btnClicked) globalBar.bEquipement->setChecked(false);
+        if(globalBar.bExp && globalBar.bExp != btnClicked) globalBar.bExp->setChecked(false);
+        if(globalBar.bProjet && globalBar.bProjet != btnClicked) globalBar.bProjet->setChecked(false);
         btnClicked->setChecked(true);
 
         // Update local bar
-        if(mb.bEmployee != btnClicked) mb.bEmployee->setChecked(false);
-        if(mb.bPublication != btnClicked) mb.bPublication->setChecked(false);
-        if(mb.bBioSimple != btnClicked) mb.bBioSimple->setChecked(false);
-        if(mb.bEquipement != btnClicked) mb.bEquipement->setChecked(false);
-        if(mb.bExp != btnClicked) mb.bExp->setChecked(false);
-        if(mb.bProjet != btnClicked) mb.bProjet->setChecked(false);
+        if(mb.bEmployee && mb.bEmployee != btnClicked) mb.bEmployee->setChecked(false);
+        if(mb.bPublication && mb.bPublication != btnClicked) mb.bPublication->setChecked(false);
+        if(mb.bBioSimple && mb.bBioSimple != btnClicked) mb.bBioSimple->setChecked(false);
+        if(mb.bEquipement && mb.bEquipement != btnClicked) mb.bEquipement->setChecked(false);
+        if(mb.bExp && mb.bExp != btnClicked) mb.bExp->setChecked(false);
+        if(mb.bProjet && mb.bProjet != btnClicked) mb.bProjet->setChecked(false);
 
         // Find and check the corresponding button in local bar
-        if(selectedTab == ModuleTab::BioSimple) mb.bBioSimple->setChecked(true);
-        else if(selectedTab == ModuleTab::Equipement) mb.bEquipement->setChecked(true);
-        else if(selectedTab == ModuleTab::ExperiencesProtocoles) mb.bExp->setChecked(true);
-        else if(selectedTab == ModuleTab::GestionProjet) mb.bProjet->setChecked(true);
-        else if(selectedTab == ModuleTab::Employee) mb.bEmployee->setChecked(true);
-        else if(selectedTab == ModuleTab::Publication) mb.bPublication->setChecked(true);
+        if(selectedTab == ModuleTab::BioSimple && mb.bBioSimple) mb.bBioSimple->setChecked(true);
+        else if(selectedTab == ModuleTab::Equipement && mb.bEquipement) mb.bEquipement->setChecked(true);
+        else if(selectedTab == ModuleTab::ExperiencesProtocoles && mb.bExp) mb.bExp->setChecked(true);
+        else if(selectedTab == ModuleTab::GestionProjet && mb.bProjet) mb.bProjet->setChecked(true);
+        else if(selectedTab == ModuleTab::Employee && mb.bEmployee) mb.bEmployee->setChecked(true);
+        else if(selectedTab == ModuleTab::Publication && mb.bPublication) mb.bPublication->setChecked(true);
     };
 
     // Modules activés
@@ -808,7 +810,9 @@ static void connectModulesSwitch(MainWindow* self, QStackedWidget* stack, const 
     QObject::connect(mb.bEmployee, &QPushButton::clicked, self, [=](){
         uncheckOthers(globalBar.bEmployee, ModuleTab::Employee);
         self->setWindowTitle("Gestion des Employés");
-        stack->setCurrentIndex(EMP_LIST);
+        if (EMP_LIST >= 0 && EMP_LIST < stack->count()) {
+            stack->setCurrentIndex(EMP_LIST);
+        }
     });
 
     QObject::connect(mb.bPublication, &QPushButton::clicked, self, [=](){
@@ -2549,8 +2553,8 @@ MainWindow::MainWindow(QWidget *parent)
     rootLayout->setSpacing(0);
 
     // Create global modules bar (invisible - used only for tracking state)
-    ModulesBar globalBar = makeModulesBar(ModuleTab::Employee);
-    g_globalBar = &globalBar;
+    ModulesBar* globalBar = new ModulesBar(makeModulesBar(ModuleTab::Employee));
+    g_globalBar = globalBar;
 
     QStackedWidget* stack = new QStackedWidget;
     rootLayout->addWidget(stack);
@@ -2627,13 +2631,13 @@ MainWindow::MainWindow(QWidget *parent)
                                   this);
         successDlg.exec();
 
-        // Go to employee module
-        setWindowTitle("Gestion des Employés");
-        stack->setCurrentIndex(EMP_LIST);
+        // Go to a stable landing page after login
+        setWindowTitle("Gestion des Échantillons");
+        stack->setCurrentIndex(BIO_LIST);
     });
 
     // Handle logout button
-    QObject::connect(globalBar.bLogout, &QPushButton::clicked, this, [=](){
+    QObject::connect(globalBar->bLogout, &QPushButton::clicked, this, [=](){
         setWindowTitle("SmartVision - Connexion");
         stack->setCurrentIndex(LOGIN);
     });
@@ -4365,7 +4369,7 @@ QPushButton:hover{ background: %2; }
     pubCardL->setContentsMargins(10,10,10,10);
 
     QTableWidget* pubTable = new QTableWidget(0, 8);
-    pubTable->setHorizontalHeaderLabels({"ID","Titre","Journal/Conf.","Année","DOI","Statut","Id_projet","Employee_id"});
+    pubTable->setHorizontalHeaderLabels({"ID","Titre","Journal/Conf.","Année","DOI","Statut","Id_projet","Employe"});
     pubTable->verticalHeader()->setVisible(false);
     pubTable->horizontalHeader()->setStretchLastSection(true);
     pubTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -4623,7 +4627,7 @@ QPushButton:hover{ background: %2; }
     pub2RightL->addWidget(pubRow(QStyle::SP_FileDialogContentsView, "DOI", leDOI));
     pub2RightL->addWidget(pubRow(QStyle::SP_MessageBoxInformation, "Statut", cbStatus));
     pub2RightL->addWidget(pubRow(QStyle::SP_FileDialogToParent, "Id_projet", sbIdProjet));
-    pub2RightL->addWidget(pubRow(QStyle::SP_DirHomeIcon, "Employee_id", sbEmployeeId));
+    pub2RightL->addWidget(pubRow(QStyle::SP_DirHomeIcon, "Employe", sbEmployeeId));
     pub2RightL->addWidget(teAbstract, 1);
 
     outPUB2L->addWidget(pub2Left);
@@ -5362,12 +5366,6 @@ QPushButton:hover{ background: %2; }
         QPushButton:hover{ background: %2; }
     )").arg(C_PRIMARY, C_TOPBAR));
 
-    auto chip = [&](const QString& t){
-        QLabel* c = new QLabel(t);
-        c->setStyleSheet("background: rgba(255,255,255,0.90); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; padding: 8px 12px; font-weight:900; color: rgba(0,0,0,0.55);");
-        return c;
-    };
-
     eqHeader3L->addWidget(eqDetails3);
     eqHeader3L->addStretch(1);
     eqHeader3L->addWidget(eqChip("Total équipements"));
@@ -5778,7 +5776,11 @@ QPushButton:hover{ background: %2; }
     QVBoxLayout* empCardL = new QVBoxLayout(empCard);
     empCardL->setContentsMargins(10,10,10,10);
 
-    QTableWidget* empTable = new QTableWidget(6, 11);
+    EmployesCrud* empCrud     = new EmployesCrud;
+    bool*         empEditMode = new bool(false);
+    int*          empEditId   = new int(0);
+
+    QTableWidget* empTable = new QTableWidget(0, 11);
     empTable->setHorizontalHeaderLabels({"", "CIN", "Nom", "Prenom", "Role", "Specialisation", "Qualification", "Publications", "Temps", "Laboratoire", "Projet"});
     empTable->verticalHeader()->setVisible(false);
     empTable->setShowGrid(true);
@@ -5802,12 +5804,24 @@ QPushButton:hover{ background: %2; }
     empTable->setColumnWidth(9, 110);
     empTable->setColumnWidth(10, 140);
 
-    auto setEmpRow=[&](int r, const QString& cin,
-                       const QString& nom, const QString& prenom,
-                       const QString& role, const QString& spec,
-                       const QString& qualif, const QString& pubs,
-                       FTStatus ft, const QString& lab, const QString& proj)
+    auto ftStatusFromText = [](const QString& value) -> FTStatus {
+        const QString v = value.trimmed().toLower();
+        if (v == "partiel" || v == "temps partiel") return FTStatus::PartTime;
+        if (v == "contrat") return FTStatus::Contract;
+        if (v == "absence" || v == "absent") return FTStatus::OnLeave;
+        return FTStatus::FullTime;
+    };
+
+    auto setEmpRow=[=](const EmployeRecord& rec,
+                       const QString& qualif,
+                       const QString& pubs,
+                       FTStatus ft,
+                       const QString& lab,
+                       const QString& proj)
     {
+        const int r = empTable->rowCount();
+        empTable->insertRow(r);
+
         QTableWidgetItem* iconItem = new QTableWidgetItem;
         iconItem->setIcon(st->standardIcon(QStyle::SP_ArrowRight));
         iconItem->setTextAlignment(Qt::AlignCenter);
@@ -5819,11 +5833,13 @@ QPushButton:hover{ background: %2; }
             return it;
         };
 
-        empTable->setItem(r, 1, mk(cin));
-        empTable->setItem(r, 2, mk(nom));
-        empTable->setItem(r, 3, mk(prenom));
-        empTable->setItem(r, 4, mk(role));
-        empTable->setItem(r, 5, mk(spec));
+        QTableWidgetItem* cinItem = mk(rec.cin);
+        cinItem->setData(Qt::UserRole, rec.employeeId);
+        empTable->setItem(r, 1, cinItem);
+        empTable->setItem(r, 2, mk(rec.nom));
+        empTable->setItem(r, 3, mk(rec.prenom));
+        empTable->setItem(r, 4, mk(rec.role));
+        empTable->setItem(r, 5, mk(rec.specialization));
         empTable->setItem(r, 6, mk(qualif));
         QTableWidgetItem* p = mk(pubs);
         p->setTextAlignment(Qt::AlignRight|Qt::AlignVCenter);
@@ -5839,29 +5855,75 @@ QPushButton:hover{ background: %2; }
         empTable->setRowHeight(r, 46);
     };
 
-    setEmpRow(0, "AA123456", "Ali", "Ben Salem", "Chercheur", "Biomol", "PhD",  "25", FTStatus::FullTime, "Lab A", "Projet GENOME");
-    setEmpRow(1, "BB654321", "Sara", "Bouaziz", "Technicien", "Chimie",  "BSc",  "5",  FTStatus::PartTime, "Lab B", "-");
-    setEmpRow(2, "CC998877", "Youssef", "K.",    "Chercheur", "Bioinfo", "PhD",  "12", FTStatus::Contract, "Lab C", "Projet AI-BIO");
-    setEmpRow(3, "DD112233", "Meriem", "H.",     "Technicien","General", "BTS",  "2",  FTStatus::FullTime, "Lab A", "-");
-    setEmpRow(4, "EE667788", "Omar",   "A.",     "Chercheur", "Biomol",  "PhD",  "40", FTStatus::OnLeave,  "Lab B", "Projet PROTEO");
-    setEmpRow(5, "FF334455", "Nada",   "B.",     "Chercheur", "Chimie",  "MSc",  "10", FTStatus::FullTime, "Lab C", "Projet MATERIA");
+    auto loadEmpTable = [=]() {
+        QList<EmployeRecord> recs;
+        QString err;
+
+        const QString roleFilter = (empRole->currentIndex() > 0) ? empRole->currentText() : QString();
+        const QString specFilter = (empSpec->currentIndex() > 0) ? empSpec->currentText() : QString();
+
+        if (!empCrud->loadEmployes(recs, &err, empSearch->text().trimmed(), QString(), QString(), roleFilter, specFilter)) {
+            empTable->setRowCount(0);
+            return;
+        }
+
+        empTable->setRowCount(0);
+
+        for (const EmployeRecord& rec : recs) {
+            QString publicationsCount = "0";
+            QString projectLabel = "-";
+
+            const QString qualif = rec.qualification.trimmed().isEmpty() ? "-" : rec.qualification.trimmed();
+            const QString temps = rec.tempsTravail.trimmed().isEmpty() ? "Plein" : rec.tempsTravail.trimmed();
+            const QString labo = rec.laboratoire.trimmed().isEmpty() ? "-" : rec.laboratoire.trimmed();
+
+            setEmpRow(rec, qualif, publicationsCount, ftStatusFromText(temps), labo, projectLabel);
+        }
+    };
+
+    auto applyEmpFilters = [=]() {
+        const QString search = empSearch->text().trimmed().toLower();
+        const QString roleFilter = (empRole->currentIndex() > 0) ? empRole->currentText().toLower() : QString();
+        const QString specFilter = (empSpec->currentIndex() > 0) ? empSpec->currentText().toLower() : QString();
+        const QString labFilter = (empLab->currentIndex() > 0) ? empLab->currentText().toLower() : QString();
+        const QString ftFilter = (empFT->currentIndex() > 0) ? empFT->currentText().toLower() : QString();
+
+        for (int r = 0; r < empTable->rowCount(); ++r) {
+            const QString cin = empTable->item(r, 1) ? empTable->item(r, 1)->text().toLower() : QString();
+            const QString nom = empTable->item(r, 2) ? empTable->item(r, 2)->text().toLower() : QString();
+            const QString prenom = empTable->item(r, 3) ? empTable->item(r, 3)->text().toLower() : QString();
+            const QString role = empTable->item(r, 4) ? empTable->item(r, 4)->text().toLower() : QString();
+            const QString spec = empTable->item(r, 5) ? empTable->item(r, 5)->text().toLower() : QString();
+            const QString lab = empTable->item(r, 9) ? empTable->item(r, 9)->text().toLower() : QString();
+            const QString temps = empTable->item(r, 8) ? empStatusText(static_cast<FTStatus>(empTable->item(r, 8)->data(Qt::UserRole).toInt())).toLower() : QString();
+
+            const bool matchSearch = search.isEmpty() || cin.contains(search) || nom.contains(search) || prenom.contains(search);
+            const bool matchRole = roleFilter.isEmpty() || role.contains(roleFilter);
+            const bool matchSpec = specFilter.isEmpty() || spec.contains(specFilter);
+            const bool matchLab = labFilter.isEmpty() || lab.contains(labFilter);
+            const bool matchFt = ftFilter.isEmpty() || temps.contains(ftFilter);
+
+            empTable->setRowHidden(r, !(matchSearch && matchRole && matchSpec && matchLab && matchFt));
+        }
+    };
+
+    loadEmpTable();
+    applyEmpFilters();
 
     empCardL->addWidget(empTable);
     emp1->addWidget(empCard, 1);
 
-    // Search by CIN and other fields
-    QObject::connect(empSearch, &QLineEdit::textChanged, this, [=](const QString& text){
-        QString filter = text.trimmed().toLower();
-        for (int r = 0; r < empTable->rowCount(); ++r) {
-            bool match = false;
-            if (filter.isEmpty()) { match = true; }
-            else {
-                for (int c = 1; c <= 10; ++c) {
-                    QTableWidgetItem* it = empTable->item(r, c);
-                    if (it && it->text().toLower().contains(filter)) { match = true; break; }
-                }
-            }
-            empTable->setRowHidden(r, !match);
+    QObject::connect(empSearch, &QLineEdit::textChanged, this, [=](const QString&){ applyEmpFilters(); });
+    QObject::connect(empRole, &QComboBox::currentTextChanged, this, [=](const QString&){ loadEmpTable(); applyEmpFilters(); });
+    QObject::connect(empSpec, &QComboBox::currentTextChanged, this, [=](const QString&){ loadEmpTable(); applyEmpFilters(); });
+    QObject::connect(empLab, &QComboBox::currentTextChanged, this, [=](const QString&){ applyEmpFilters(); });
+    QObject::connect(empFT, &QComboBox::currentTextChanged, this, [=](const QString&){ applyEmpFilters(); });
+    QObject::connect(empFilters, &QPushButton::clicked, this, [=](){ applyEmpFilters(); });
+
+    QObject::connect(stack, &QStackedWidget::currentChanged, empTable, [=](int idx){
+        if (idx == EMP_LIST) {
+            loadEmpTable();
+            applyEmpFilters();
         }
     });
 
@@ -5929,30 +5991,6 @@ QPushButton:hover{ background: %2; }
     QVBoxLayout* empLeft2L = new QVBoxLayout(empLeft2);
     empLeft2L->setContentsMargins(10,10,10,10);
     empLeft2L->setSpacing(10);
-
-    auto empLeftAction = [&](const QString& title, QStyle::StandardPixmap sp, const QString& text){
-        QLabel* head = new QLabel(title);
-        head->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
-        QToolButton* b = new QToolButton;
-        b->setIcon(st->standardIcon(sp));
-        b->setText("  " + text);
-        b->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-        b->setCursor(Qt::PointingHandCursor);
-        b->setStyleSheet(R"(
-            QToolButton{
-                background: rgba(255,255,255,0.70);
-                border: 1px solid rgba(0,0,0,0.12);
-                border-radius: 12px;
-                padding: 10px 12px;
-                text-align: left;
-                color: rgba(0,0,0,0.60);
-                font-weight: 800;
-            }
-            QToolButton:hover{ background: rgba(255,255,255,0.85); }
-        )");
-        empLeft2L->addWidget(head);
-        empLeft2L->addWidget(b);
-    };
 
     {
         QLabel* roleHead = new QLabel("Role");
@@ -6497,9 +6535,12 @@ QPushButton:hover{ background: %2; }
     auto updateEmpStatsFromTable = [=](){
         QMap<QString,int> roleCount;
         QMap<QString,int> specCount;
-        int total = empTable->rowCount();
+        int total = 0;
 
         for (int r=0; r<empTable->rowCount(); ++r) {
+            if (empTable->isRowHidden(r)) continue;
+            if (!empTable->item(r, 4) || !empTable->item(r, 5)) continue;
+            total += 1;
             const QString role = empTable->item(r, 4)->text();
             const QString spec = empTable->item(r, 5)->text();
             roleCount[role] += 1;
@@ -6579,7 +6620,7 @@ QPushButton:hover{ background: %2; }
     pubDetailsL->addWidget(pubDetailRow("DOI", pubDetDoi));
     pubDetailsL->addWidget(pubDetailRow("Statut", pubDetStatus));
     pubDetailsL->addWidget(pubDetailRow("Id_projet", pubDetIdProjet));
-    pubDetailsL->addWidget(pubDetailRow("Employee_id", pubDetEmployeeId));
+    pubDetailsL->addWidget(pubDetailRow("Employe", pubDetEmployeeId));
 
     QLabel* abstractLabel = new QLabel("Résumé :");
     abstractLabel->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
@@ -6672,7 +6713,8 @@ QPushButton:hover{ background: %2; }
         pubDetDoi->setText(publication.doi());
         pubDetStatus->setText(publication.status());
         pubDetIdProjet->setText(QString::number(publication.idProjet()));
-        pubDetEmployeeId->setText(QString::number(publication.employeeId()));
+        const QString employeNom = pubTable->item(r,7) ? pubTable->item(r,7)->text() : QString();
+        pubDetEmployeeId->setText(employeNom.isEmpty() ? QString::number(publication.employeeId()) : employeNom);
         pubDetAbstract->setText(publication.abstractText().isEmpty() ? "Résumé non renseigné." : publication.abstractText());
         return true;
     };
@@ -7379,22 +7421,96 @@ QPushButton:hover{ background: %2; }
     // ==========================================================
     // NAVIGATION Employés (5 widgets)
     // ==========================================================
+    auto clearEmpForm = [=](){
+        *empEditMode = false;
+        *empEditId = 0;
+        empCinEdit->clear();
+        empNomEdit->clear();
+        empPrenomEdit->clear();
+        empRoleCb->setCurrentIndex(0);
+        empSpecCb->setCurrentIndex(0);
+        empQualifEdit->clear();
+        empPubs->setValue(0);
+        empFtCb->setCurrentIndex(0);
+        empLabCb->setCurrentIndex(0);
+        empProjCb->setCurrentIndex(0);
+    };
+
     QObject::connect(empAdd, &QPushButton::clicked, this, [=](){
+        clearEmpForm();
         setWindowTitle("Creer / Modifier Employe");
         stack->setCurrentIndex(EMP_FORM);
     });
     QObject::connect(empEdit, &QPushButton::clicked, this, [=](){
+        const int row = empTable->currentRow();
+        if (row < 0 || !empTable->item(row, 1)) {
+            QMessageBox::information(this, "Employe", "Selectionnez un employe dans la liste.");
+            return;
+        }
+
+        const int id = empTable->item(row, 1)->data(Qt::UserRole).toInt();
+        EmployeRecord rec;
+        QString err;
+        if (!empCrud->fetchEmploye(id, rec, &err)) {
+            showToast(this, "Erreur : " + err, false);
+            return;
+        }
+
+        *empEditMode = true;
+        *empEditId = id;
+
+        empCinEdit->setText(rec.cin);
+        empNomEdit->setText(rec.nom);
+        empPrenomEdit->setText(rec.prenom);
+        if (!rec.role.trimmed().isEmpty()) empRoleCb->setCurrentText(rec.role);
+        if (!rec.specialization.trimmed().isEmpty()) empSpecCb->setCurrentText(rec.specialization);
+
+        if (empTable->item(row, 6)) empQualifEdit->setText(empTable->item(row, 6)->text() == "-" ? QString() : empTable->item(row, 6)->text());
+        if (empTable->item(row, 7)) empPubs->setValue(empTable->item(row, 7)->text().toInt());
+        if (empTable->item(row, 8)) empFtCb->setCurrentText(empStatusText(static_cast<FTStatus>(empTable->item(row, 8)->data(Qt::UserRole).toInt())));
+        if (empTable->item(row, 9)) empLabCb->setCurrentText(empTable->item(row, 9)->text());
+
         setWindowTitle("Creer / Modifier Employe");
         stack->setCurrentIndex(EMP_FORM);
     });
     QObject::connect(empCancel, &QPushButton::clicked, this, [=](){
+        clearEmpForm();
         setWindowTitle("Gestion des Employés");
         stack->setCurrentIndex(EMP_LIST);
     });
     QObject::connect(empSave, &QPushButton::clicked, this, [=](){
+        if (empCinEdit->text().trimmed().isEmpty() || empNomEdit->text().trimmed().isEmpty() || empPrenomEdit->text().trimmed().isEmpty()) {
+            QMessageBox::warning(this, "Validation", "CIN, Nom et Prenom sont obligatoires.");
+            return;
+        }
+
+        EmployeRecord rec;
+        rec.employeeId = *empEditMode ? *empEditId : 0;
+        rec.cin = empCinEdit->text().trimmed();
+        rec.nom = empNomEdit->text().trimmed();
+        rec.prenom = empPrenomEdit->text().trimmed();
+        rec.role = empRoleCb->currentText();
+        rec.specialization = empSpecCb->currentText();
+        rec.qualification = empQualifEdit->text().trimmed();
+        rec.tempsTravail = empFtCb->currentText();
+        rec.laboratoire = empLabCb->currentText();
+
+        QString err;
+        const bool ok = *empEditMode ? empCrud->updateEmploye(rec, &err)
+                                     : empCrud->insertEmploye(rec, &err);
+        if (!ok) {
+            showToast(this, "Erreur : " + err, false);
+            return;
+        }
+
+        clearEmpForm();
+        loadEmpTable();
+        applyEmpFilters();
+        updateEmpStatsFromTable();
+
         setWindowTitle("Gestion des Employés");
         stack->setCurrentIndex(EMP_LIST);
-        QMessageBox::information(this, "Employe", "Enregistrement (a connecter a la base de donnees).");
+        showToast(this, "Employe enregistre.", true);
     });
     QObject::connect(empMore, &QPushButton::clicked, this, [=](){
         setWindowTitle("Affectations & Laboratoires");
@@ -7432,14 +7548,30 @@ QPushButton:hover{ background: %2; }
             QMessageBox::information(this, "Suppression", "Selectionnez un employe dans la liste.");
             return;
         }
+        if (!empTable->item(r,1) || !empTable->item(r,2) || !empTable->item(r,4)) {
+            showToast(this, "Ligne employe invalide.", false);
+            return;
+        }
+        const int id = empTable->item(r,1) ? empTable->item(r,1)->data(Qt::UserRole).toInt() : 0;
+        if (id <= 0) {
+            showToast(this, "ID employe invalide.", false);
+            return;
+        }
            QString resume = QString("CIN : %1 | Nom : %2 | Role : %3")
                             .arg(empTable->item(r,1)->text(),
                                 empTable->item(r,2)->text(),
                                 empTable->item(r,4)->text());
         ConfirmDeleteDialog confirm(style(), resume, this);
         if (confirm.exec() == QDialog::Accepted) {
-            empTable->removeRow(r);
+            QString err;
+            if (!empCrud->deleteEmploye(id, &err)) {
+                showToast(this, "Erreur : " + err, false);
+                return;
+            }
+            loadEmpTable();
+            applyEmpFilters();
             updateEmpStatsFromTable();
+            showToast(this, "Employe supprime.", true);
         }
     });
 
