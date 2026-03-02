@@ -1,6 +1,7 @@
 debug/integration.o
 debug/signupserver.o
 debug/connection.o
+debug/employes.o
 debug/publication.o
 debug/equipement.o
 debug/crudebiosimple.o

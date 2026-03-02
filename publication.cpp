@@ -421,9 +421,12 @@ QSqlQueryModel* Publication::readAll(QObject* parent, QString* errorMessage)
     }
 
     QSqlQueryModel* model = new QSqlQueryModel(parent);
-    model->setQuery("SELECT id, titre, journal, annee, DOI, status, abstract, Id_projet, employee_id "
-                    "FROM Publication "
-                    "ORDER BY annee DESC, id DESC");
+    model->setQuery(
+        "SELECT p.id, p.titre, p.journal, p.annee, p.DOI, p.status, p.Id_projet, "
+        "       TRIM(NVL(e.nom, '') || ' ' || NVL(e.prenom, '')) AS employee_name "
+        "FROM Publication p "
+        "LEFT JOIN Employes e ON e.employee_id = p.employee_id "
+        "ORDER BY p.annee DESC, p.id DESC");
 
     if (model->lastError().isValid()) {
         if (errorMessage) {
@@ -439,9 +442,8 @@ QSqlQueryModel* Publication::readAll(QObject* parent, QString* errorMessage)
     model->setHeaderData(3, Qt::Horizontal, "Annee");
     model->setHeaderData(4, Qt::Horizontal, "DOI");
     model->setHeaderData(5, Qt::Horizontal, "Status");
-    model->setHeaderData(6, Qt::Horizontal, "Abstract");
-    model->setHeaderData(7, Qt::Horizontal, "Id_projet");
-    model->setHeaderData(8, Qt::Horizontal, "Employee_id");
+    model->setHeaderData(6, Qt::Horizontal, "Id_projet");
+    model->setHeaderData(7, Qt::Horizontal, "Employe");
 
     return model;
 }

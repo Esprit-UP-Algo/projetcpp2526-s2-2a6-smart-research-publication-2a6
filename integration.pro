@@ -12,6 +12,7 @@ SOURCES += \
     integration.cpp\
     signupserver.cpp\
     connection.cpp \
+    employes.cpp \
     publication.cpp \
     equipement.cpp \
     crudebiosimple.cpp \
@@ -22,7 +23,9 @@ SOURCES += \
 
 HEADERS += \
     integration.h\
+    signupserver.h\
     connection.h \
+    employes.h \
     publication.h \
     equipement.h \
     crudebiosimple.h \

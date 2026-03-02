@@ -1,6 +1,7 @@
 release/integration.o
 release/signupserver.o
 release/connection.o
+release/employes.o
 release/publication.o
 release/equipement.o
 release/crudebiosimple.o
