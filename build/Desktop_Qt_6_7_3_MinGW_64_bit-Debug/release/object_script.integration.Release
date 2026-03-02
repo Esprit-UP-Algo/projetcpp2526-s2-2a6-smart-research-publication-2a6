@@ -1,3 +1,4 @@
+release/gestproj.o
 release/integration.o
 release/signupserver.o
 release/connection.o
