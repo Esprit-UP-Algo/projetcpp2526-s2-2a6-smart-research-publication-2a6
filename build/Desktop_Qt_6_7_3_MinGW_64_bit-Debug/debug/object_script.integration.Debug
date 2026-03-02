@@ -1,3 +1,4 @@
+debug/gestproj.o
 debug/integration.o
 debug/signupserver.o
 debug/connection.o

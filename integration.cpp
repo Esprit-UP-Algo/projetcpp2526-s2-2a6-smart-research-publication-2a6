@@ -6,6 +6,7 @@
 #include "crudexperience.h"
 #include "equipement.h"
 #include "employes.h"
+#include "gestproj.h"
 #include "cong.h"
 #include "signupserver.h"
 #include <QTextEdit>
@@ -1095,6 +1096,113 @@ public:
         p->setFont(f);
         QRect textRect = pill.adjusted(34, 4, -10, -4);
         p->drawText(textRect, Qt::AlignVCenter|Qt::AlignLeft, empStatusText(st));
+
+        p->restore();
+    }
+};
+
+// ===================== Projet status badge delegate =====================
+enum class ProjStatus { EnCours=0, EnRetard=1, Critique=2, Suspendu=3, Termine=4 };
+
+static QString projStatusText(ProjStatus s)
+{
+    switch (s) {
+    case ProjStatus::EnCours:  return "En cours";
+    case ProjStatus::EnRetard: return "En retard";
+    case ProjStatus::Critique: return "Critique";
+    case ProjStatus::Suspendu: return "Suspendu";
+    case ProjStatus::Termine:  return "Terminé";
+    }
+    return "En cours";
+}
+
+static QColor projStatusColor(ProjStatus s)
+{
+    switch (s) {
+    case ProjStatus::EnCours:  return QColor("#2E6F63");
+    case ProjStatus::EnRetard: return QColor("#B5672C");
+    case ProjStatus::Critique: return QColor("#8B2F3C");
+    case ProjStatus::Suspendu: return QColor("#7A8B8A");
+    case ProjStatus::Termine:  return QColor("#2E6F63");
+    }
+    return QColor("#2E6F63");
+}
+
+static ProjStatus projStatusFromText(const QString& value)
+{
+    const QString v = value.trimmed().toLower();
+    if (v == "en retard")  return ProjStatus::EnRetard;
+    if (v == "critique")   return ProjStatus::Critique;
+    if (v == "suspendu")   return ProjStatus::Suspendu;
+    if (v == "terminé" || v == "termine") return ProjStatus::Termine;
+    return ProjStatus::EnCours;
+}
+
+class ProjetBadgeDelegate : public QStyledItemDelegate
+{
+public:
+    explicit ProjetBadgeDelegate(QObject* parent=nullptr) : QStyledItemDelegate(parent) {}
+
+    void paint(QPainter *p, const QStyleOptionViewItem &opt, const QModelIndex &idx) const override
+    {
+        QVariant v = idx.data(Qt::UserRole);
+        ProjStatus st = ProjStatus::EnCours;
+        if (v.isValid()) st = static_cast<ProjStatus>(v.toInt());
+
+        QStyledItemDelegate::paint(p, opt, idx);
+
+        p->save();
+        p->setRenderHint(QPainter::Antialiasing, true);
+
+        QRect r = opt.rect.adjusted(8, 6, -8, -6);
+        int h = qMin(r.height(), 28);
+        int w = qMin(r.width(), 120);
+        QRect pill(r.left() + (r.width() - w)/2, r.top() + (r.height()-h)/2, w, h);
+
+        QColor bg = projStatusColor(st);
+        p->setPen(Qt::NoPen);
+        p->setBrush(bg);
+        p->drawRoundedRect(pill, 14, 14);
+
+        QRect iconCircle(pill.left()+10, pill.top()+6, 16, 16);
+        p->setBrush(QColor(255,255,255,35));
+        p->drawEllipse(iconCircle);
+
+        p->setPen(QPen(Qt::white, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        if (st == ProjStatus::EnCours) {
+            QPoint a(iconCircle.left()+4,  iconCircle.top()+9);
+            QPoint b(iconCircle.left()+7,  iconCircle.top()+12);
+            QPoint c(iconCircle.left()+13, iconCircle.top()+5);
+            p->drawLine(a,b); p->drawLine(b,c);
+        } else if (st == ProjStatus::EnRetard) {
+            QPainterPath path;
+            path.moveTo(iconCircle.center().x(), iconCircle.top()+2);
+            path.lineTo(iconCircle.left()+2, iconCircle.bottom()-2);
+            path.lineTo(iconCircle.right()-2, iconCircle.bottom()-2);
+            path.closeSubpath();
+            p->setPen(QPen(Qt::white, 1.8));
+            p->drawPath(path);
+        } else if (st == ProjStatus::Critique) {
+            p->drawLine(QPoint(iconCircle.center().x(), iconCircle.top()+4),
+                        QPoint(iconCircle.center().x(), iconCircle.bottom()-5));
+            p->drawPoint(QPoint(iconCircle.center().x(), iconCircle.bottom()-3));
+        } else if (st == ProjStatus::Termine) {
+            QPoint a(iconCircle.left()+4,  iconCircle.top()+9);
+            QPoint b(iconCircle.left()+7,  iconCircle.top()+12);
+            QPoint c(iconCircle.left()+13, iconCircle.top()+5);
+            p->drawLine(a,b); p->drawLine(b,c);
+        } else {
+            QRect lock(iconCircle.left()+4, iconCircle.top()+7, 8, 7);
+            p->setPen(QPen(Qt::white, 1.8));
+            p->drawRoundedRect(lock, 2, 2);
+            p->drawArc(QRect(iconCircle.left()+4, iconCircle.top()+3, 8, 8), 0*16, 180*16);
+        }
+
+        p->setPen(Qt::white);
+        QFont f = opt.font; f.setBold(true); f.setPointSizeF(f.pointSizeF()-0.5);
+        p->setFont(f);
+        QRect textRect = pill.adjusted(34, 4, -10, -4);
+        p->drawText(textRect, Qt::AlignVCenter|Qt::AlignLeft, projStatusText(st));
 
         p->restore();
     }
@@ -3545,10 +3653,10 @@ MainWindow::MainWindow(QWidget *parent)
     pSearch->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
 
     QComboBox* pDomain = new QComboBox;
-    pDomain->addItems({"Domaine", "Génomique", "Protéomique", "Pharmacologie", "Immunologie"});
+    pDomain->addItems({"Domaine", "Génomique", "Protéomique", "Pharmacologie", "Immunologie", "Biologie végétale", "Microbiologie", "Neurosciences", "Biotechnologies", "Génétique", "Bioinformatique"});
 
     QComboBox* pStatut = new QComboBox;
-    pStatut->addItems({"Statut", "En cours", "En retard", "Critique", "Suspendu"});
+    pStatut->addItems({"Statut", "En cours", "En retard", "Critique", "Suspendu", "Terminé"});
 
     QComboBox* pBudget = new QComboBox;
     pBudget->addItems({"Budget", "< 100k", "100k - 200k", "> 200k"});
@@ -3575,8 +3683,12 @@ MainWindow::MainWindow(QWidget *parent)
     QVBoxLayout* projCardL = new QVBoxLayout(projCard);
     projCardL->setContentsMargins(10,10,10,10);
 
-    QTableWidget* projTable = new QTableWidget(5, 8);
-    projTable->setHorizontalHeaderLabels({"", "Nom du projet","Domaine","Responsable","Budget","Date début","Statut","Financement"});
+    GestProjCrud* projCrud     = new GestProjCrud;
+    bool*         projEditMode = new bool(false);
+    int*          projEditId   = new int(0);
+
+    QTableWidget* projTable = new QTableWidget(0, 10);
+    projTable->setHorizontalHeaderLabels({"", "Nom du projet","Domaine","Date début","Date fin","Budget","Statut","Financement","Approbation éthique","Publications"});
     projTable->verticalHeader()->setVisible(false);
     projTable->setShowGrid(true);
     projTable->setAlternatingRowColors(true);
@@ -3585,21 +3697,24 @@ MainWindow::MainWindow(QWidget *parent)
     projTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     projTable->setSelectionMode(QAbstractItemView::SingleSelection);
     projTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    projTable->setItemDelegateForColumn(6, new ProjetBadgeDelegate(projTable));
 
     projTable->setColumnWidth(0, 36);
-    projTable->setColumnWidth(1, 200);
-    projTable->setColumnWidth(2, 150);
-    projTable->setColumnWidth(3, 140);
-    projTable->setColumnWidth(4, 90);
-    projTable->setColumnWidth(5, 120);
+    projTable->setColumnWidth(1, 180);
+    projTable->setColumnWidth(2, 130);
+    projTable->setColumnWidth(3, 100);
+    projTable->setColumnWidth(4, 100);
+    projTable->setColumnWidth(5, 90);
     projTable->setColumnWidth(6, 130);
-    projTable->setColumnWidth(7, 100);
+    projTable->setColumnWidth(7, 120);
+    projTable->setColumnWidth(8, 140);
+    projTable->setColumnWidth(9, 90);
 
-    auto setProjRow=[&](int r, const QString& name,
-                        const QString& domain, const QString& investigator,
-                        const QString& budget, const QString& startDate,
-                        const QString& status, const QString& funding)
+    auto setProjRow=[=](const ProjetRecord& rec)
     {
+        const int r = projTable->rowCount();
+        projTable->insertRow(r);
+
         QTableWidgetItem* iconItem = new QTableWidgetItem;
         iconItem->setIcon(st->standardIcon(QStyle::SP_ArrowRight));
         iconItem->setTextAlignment(Qt::AlignCenter);
@@ -3611,39 +3726,91 @@ MainWindow::MainWindow(QWidget *parent)
             return it;
         };
 
-        projTable->setItem(r, 1, mk(name));
-        projTable->setItem(r, 2, mk(domain));
-        projTable->setItem(r, 3, mk(investigator));
+        QTableWidgetItem* nameItem = mk(rec.nomDuProjet);
+        nameItem->setData(Qt::UserRole, rec.idProjet);
+        projTable->setItem(r, 1, nameItem);
+        projTable->setItem(r, 2, mk(rec.domaineDeRecherche));
+        projTable->setItem(r, 3, mk(rec.dateDeDebut.isValid() ? rec.dateDeDebut.toString("dd/MM/yyyy") : "-"));
+        projTable->setItem(r, 4, mk(rec.dateDeFin.isValid() ? rec.dateDeFin.toString("dd/MM/yyyy") : "-"));
 
-        QTableWidgetItem* b = mk(budget);
+        QTableWidgetItem* b = mk(QString::number(rec.budget, 'f', 2));
         b->setTextAlignment(Qt::AlignRight|Qt::AlignVCenter);
-        projTable->setItem(r, 4, b);
+        projTable->setItem(r, 5, b);
 
-        projTable->setItem(r, 5, mk(startDate));
-        projTable->setItem(r, 6, mk(status));
-        projTable->setItem(r, 7, mk(funding));
+        QTableWidgetItem* badge = new QTableWidgetItem;
+        badge->setData(Qt::UserRole, (int)projStatusFromText(rec.statut));
+        projTable->setItem(r, 6, badge);
+
+        projTable->setItem(r, 7, mk(rec.sourceDeFinancement));
+        projTable->setItem(r, 8, mk(rec.numeroDApprobationEthique));
+
+        QTableWidgetItem* pubItem = mk(QString::number(rec.nombreDePublications));
+        pubItem->setTextAlignment(Qt::AlignRight|Qt::AlignVCenter);
+        projTable->setItem(r, 9, pubItem);
+
         projTable->setRowHeight(r, 46);
     };
 
-    setProjRow(0, "Séquençage Génomique",    "Génomique",      "Dr. Amal",   "150k", "15/01/2024", "En cours",  "ANR");
-    setProjRow(1, "Analyse Protéique",        "Protéomique",    "Dr. Nader",  "85k",  "10/03/2024", "En retard", "CNRS");
-    setProjRow(2, "Découverte Médicaments",   "Pharmacologie",  "Dr. Hichem", "220k", "01/02/2024", "Critique",  "Privé");
-    setProjRow(3, "Recherche Cancer",         "Génomique",      "Mme. Sara",  "180k", "05/12/2023", "En cours",  "ANR");
-    setProjRow(4, "Développement Vaccin",     "Immunologie",    "M. Karim",   "95k",  "20/04/2024", "Suspendu",  "OMS");
+    auto loadProjTable = [=]() {
+        QList<ProjetRecord> recs;
+        QString err;
 
-    // Search by all fields
-    QObject::connect(pSearch, &QLineEdit::textChanged, this, [=](const QString& text){
-        QString filter = text.trimmed().toLower();
+        const QString domFilter = (pDomain->currentIndex() > 0) ? pDomain->currentText() : QString();
+        const QString statFilter = (pStatut->currentIndex() > 0) ? pStatut->currentText() : QString();
+
+        if (!projCrud->loadProjets(recs, &err, pSearch->text().trimmed(), domFilter, statFilter)) {
+            projTable->setRowCount(0);
+            return;
+        }
+
+        projTable->setRowCount(0);
+
+        for (const ProjetRecord& rec : recs) {
+            setProjRow(rec);
+        }
+    };
+
+    auto applyProjFilters = [=]() {
+        const QString search = pSearch->text().trimmed().toLower();
+        const QString budgetFilter = (pBudget->currentIndex() > 0) ? pBudget->currentText() : QString();
+
         for (int r = 0; r < projTable->rowCount(); ++r) {
-            bool match = false;
-            if (filter.isEmpty()) { match = true; }
-            else {
+            bool matchSearch = true;
+            if (!search.isEmpty()) {
+                matchSearch = false;
                 for (int c = 1; c < projTable->columnCount(); ++c) {
                     QTableWidgetItem* it = projTable->item(r, c);
-                    if (it && it->text().toLower().contains(filter)) { match = true; break; }
+                    if (c == 6) {
+                        ProjStatus ps = static_cast<ProjStatus>(it->data(Qt::UserRole).toInt());
+                        if (projStatusText(ps).toLower().contains(search)) { matchSearch = true; break; }
+                    } else if (it && it->text().toLower().contains(search)) { matchSearch = true; break; }
                 }
             }
-            projTable->setRowHidden(r, !match);
+
+            bool matchBudget = true;
+            if (!budgetFilter.isEmpty() && projTable->item(r, 5)) {
+                double val = projTable->item(r, 5)->text().toDouble();
+                if (budgetFilter == "< 100k") matchBudget = val < 100000;
+                else if (budgetFilter == "100k - 200k") matchBudget = val >= 100000 && val <= 200000;
+                else if (budgetFilter == "> 200k") matchBudget = val > 200000;
+            }
+
+            projTable->setRowHidden(r, !(matchSearch && matchBudget));
+        }
+    };
+
+    loadProjTable();
+
+    QObject::connect(pSearch, &QLineEdit::textChanged, this, [=](const QString&){ applyProjFilters(); });
+    QObject::connect(pDomain, &QComboBox::currentTextChanged, this, [=](const QString&){ loadProjTable(); applyProjFilters(); });
+    QObject::connect(pStatut, &QComboBox::currentTextChanged, this, [=](const QString&){ loadProjTable(); applyProjFilters(); });
+    QObject::connect(pBudget, &QComboBox::currentTextChanged, this, [=](const QString&){ applyProjFilters(); });
+    QObject::connect(pFilters, &QPushButton::clicked, this, [=](){ loadProjTable(); applyProjFilters(); });
+
+    QObject::connect(stack, &QStackedWidget::currentChanged, projTable, [=](int idx){
+        if (idx == PROJ_LIST) {
+            loadProjTable();
+            applyProjFilters();
         }
     });
 
@@ -3668,12 +3835,30 @@ MainWindow::MainWindow(QWidget *parent)
             QMessageBox::information(this, "Information", "Veuillez sélectionner une ligne à supprimer.");
             return;
         }
-           QString resume = QString("Projet : %1 | Investigator : %2 | Status : %3")
-                            .arg(projTable->item(r,1)->text(),
-                                projTable->item(r,3)->text(),
-                                projTable->item(r,6)->text());
+        if (!projTable->item(r,1)) {
+            showToast(this, "Ligne projet invalide.", false);
+            return;
+        }
+        const int id = projTable->item(r,1)->data(Qt::UserRole).toInt();
+        if (id <= 0) {
+            showToast(this, "ID projet invalide.", false);
+            return;
+        }
+        ProjStatus ps = static_cast<ProjStatus>(projTable->item(r,6)->data(Qt::UserRole).toInt());
+        QString resume = QString("Projet : %1 | Statut : %2")
+                             .arg(projTable->item(r,1)->text(),
+                                  projStatusText(ps));
         ConfirmDeleteDialog confirm(style(), resume, this);
-        if (confirm.exec() == QDialog::Accepted) projTable->removeRow(r);
+        if (confirm.exec() == QDialog::Accepted) {
+            QString err;
+            if (!projCrud->deleteProjet(id, &err)) {
+                showToast(this, "Erreur : " + err, false);
+                return;
+            }
+            loadProjTable();
+            applyProjFilters();
+            showToast(this, "Projet supprimé.", true);
+        }
     });
 
     projBottomL->addWidget(projAdd);
@@ -3759,18 +3944,26 @@ MainWindow::MainWindow(QWidget *parent)
     QLineEdit* projName = new QLineEdit;
     projName->setPlaceholderText("Nom du projet");
 
-    QComboBox* projDomain = new QComboBox;
-    projDomain->addItems({"Domaine", "Biotech", "Recherche", "Qualité", "Santé", "Laboratoire"});
-    projDomain->setFixedWidth(200);
+    QComboBox* projDomainEdit = new QComboBox;
+    projDomainEdit->addItems({"Génomique", "Protéomique", "Pharmacologie", "Immunologie", "Biologie végétale", "Microbiologie", "Neurosciences", "Biotechnologies", "Génétique", "Bioinformatique"});
+    projDomainEdit->setFixedWidth(200);
 
     QComboBox* projStatus = new QComboBox;
-    projStatus->addItems({"Statut", "Planifié", "En cours", "Terminé", "En retard"});
+    projStatus->addItems({"En cours", "En retard", "Critique", "Suspendu", "Terminé"});
     projStatus->setFixedWidth(200);
+
+    QLineEdit* projFinancement = new QLineEdit;
+    projFinancement->setPlaceholderText("Source de financement");
+
+    QLineEdit* projEthique = new QLineEdit;
+    projEthique->setPlaceholderText("Numéro d'approbation éthique");
 
     p2LeftL->addWidget(projTitle("Informations"));
     p2LeftL->addWidget(projRow(QStyle::SP_DirIcon, "Nom", projName));
-    p2LeftL->addWidget(projRow(QStyle::SP_ComputerIcon, "Domaine", projDomain));
+    p2LeftL->addWidget(projRow(QStyle::SP_ComputerIcon, "Domaine", projDomainEdit));
     p2LeftL->addWidget(projRow(QStyle::SP_MessageBoxInformation, "Statut", projStatus));
+    p2LeftL->addWidget(projRow(QStyle::SP_DialogApplyButton, "Financement", projFinancement));
+    p2LeftL->addWidget(projRow(QStyle::SP_FileDialogInfoView, "Éthique", projEthique));
     p2LeftL->addStretch(1);
 
     QFrame* p2Right = softBox();
@@ -3778,14 +3971,11 @@ MainWindow::MainWindow(QWidget *parent)
     p2RightL->setContentsMargins(12,12,12,12);
     p2RightL->setSpacing(10);
 
-    QLineEdit* projOwner = new QLineEdit;
-    projOwner->setPlaceholderText("Responsable");
-
-    QSpinBox* projBudget = new QSpinBox;
-    projBudget->setRange(0, 999999999);
-    projBudget->setValue(0);
-    projBudget->setFixedWidth(180);
-    projBudget->setStyleSheet("QSpinBox{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 900; }");
+    QSpinBox* projBudgetEdit = new QSpinBox;
+    projBudgetEdit->setRange(0, 999999999);
+    projBudgetEdit->setValue(0);
+    projBudgetEdit->setFixedWidth(180);
+    projBudgetEdit->setStyleSheet("QSpinBox{ background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 10px 14px; color: rgba(0,0,0,0.65); font-weight: 900; }");
 
     QDateEdit* projStart = new QDateEdit(QDate::currentDate());
     projStart->setCalendarPopup(true);
@@ -3797,16 +3987,18 @@ MainWindow::MainWindow(QWidget *parent)
     projEnd->setDisplayFormat("dd/MM/yyyy");
     projEnd->setStyleSheet(projStart->styleSheet());
 
-    QComboBox* projPriority = new QComboBox;
-    projPriority->addItems({"Priorité", "Haute", "Moyenne", "Basse"});
-    projPriority->setFixedWidth(200);
+    QSpinBox* projPubsEdit = new QSpinBox;
+    projPubsEdit->setRange(0, 9999);
+    projPubsEdit->setValue(0);
+    projPubsEdit->setPrefix("Pub: ");
+    projPubsEdit->setFixedWidth(180);
+    projPubsEdit->setStyleSheet(projBudgetEdit->styleSheet());
 
     p2RightL->addWidget(projTitle("Planification"));
-    p2RightL->addWidget(projRow(QStyle::SP_DirHomeIcon, "Responsable", projOwner));
-    p2RightL->addWidget(projRow(QStyle::SP_DialogApplyButton, "Budget", projBudget));
+    p2RightL->addWidget(projRow(QStyle::SP_DialogApplyButton, "Budget", projBudgetEdit));
     p2RightL->addWidget(projRow(QStyle::SP_FileDialogDetailedView, "Date début", projStart));
     p2RightL->addWidget(projRow(QStyle::SP_FileDialogDetailedView, "Date fin", projEnd));
-    p2RightL->addWidget(projRow(QStyle::SP_ArrowUp, "Priorité", projPriority));
+    p2RightL->addWidget(projRow(QStyle::SP_FileIcon, "Publications", projPubsEdit));
     p2RightL->addStretch(1);
 
     outP2L->addWidget(p2Left);
@@ -6824,10 +7016,13 @@ QPushButton:hover{ background: %2; }
     projDetTitle->setFont(projTitleFont);
 
     QLabel* projDetDomain = nullptr;
-    QLabel* projDetOwner = nullptr;
     QLabel* projDetBudget = nullptr;
     QLabel* projDetStart = nullptr;
+    QLabel* projDetEnd = nullptr;
     QLabel* projDetStatus = nullptr;
+    QLabel* projDetFinancement = nullptr;
+    QLabel* projDetEthique = nullptr;
+    QLabel* projDetPubs = nullptr;
 
     auto projDetailRow = [&](const QString& label, QLabel*& valueOut){
         QWidget* row = new QWidget;
@@ -6846,10 +7041,13 @@ QPushButton:hover{ background: %2; }
 
     projDetailsL->addWidget(projDetTitle);
     projDetailsL->addWidget(projDetailRow("Domaine", projDetDomain));
-    projDetailsL->addWidget(projDetailRow("Responsable", projDetOwner));
     projDetailsL->addWidget(projDetailRow("Budget", projDetBudget));
-    projDetailsL->addWidget(projDetailRow("Début", projDetStart));
+    projDetailsL->addWidget(projDetailRow("Date début", projDetStart));
+    projDetailsL->addWidget(projDetailRow("Date fin", projDetEnd));
     projDetailsL->addWidget(projDetailRow("Statut", projDetStatus));
+    projDetailsL->addWidget(projDetailRow("Financement", projDetFinancement));
+    projDetailsL->addWidget(projDetailRow("Approbation éthique", projDetEthique));
+    projDetailsL->addWidget(projDetailRow("Publications", projDetPubs));
 
     gp4->addWidget(projDetailsCard, 1);
 
@@ -6867,16 +7065,20 @@ QPushButton:hover{ background: %2; }
 
     auto updateProjDetailsFromRow = [=]()->bool{
         int r = projTable->currentRow();
-        if (r < 0) {
+        if (r < 0 || !projTable->item(r,1)) {
             QMessageBox::information(this, "Information", "Sélectionnez un projet.");
             return false;
         }
         projDetTitle->setText(projTable->item(r,1)->text());
-        projDetDomain->setText(projTable->item(r,2)->text());
-        projDetOwner->setText(projTable->item(r,3)->text());
-        projDetBudget->setText(projTable->item(r,4)->text());
-        projDetStart->setText(projTable->item(r,5)->text());
-        projDetStatus->setText(projTable->item(r,6)->text());
+        projDetDomain->setText(projTable->item(r,2) ? projTable->item(r,2)->text() : "-");
+        projDetBudget->setText(projTable->item(r,5) ? projTable->item(r,5)->text() : "-");
+        projDetStart->setText(projTable->item(r,3) ? projTable->item(r,3)->text() : "-");
+        projDetEnd->setText(projTable->item(r,4) ? projTable->item(r,4)->text() : "-");
+        ProjStatus ps = static_cast<ProjStatus>(projTable->item(r,6)->data(Qt::UserRole).toInt());
+        projDetStatus->setText(projStatusText(ps));
+        projDetFinancement->setText(projTable->item(r,7) ? projTable->item(r,7)->text() : "-");
+        projDetEthique->setText(projTable->item(r,8) ? projTable->item(r,8)->text() : "-");
+        projDetPubs->setText(projTable->item(r,9) ? projTable->item(r,9)->text() : "0");
         return true;
     };
     // ==========================================================
@@ -7127,24 +7329,101 @@ QPushButton:hover{ background: %2; }
     });
 
     // ==========================================================
-    // NAVIGATION Gestion Projet (3 widgets)
+    // NAVIGATION Gestion Projet (3 widgets) — CRUD complet
     // ==========================================================
+    auto clearProjForm = [=](){
+        *projEditMode = false;
+        *projEditId = 0;
+        projName->clear();
+        projDomainEdit->setCurrentIndex(0);
+        projStatus->setCurrentIndex(0);
+        projFinancement->clear();
+        projEthique->clear();
+        projBudgetEdit->setValue(0);
+        projStart->setDate(QDate::currentDate());
+        projEnd->setDate(QDate::currentDate().addDays(60));
+        projPubsEdit->setValue(0);
+    };
+
     QObject::connect(projAdd, &QPushButton::clicked, this, [=](){
-        setWindowTitle("Ajouter / Modifier un projet");
+        clearProjForm();
+        setWindowTitle("Ajouter un projet");
         stack->setCurrentIndex(PROJ_FORM);
     });
     QObject::connect(projEdit, &QPushButton::clicked, this, [=](){
-        setWindowTitle("Ajouter / Modifier un projet");
+        const int row = projTable->currentRow();
+        if (row < 0 || !projTable->item(row, 1)) {
+            QMessageBox::information(this, "Projet", "Sélectionnez un projet dans la liste.");
+            return;
+        }
+
+        const int id = projTable->item(row, 1)->data(Qt::UserRole).toInt();
+        ProjetRecord rec;
+        QString err;
+        if (!projCrud->fetchProjet(id, rec, &err)) {
+            showToast(this, "Erreur : " + err, false);
+            return;
+        }
+
+        *projEditMode = true;
+        *projEditId = id;
+
+        projName->setText(rec.nomDuProjet);
+        { int di = projDomainEdit->findText(rec.domaineDeRecherche, Qt::MatchFixedString);
+          projDomainEdit->setCurrentIndex(di >= 0 ? di : 0); }
+        projFinancement->setText(rec.sourceDeFinancement);
+        projEthique->setText(rec.numeroDApprobationEthique);
+        projBudgetEdit->setValue((int)rec.budget);
+        projStart->setDate(rec.dateDeDebut.isValid() ? rec.dateDeDebut : QDate::currentDate());
+        projEnd->setDate(rec.dateDeFin.isValid() ? rec.dateDeFin : QDate::currentDate().addDays(60));
+        projPubsEdit->setValue(rec.nombreDePublications);
+
+        QString statTxt = rec.statut.trimmed();
+        int idx = projStatus->findText(statTxt, Qt::MatchFixedString);
+        if (idx >= 0) projStatus->setCurrentIndex(idx);
+        else projStatus->setCurrentIndex(0);
+
+        setWindowTitle("Modifier un projet");
         stack->setCurrentIndex(PROJ_FORM);
     });
     QObject::connect(projCancel, &QPushButton::clicked, this, [=](){
+        clearProjForm();
         setWindowTitle("Gestion Projet");
         stack->setCurrentIndex(PROJ_LIST);
     });
     QObject::connect(projSave, &QPushButton::clicked, this, [=](){
+        if (projName->text().trimmed().isEmpty()) {
+            QMessageBox::warning(this, "Validation", "Le nom du projet est obligatoire.");
+            return;
+        }
+
+        ProjetRecord rec;
+        rec.idProjet = *projEditMode ? *projEditId : 0;
+        rec.nomDuProjet = projName->text().trimmed();
+        rec.domaineDeRecherche = projDomainEdit->currentText();
+        rec.dateDeDebut = projStart->date();
+        rec.dateDeFin = projEnd->date();
+        rec.budget = projBudgetEdit->value();
+        rec.statut = projStatus->currentText();
+        rec.sourceDeFinancement = projFinancement->text().trimmed();
+        rec.numeroDApprobationEthique = projEthique->text().trimmed();
+        rec.nombreDePublications = projPubsEdit->value();
+
+        QString err;
+        const bool ok = *projEditMode ? projCrud->updateProjet(rec, &err)
+                                       : projCrud->insertProjet(rec, &err);
+        if (!ok) {
+            showToast(this, "Erreur : " + err, false);
+            return;
+        }
+
+        clearProjForm();
+        loadProjTable();
+        applyProjFilters();
+
         setWindowTitle("Gestion Projet");
         stack->setCurrentIndex(PROJ_LIST);
-        QMessageBox::information(this, "Projet", "Enregistrement (à connecter à la base de données).");
+        showToast(this, "Projet enregistré.", true);
     });
     QObject::connect(projDetails, &QPushButton::clicked, this, [=](){
         if (!updateProjDetailsFromRow()) return;

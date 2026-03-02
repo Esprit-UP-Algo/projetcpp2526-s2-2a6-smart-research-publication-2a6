@@ -9,6 +9,7 @@ CONFIG += c++17
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
+    gestproj.cpp \
     integration.cpp\
     signupserver.cpp\
     connection.cpp \
@@ -22,6 +23,7 @@ SOURCES += \
     main.cpp
 
 HEADERS += \
+    gestproj.h \
     integration.h\
     signupserver.h\
     connection.h \
