@@ -9,6 +9,7 @@
 #include "gestproj.h"
 #include "cong.h"
 #include "signupserver.h"
+#include "captchawidget.h"   // ← ADD THIS LINE after the other includes
 #include <QTextEdit>
 
 #include <QPainterPath>
@@ -2393,6 +2394,18 @@ public:
         cardLay->addLayout(passRow);
 
         // ============ Remember + forgot ============
+        // ============ CAPTCHA ============
+        captchaWidget = new CaptchaWidget(card);
+
+        QLabel* captchaHint = new QLabel(
+            "⚠  Vérification requise — tapez les 5 caractères affichés.", card);
+        captchaHint->setObjectName("hint");
+        captchaHint->setWordWrap(true);
+
+        cardLay->addWidget(captchaWidget);
+        cardLay->addWidget(captchaHint);
+
+        // ============ Remember + forgot ============
         auto *row2 = new QHBoxLayout();
         row2->setSpacing(10);
 
@@ -2531,10 +2544,12 @@ public:
         rememberCheck->setChecked(false);
     }
 
-    // Public members for styling
+    // Public members for styling + external access
     QLineEdit *emailEdit = nullptr;
     QLineEdit *passEdit = nullptr;
 
+    // CAPTCHA public getter
+    CaptchaWidget* getCaptchaWidget() const { return captchaWidget; }
 protected:
     void resizeEvent(QResizeEvent *event) override
     {
@@ -2566,6 +2581,7 @@ private:
     }
 
     // Components
+    // Components
     QLabel *bgLabel = nullptr;
     QWidget *overlay = nullptr;
     QLabel *logoLabel = nullptr;
@@ -2577,6 +2593,7 @@ private:
     QPushButton *forgotBtn = nullptr;
     QPushButton *createBtn = nullptr;
     bool passwordVisible = false;
+    CaptchaWidget* captchaWidget = nullptr;   // ← ADD THIS LINE
 };
 
 // ===================== MainWindow =====================
@@ -2689,12 +2706,21 @@ MainWindow::MainWindow(QWidget *parent)
         const QString pass = loginPage->getPassword();
 
         if (email.isEmpty() || pass.isEmpty()) {
-            // Simple validation feedback
             loginPage->emailEdit->setPlaceholderText("Champ requis!");
             loginPage->passEdit->setPlaceholderText("Champ requis!");
             return;
         }
 
+        // ── CAPTCHA validation ──────────────────────────────────────
+        if (!loginPage->getCaptchaWidget()->validate()) {
+            QMessageBox::warning(this,
+                "CAPTCHA incorrect",
+                "Le code de vérification est incorrect.\n"
+                "Veuillez saisir les caractères affichés.");
+            loginPage->getCaptchaWidget()->refresh();
+            return;
+        }
+        // ────────────────────────────────────────────────────────────
         QSqlDatabase db = QSqlDatabase::database();
         if (!db.isOpen()) {
             QMessageBox::critical(this, "Connexion BD", "La base de données n'est pas connectée.");
@@ -2732,6 +2758,9 @@ MainWindow::MainWindow(QWidget *parent)
 
         // Clear field (show success visually)
         loginPage->clearFields();
+        loginPage->getCaptchaWidget()->refresh();   // reset CAPTCHA for next login // reset CAPTCHA for next login
+
+        // Show beautiful success dialog
 
         // Show beautiful success dialog
         SuccessDialog successDlg("Connexion réussie !",
