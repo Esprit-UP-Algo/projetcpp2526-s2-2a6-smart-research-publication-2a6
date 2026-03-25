@@ -189,18 +189,6 @@ QByteArray SignupServer::signupHtml() const
     <form id="signupForm">
         <div class="grid">
             <div>
-                <label for="cin">CIN</label>
-                <input id="cin" required maxlength="20" />
-            </div>
-            <div>
-                <label for="role">Rôle</label>
-                <select id="role" required>
-                    <option value="Chercheur">Chercheur</option>
-                    <option value="Technicien">Technicien</option>
-                    <option value="Responsable">Responsable</option>
-                </select>
-            </div>
-            <div>
                 <label for="nom">Nom</label>
                 <input id="nom" required maxlength="80" />
             </div>
@@ -209,8 +197,12 @@ QByteArray SignupServer::signupHtml() const
                 <input id="prenom" required maxlength="80" />
             </div>
             <div class="full">
-                <label for="specialisation">Spécialisation</label>
-                <input id="specialisation" maxlength="120" />
+                <label for="role">Rôle</label>
+                <select id="role" required>
+                    <option value="Chercheur">Chercheur</option>
+                    <option value="Technicien">Technicien</option>
+                    <option value="Responsable">Responsable</option>
+                </select>
             </div>
             <div class="full">
                 <label for="email">Adresse e-mail</label>
@@ -359,15 +351,13 @@ form.addEventListener('submit', async (e) => {
     }
 
     const payload = {
-        cin:           document.getElementById('cin').value.trim(),
-        nom:           document.getElementById('nom').value.trim(),
-        prenom:        document.getElementById('prenom').value.trim(),
-        role:          document.getElementById('role').value,
-        specialisation:document.getElementById('specialisation').value.trim(),
-        email:         document.getElementById('email').value.trim(),
-        password:      document.getElementById('password').value,
-        captcha:       userCaptcha,
-        captchaExpected: captchaCode   // sent to server for double-check
+        nom:             document.getElementById('nom').value.trim(),
+        prenom:          document.getElementById('prenom').value.trim(),
+        role:            document.getElementById('role').value,
+        email:           document.getElementById('email').value.trim(),
+        password:        document.getElementById('password').value,
+        captcha:         userCaptcha,
+        captchaExpected: captchaCode
     };
 
     try {
@@ -497,15 +487,13 @@ void SignupServer::handleHttpRequest(const QByteArray& requestData, QTcpSocket* 
     }
     // ─────────────────────────────────────────────────────────
 
-    const QString cin           = obj.value("cin").toString().trimmed();
-    const QString nom           = obj.value("nom").toString().trimmed();
-    const QString prenom        = obj.value("prenom").toString().trimmed();
-    const QString role          = obj.value("role").toString().trimmed();
-    const QString specialisation= obj.value("specialisation").toString().trimmed();
-    const QString email         = obj.value("email").toString().trimmed();
-    const QString password      = obj.value("password").toString();
+    const QString nom      = obj.value("nom").toString().trimmed();
+    const QString prenom   = obj.value("prenom").toString().trimmed();
+    const QString role     = obj.value("role").toString().trimmed();
+    const QString email    = obj.value("email").toString().trimmed();
+    const QString password = obj.value("password").toString();
 
-    if (cin.isEmpty() || nom.isEmpty() || prenom.isEmpty() ||
+    if (nom.isEmpty() || prenom.isEmpty() ||
         role.isEmpty() || email.isEmpty() || password.isEmpty()) {
         sendJson(socket, 400, "Tous les champs obligatoires doivent être remplis.", false);
         return;
@@ -528,41 +516,33 @@ void SignupServer::handleHttpRequest(const QByteArray& requestData, QTcpSocket* 
     }
 
     QSqlQuery idQ(db);
-    if (!idQ.exec("SELECT NVL(MAX(EMPLOYEE_ID),0)+1 FROM EMPLOYES") || !idQ.next()) {
+    if (!idQ.exec("SELECT NVL(MAX(\"employee_id\"),0)+1 FROM \"Employés\"") || !idQ.next()) {
         db.rollback();
         sendJson(socket, 500, "Impossible de générer l'ID employé : " + idQ.lastError().text(), false);
         return;
     }
     int nextEmpId = idQ.value(0).toInt();
+    // Auto-generate CIN if not provided by the form
+    const QString autoCin = QString("EMP%1").arg(nextEmpId);
 
     QSqlQuery query(db);
-    query.prepare("INSERT INTO EMPLOYES (EMPLOYEE_ID, CIN, NOM, PRENOM, ROLE, SPECIALIZATION) "
-                  "VALUES (?, ?, ?, ?, ?, ?)");
+    query.prepare(
+        "INSERT INTO \"Employés\" "
+        "(\"employee_id\", \"CIN\", \"nom\", \"prenom\", \"ROLE\", "
+        " \"EMAIL\", \"USER_PASSWORD\", \"FULL_NAME\", \"ACTIVE\") "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'O')");
     query.addBindValue(nextEmpId);
-    query.addBindValue(cin);
+    query.addBindValue(autoCin);
     query.addBindValue(nom);
     query.addBindValue(prenom);
     query.addBindValue(role);
-    query.addBindValue(specialisation.isEmpty()
-                           ? QVariant(QMetaType::fromType<QString>())
-                           : QVariant(specialisation));
+    query.addBindValue(email);
+    query.addBindValue(password);
+    query.addBindValue(nom + " " + prenom);
 
     if (!query.exec()) {
         db.rollback();
         sendJson(socket, 400, "Insertion employé échouée : " + query.lastError().text(), false);
-        return;
-    }
-
-    query.prepare("INSERT INTO APP_USERS (EMAIL, USER_PASSWORD, FULL_NAME, ROLE, ACTIVE) "
-                  "VALUES (?, ?, ?, ?, 'O')");
-    query.addBindValue(email);
-    query.addBindValue(password);
-    query.addBindValue(nom + " " + prenom);
-    query.addBindValue(role);
-
-    if (!query.exec()) {
-        db.rollback();
-        sendJson(socket, 400, "Création du compte applicatif échouée : " + query.lastError().text(), false);
         return;
     }
 

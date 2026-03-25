@@ -93,7 +93,7 @@ bool ExperienceCrud::loadProjects(QList<ProjectItem>& out, QString* error)
 {
     out.clear();
     QSqlQuery q;
-    q.prepare("SELECT ID_PROJET, NOM_DU_PROJET FROM PROJET ORDER BY ID_PROJET");
+    q.prepare("SELECT \"Id_projet\", \"nom_du_projet\" FROM \"projet\" ORDER BY \"Id_projet\"");
     if (!q.exec()) {
         if (error) *error = q.lastError().text();
         return false;
@@ -111,8 +111,8 @@ bool ExperienceCrud::loadExperiences(QList<ExperienceRecord>& out, QString* erro
 {
     out.clear();
     QSqlQuery q;
-    q.prepare("SELECT ID_EXP, TITRE, HYPOTHESE, DATE_DEBUT, DATE_FIN, STATUS "
-              "FROM EXPERIENCE ORDER BY ID_EXP DESC");
+    q.prepare("SELECT \"Id_exp\", \"Titre\", \"Hypothese\", \"Date_Debut\", \"Date_fin\", \"Status\" "
+              "FROM \"Expérience\" ORDER BY \"Id_exp\" DESC");
     if (!q.exec()) {
         if (error) *error = q.lastError().text();
         return false;
@@ -133,8 +133,8 @@ bool ExperienceCrud::loadExperiences(QList<ExperienceRecord>& out, QString* erro
 bool ExperienceCrud::fetchExperience(int id, ExperienceRecord& out, QString* error)
 {
     QSqlQuery q;
-    q.prepare("SELECT TITRE, HYPOTHESE, DATE_DEBUT, DATE_FIN, STATUS, ID_PROJET "
-              "FROM EXPERIENCE WHERE ID_EXP = :id");
+    q.prepare("SELECT \"Titre\", \"Hypothese\", \"Date_Debut\", \"Date_fin\", \"Status\", \"Id_projet\" "
+              "FROM \"Expérience\" WHERE \"Id_exp\" = :id");
     q.bindValue(":id", id);
     if (!q.exec() || !q.next()) {
         if (error) *error = q.lastError().text();
@@ -153,7 +153,7 @@ bool ExperienceCrud::fetchExperience(int id, ExperienceRecord& out, QString* err
 bool ExperienceCrud::deleteExperience(int id, QString* error)
 {
     QSqlQuery q;
-    q.prepare("DELETE FROM EXPERIENCE WHERE ID_EXP = :id");
+    q.prepare("DELETE FROM \"Expérience\" WHERE \"Id_exp\" = :id");
     q.bindValue(":id", id);
     if (!q.exec()) {
         if (error) *error = q.lastError().text();
@@ -165,7 +165,7 @@ bool ExperienceCrud::deleteExperience(int id, QString* error)
 int ExperienceCrud::nextExperienceId(QString* error)
 {
     QSqlQuery q;
-    if (!q.exec("SELECT NVL(MAX(ID_EXP),0)+1 FROM EXPERIENCE") || !q.next()) {
+    if (!q.exec("SELECT NVL(MAX(\"Id_exp\"),0)+1 FROM \"Expérience\"") || !q.next()) {
         if (error) *error = q.lastError().text();
         return -1;
     }
@@ -181,8 +181,8 @@ bool ExperienceCrud::insertExperience(const ExperienceRecord& in, QString* error
     }
 
     QSqlQuery q;
-    q.prepare("INSERT INTO EXPERIENCE "
-              "(ID_EXP, TITRE, HYPOTHESE, DATE_DEBUT, DATE_FIN, STATUS, ID_PROJET) "
+    q.prepare("INSERT INTO \"Expérience\" "
+              "(\"Id_exp\", \"Titre\", \"Hypothese\", \"Date_Debut\", \"Date_fin\", \"Status\", \"Id_projet\") "
               "VALUES (:id, :t, :h, TO_DATE(:d,'YYYY-MM-DD'), TO_DATE(:df,'YYYY-MM-DD'), :s, :p)");
     auto nullInt  = QVariant(QMetaType::fromType<int>());
     auto nullStr  = QVariant(QMetaType::fromType<QString>());
@@ -204,11 +204,11 @@ bool ExperienceCrud::insertExperience(const ExperienceRecord& in, QString* error
 bool ExperienceCrud::updateExperience(const ExperienceRecord& in, QString* error)
 {
     QSqlQuery q;
-    q.prepare("UPDATE EXPERIENCE "
-              "SET TITRE = :t, HYPOTHESE = :h, "
-              "    DATE_DEBUT = TO_DATE(:d,'YYYY-MM-DD'), DATE_FIN = TO_DATE(:df,'YYYY-MM-DD'), "
-              "    STATUS = :s, ID_PROJET = :p "
-              "WHERE ID_EXP = :id");
+    q.prepare("UPDATE \"Expérience\" "
+              "SET \"Titre\" = :t, \"Hypothese\" = :h, "
+              "    \"Date_Debut\" = TO_DATE(:d,'YYYY-MM-DD'), \"Date_fin\" = TO_DATE(:df,'YYYY-MM-DD'), "
+              "    \"Status\" = :s, \"Id_projet\" = :p "
+              "WHERE \"Id_exp\" = :id");
     auto nullInt  = QVariant(QMetaType::fromType<int>());
     auto nullStr  = QVariant(QMetaType::fromType<QString>());
     const QString dbStatus = toDbStatus(in.status);

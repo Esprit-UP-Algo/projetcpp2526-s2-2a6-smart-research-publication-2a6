@@ -11,6 +11,13 @@
 #include <QScrollArea>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
+#include <QPropertyAnimation>
+#include <QPixmap>
+#include <QTimer>
+#include <QMediaPlayer>
+#include <QVideoSink>
+#include <QVideoFrame>
+#include <QTextBrowser>
 #include "crudebiosimple.h"
 
 // ── Per-slot data (full sample info) ─────────────────────────
@@ -27,10 +34,37 @@ struct SlotInfo {
     QString etage;
 };
 
+// ── Floating draggable AI response bubble ─────────────────────
+class AiBubble : public QFrame
+{
+    Q_OBJECT
+public:
+    explicit AiBubble(QWidget* parent = nullptr);
+    void showResponse(const QString& html);
+    void hideResponse();
+
+protected:
+    void mousePressEvent(QMouseEvent*)   override;
+    void mouseMoveEvent(QMouseEvent*)    override;
+    void mouseReleaseEvent(QMouseEvent*) override;
+    void resizeEvent(QResizeEvent*)      override;
+
+private:
+    QMediaPlayer* m_player;
+    QLabel*       m_videoBg;
+    QWidget*      m_overlay;
+    QTextBrowser* m_textBrowser;
+    QLabel*       m_statusLbl;
+    QPoint        m_dragPos;
+    bool          m_dragging = false;
+};
+
 // ── Custom-painted freezer visualization ─────────────────────
 class FreezerWidget : public QWidget
 {
     Q_OBJECT
+    Q_PROPERTY(float doorOpen READ doorOpen WRITE setDoorOpen)
+
 public:
     static const int N_SHELVES = 5;
     static const int N_SLOTS   = 8;
@@ -43,12 +77,21 @@ public:
 
     explicit FreezerWidget(QWidget* parent = nullptr);
 
-    // [0] = top shelf (Étage 5), [4] = bottom shelf (Étage 1)
     void setData(const QVector<QVector<Slot>>& shelves);
-    void selectSlot(int shelf, int slot);   // -1,-1 clears
+    void selectSlot(int shelf, int slot);
     void clearSelection();
 
-    QSize sizeHint() const override { return {500, 420}; }
+    void setFreezerName(const QString& name) { m_freezerName = name; update(); }
+
+    float doorOpen() const { return m_doorOpen; }
+    void  setDoorOpen(float v) { m_doorOpen = qBound(0.0f, v, 1.0f); update(); }
+
+    QSize sizeHint()        const override { return {400, 620}; }
+    QSize minimumSizeHint() const override { return {320, 500}; }
+
+public slots:
+    void openDoor();
+    void closeDoor();
 
 signals:
     void slotClicked(int shelf, int slot);
@@ -67,6 +110,20 @@ private:
     QVector<QVector<Slot>> m_data;
     int m_selShelf = -1;
     int m_selSlot  = -1;
+
+    // Door animation
+    float               m_doorOpen    = 0.0f;
+    QString             m_freezerName;
+    QPropertyAnimation* m_doorAnim;
+
+    // Clock & logo
+    QTimer*  m_clockTimer;
+    bool     m_colonVisible = true;
+    QPixmap  m_logoPixmap;
+
+    // Door button hit zones (set each paintEvent)
+    QRectF m_doorOpenBtnRect;
+    QRectF m_doorCloseBtnRect;
 };
 
 // ── Main dialog ───────────────────────────────────────────────
@@ -95,8 +152,8 @@ private:
 
     // Left panel
     QListWidget* m_freezerList;
-    QLineEdit*   m_searchEdit;
-    QComboBox*   m_searchFilter;
+    QLineEdit*   m_searchEdit   = nullptr;
+    QComboBox*   m_searchFilter = nullptr;
     QListWidget* m_sampleList;
 
     // Center
@@ -115,10 +172,13 @@ private:
     QLabel* m_detDateCol;
     QLabel* m_detDateExp;
 
-    // Right — AI
+    // Right — AI input
     QLineEdit*   m_aiInput;
     QPushButton* m_aiBtn;
     QLabel*      m_aiResp;
+
+    // Floating AI response bubble
+    AiBubble* m_aiBubble = nullptr;
 
     QNetworkAccessManager* m_net;
     CrudeBioSimple*        m_crud;

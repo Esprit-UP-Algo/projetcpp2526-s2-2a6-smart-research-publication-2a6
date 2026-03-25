@@ -10,15 +10,15 @@ bool GestProjCrud::loadProjets(QList<ProjetRecord>& out,
 
     QSqlQuery q;
     q.prepare(
-        "SELECT ID_PROJET, NOM_DU_PROJET, DOMAINE_DE_RECHERCHE, "
-        "DATE_DE_DEBUT, DATE_DE_FIN, BUDGET, STATUT, "
-        "SOURCE_DE_FINANCEMENT, NUMERO_D_APPROBATION_ETHIQUE, "
-        "NOMBRE_DE_PUBLICATIONS "
-        "FROM PROJET "
-        "WHERE (:nom IS NULL OR :nom = '' OR LOWER(NOM_DU_PROJET) LIKE '%' || LOWER(:nom) || '%') "
-        "  AND (:domaine IS NULL OR :domaine = '' OR LOWER(DOMAINE_DE_RECHERCHE) LIKE '%' || LOWER(:domaine) || '%') "
-        "  AND (:statut IS NULL OR :statut = '' OR LOWER(STATUT) LIKE '%' || LOWER(:statut) || '%') "
-        "ORDER BY NOM_DU_PROJET, ID_PROJET");
+        "SELECT \"Id_projet\", \"nom_du_projet\", \"domaine_de_recherche\", "
+        "\"date_de_début\", \"date_de_fin\", \"budget\", \"statut\", "
+        "\"source_de_financement\", \"numéro_d_approbation_éthique\", "
+        "\"nombre_de_publications\" "
+        "FROM \"projet\" "
+        "WHERE (:nom IS NULL OR :nom = '' OR LOWER(\"nom_du_projet\") LIKE '%' || LOWER(:nom) || '%') "
+        "  AND (:domaine IS NULL OR :domaine = '' OR LOWER(\"domaine_de_recherche\") LIKE '%' || LOWER(:domaine) || '%') "
+        "  AND (:statut IS NULL OR :statut = '' OR LOWER(\"statut\") LIKE '%' || LOWER(:statut) || '%') "
+        "ORDER BY \"nom_du_projet\", \"Id_projet\"");
 
     q.bindValue(":nom", nom);
     q.bindValue(":domaine", domaine);
@@ -50,11 +50,11 @@ bool GestProjCrud::loadProjets(QList<ProjetRecord>& out,
 bool GestProjCrud::fetchProjet(int idProjet, ProjetRecord& out, QString* error)
 {
     QSqlQuery q;
-    q.prepare("SELECT NOM_DU_PROJET, DOMAINE_DE_RECHERCHE, "
-              "DATE_DE_DEBUT, DATE_DE_FIN, BUDGET, STATUT, "
-              "SOURCE_DE_FINANCEMENT, NUMERO_D_APPROBATION_ETHIQUE, "
-              "NOMBRE_DE_PUBLICATIONS "
-              "FROM PROJET WHERE ID_PROJET = :id");
+    q.prepare("SELECT \"nom_du_projet\", \"domaine_de_recherche\", "
+              "\"date_de_début\", \"date_de_fin\", \"budget\", \"statut\", "
+              "\"source_de_financement\", \"numéro_d_approbation_éthique\", "
+              "\"nombre_de_publications\" "
+              "FROM \"projet\" WHERE \"Id_projet\" = :id");
     q.bindValue(":id", idProjet);
 
     if (!q.exec() || !q.next()) {
@@ -79,7 +79,7 @@ bool GestProjCrud::fetchProjet(int idProjet, ProjetRecord& out, QString* error)
 bool GestProjCrud::deleteProjet(int idProjet, QString* error)
 {
     QSqlQuery q;
-    q.prepare("DELETE FROM PROJET WHERE ID_PROJET = :id");
+    q.prepare("DELETE FROM \"projet\" WHERE \"Id_projet\" = :id");
     q.bindValue(":id", idProjet);
 
     if (!q.exec()) {
@@ -93,7 +93,7 @@ bool GestProjCrud::deleteProjet(int idProjet, QString* error)
 int GestProjCrud::nextProjetId(QString* error)
 {
     QSqlQuery q;
-    if (!q.exec("SELECT NVL(MAX(ID_PROJET),0)+1 FROM PROJET") || !q.next()) {
+    if (!q.exec("SELECT NVL(MAX(\"Id_projet\"),0)+1 FROM \"projet\"") || !q.next()) {
         if (error) *error = q.lastError().text();
         return -1;
     }
@@ -115,15 +115,15 @@ bool GestProjCrud::insertProjet(const ProjetRecord& in, QString* error)
     }
 
     QSqlQuery q;
-    q.prepare("INSERT INTO PROJET "
-              "(ID_PROJET, NOM_DU_PROJET, DOMAINE_DE_RECHERCHE, "
-              "DATE_DE_DEBUT, DATE_DE_FIN, BUDGET, STATUT, "
-              "SOURCE_DE_FINANCEMENT, NUMERO_D_APPROBATION_ETHIQUE, "
-              "NOMBRE_DE_PUBLICATIONS) "
+    q.prepare("INSERT INTO \"projet\" "
+              "(\"Id_projet\", \"nom_du_projet\", \"domaine_de_recherche\", "
+              "\"date_de_début\", \"date_de_fin\", \"budget\", \"statut\", "
+              "\"source_de_financement\", \"numéro_d_approbation_éthique\", "
+              "\"nombre_de_publications\") "
               "VALUES (:id, :nom, :domaine, :debut, :fin, :budget, "
               ":statut, :financement, :ethique, :pubs)");
 
-    auto nullStr = QVariant(QMetaType::fromType<QString>());
+    auto nullStr  = QVariant(QMetaType::fromType<QString>());
     auto nullDate = QVariant(QMetaType::fromType<QDate>());
 
     q.bindValue(":id", idProjet);
@@ -148,7 +148,7 @@ bool GestProjCrud::insertProjet(const ProjetRecord& in, QString* error)
 bool GestProjCrud::updateProjet(const ProjetRecord& in, QString* error)
 {
     if (in.idProjet <= 0) {
-        if (error) *error = "ID_PROJET invalide.";
+        if (error) *error = "Id_projet invalide.";
         return false;
     }
     if (in.nomDuProjet.trimmed().isEmpty()) {
@@ -157,19 +157,19 @@ bool GestProjCrud::updateProjet(const ProjetRecord& in, QString* error)
     }
 
     QSqlQuery q;
-    q.prepare("UPDATE PROJET SET "
-              "NOM_DU_PROJET = :nom, "
-              "DOMAINE_DE_RECHERCHE = :domaine, "
-              "DATE_DE_DEBUT = :debut, "
-              "DATE_DE_FIN = :fin, "
-              "BUDGET = :budget, "
-              "STATUT = :statut, "
-              "SOURCE_DE_FINANCEMENT = :financement, "
-              "NUMERO_D_APPROBATION_ETHIQUE = :ethique, "
-              "NOMBRE_DE_PUBLICATIONS = :pubs "
-              "WHERE ID_PROJET = :id");
+    q.prepare("UPDATE \"projet\" SET "
+              "\"nom_du_projet\" = :nom, "
+              "\"domaine_de_recherche\" = :domaine, "
+              "\"date_de_début\" = :debut, "
+              "\"date_de_fin\" = :fin, "
+              "\"budget\" = :budget, "
+              "\"statut\" = :statut, "
+              "\"source_de_financement\" = :financement, "
+              "\"numéro_d_approbation_éthique\" = :ethique, "
+              "\"nombre_de_publications\" = :pubs "
+              "WHERE \"Id_projet\" = :id");
 
-    auto nullStr = QVariant(QMetaType::fromType<QString>());
+    auto nullStr  = QVariant(QMetaType::fromType<QString>());
     auto nullDate = QVariant(QMetaType::fromType<QDate>());
 
     q.bindValue(":nom", in.nomDuProjet.trimmed());
