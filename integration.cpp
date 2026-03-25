@@ -8,6 +8,9 @@
 #include "employes.h"
 #include "gestproj.h"
 #include "cong.h"
+#include "basicbio.h"
+#include "pdfbiosample.h"
+#include "floatingchatbtn.h"
 #include "signupserver.h"
 #include "captchawidget.h"   // ← ADD THIS LINE after the other includes
 #include <QTextEdit>
@@ -56,6 +59,12 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QSslConfiguration>
+#include <QSslSocket>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include "apiconfig.h"
 #include <QTimer>
 #include <QPropertyAnimation>
 #include <QGraphicsOpacityEffect>
@@ -64,6 +73,9 @@
 #include <QStackedLayout>
 #include <QUrl>
 
+#include <QPrinter>
+#include <QTextDocument>
+#include <QFileDialog>
 #include <cmath>
 #include <algorithm>
 
@@ -2728,10 +2740,10 @@ MainWindow::MainWindow(QWidget *parent)
         }
 
         QSqlQuery authQuery(db);
-        authQuery.prepare("SELECT COUNT(*) FROM APP_USERS "
-                          "WHERE LOWER(EMAIL) = LOWER(?) "
-                          "AND USER_PASSWORD = ? "
-                          "AND ACTIVE = 'O'");
+        authQuery.prepare("SELECT COUNT(*) FROM \"Employés\" "
+                          "WHERE LOWER(\"EMAIL\") = LOWER(?) "
+                          "AND \"USER_PASSWORD\" = ? "
+                          "AND \"ACTIVE\" = 'O'");
         authQuery.addBindValue(email);
         authQuery.addBindValue(pass);
 
@@ -2768,9 +2780,15 @@ MainWindow::MainWindow(QWidget *parent)
                                   this);
         successDlg.exec();
 
-        // Go to a stable landing page after login
-        setWindowTitle("Gestion des Échantillons");
-        stack->setCurrentIndex(BIO_LIST);
+        // Go to Employee module after login
+        setWindowTitle("Gestion des Employés");
+        if (globalBar->bBioSimple)   globalBar->bBioSimple->setChecked(false);
+        if (globalBar->bPublication) globalBar->bPublication->setChecked(false);
+        if (globalBar->bEquipement)  globalBar->bEquipement->setChecked(false);
+        if (globalBar->bExp)         globalBar->bExp->setChecked(false);
+        if (globalBar->bProjet)      globalBar->bProjet->setChecked(false);
+        if (globalBar->bEmployee)    globalBar->bEmployee->setChecked(true);
+        stack->setCurrentIndex(EMP_LIST);
     });
 
     // Handle logout button
@@ -2802,29 +2820,8 @@ MainWindow::MainWindow(QWidget *parent)
     search->setPlaceholderText("Rechercher (type)");
     search->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
 
-    QPushButton* chatbotBtn = new QPushButton(st->standardIcon(QStyle::SP_MessageBoxInformation), "  Chatbot");
-    chatbotBtn->setCursor(Qt::PointingHandCursor);
-    chatbotBtn->setStyleSheet(QString(R"(
-        QPushButton{
-            background:%1; color: rgba(255,255,255,0.92);
-            border:1px solid rgba(0,0,0,0.18);
-            border-radius: 12px; padding: 10px 16px; font-weight: 800;
-        }
-        QPushButton:hover{ background: %2; }
-    )").arg(C_PRIMARY, C_TOPBAR));
-
     bar1L->addWidget(search, 1);
-    bar1L->addWidget(chatbotBtn);
     p1->addWidget(bar1);
-
-    // ── Chatbot popup ──
-    QObject::connect(chatbotBtn, &QPushButton::clicked, this, [=]{
-        ChatBotBioSimple* bot = new ChatBotBioSimple(this);
-        // Center near the button
-        QPoint center = this->geometry().center();
-        bot->move(center.x() - bot->width()/2, center.y() - bot->height()/2);
-        bot->exec();
-    });
 
     QFrame* card1 = makeCard();
     QVBoxLayout* card1L = new QVBoxLayout(card1);
@@ -3054,12 +3051,21 @@ MainWindow::MainWindow(QWidget *parent)
         return r;
     };
 
+    // Helper: red error label, hidden by default
+    auto mkErrLbl = []() -> QLabel* {
+        auto* l = new QLabel;
+        l->setStyleSheet("color:#dc2626; font-size:10px; padding:0 4px 2px; background:transparent;");
+        l->hide();
+        return l;
+    };
+
     left2L->addWidget(sectionTitle("Identité"));
     // unique reference; when the user enters a value we will look up the record and
     // fill the remaining fields automatically
     QLineEdit* leRef = new QLineEdit;
     leRef->setPlaceholderText("Référence");
     left2L->addWidget(formRow(QStyle::SP_FileIcon, "Référence", leRef));
+    QLabel* errRef = mkErrLbl(); left2L->addWidget(errRef);
 
     // collection field removed per latest request
 
@@ -3067,7 +3073,9 @@ MainWindow::MainWindow(QWidget *parent)
     // keep pointers to the date edits so the lookup lambda can modify them
     QDateEdit *dCollect = nullptr, *dExpire = nullptr;
     left2L->addWidget(blueDateRow("Date de collecte", QDate::currentDate(), dCollect));
+    QLabel* errCollect = mkErrLbl(); left2L->addWidget(errCollect);
     left2L->addWidget(redDateRow("Date d'expiration", QDate::currentDate().addDays(30), dExpire));
+    QLabel* errExpire = mkErrLbl(); left2L->addWidget(errExpire);
 
     // Quantité + unité µg
     QFrame* qtyFrame = new QFrame;
@@ -3082,6 +3090,7 @@ MainWindow::MainWindow(QWidget *parent)
     lbUg->setStyleSheet("color: rgba(0,0,0,0.50); font-weight:700;");
     qtyHL->addWidget(qty); qtyHL->addWidget(lbUg); qtyHL->addStretch(1);
     left2L->addWidget(formRow(QStyle::SP_ArrowUp, "Quantité", qtyFrame));
+    QLabel* errQty = mkErrLbl(); left2L->addWidget(errQty);
 
     // Température + unité °C
     QFrame* tempFrame = new QFrame;
@@ -3094,11 +3103,13 @@ MainWindow::MainWindow(QWidget *parent)
     lbDeg->setStyleSheet("color: rgba(0,0,0,0.50); font-weight:700;");
     tempHL->addWidget(cbTemp2); tempHL->addWidget(lbDeg); tempHL->addStretch(1);
     left2L->addWidget(formRow(QStyle::SP_BrowserStop, "Température", tempFrame));
+    QLabel* errTemp = mkErrLbl(); left2L->addWidget(errTemp);
 
     QComboBox* cbDanger = new QComboBox;
     cbDanger->addItems({"Niveau de danger", "BSL-1", "BSL-2", "BSL-3"});
     cbDanger->setFixedWidth(170);
     left2L->addWidget(formRow(QStyle::SP_MessageBoxWarning, "Niveau de danger", cbDanger));
+    QLabel* errDanger = mkErrLbl(); left2L->addWidget(errDanger);
 
     left2L->addStretch(1);
 
@@ -3109,15 +3120,124 @@ MainWindow::MainWindow(QWidget *parent)
 
     right2L->addWidget(sectionTitle("Données"));
 
+    // ── Network manager for AI field correction ──
+    QNetworkAccessManager* bioAiNet = new QNetworkAccessManager(this);
+
+    // ── Helper: call Groq to correct a field value ──
+    auto callGroqCorrect = [=](const QString& fieldType,
+                                const QString& userInput,
+                                QLineEdit* targetField,
+                                QPushButton* btn)
+    {
+        if (userInput.trimmed().isEmpty()) return;
+        btn->setEnabled(false);
+        btn->setText("⏳");
+
+        QString system;
+        if (fieldType == "type") {
+            system = "Tu es un expert en biologie. L'utilisateur saisit un type d'échantillon biologique. "
+                     "Corrige et normalise le terme en UN SEUL MOT parmi exactement : "
+                     "ADN, ARN, Protéine, Cellule, Tissu, Organisme. "
+                     "Réponds UNIQUEMENT avec le terme corrigé, rien d'autre, aucune explication.";
+        } else {
+            system = "Tu es un expert en biologie. L'utilisateur saisit un nom d'organisme source. "
+                     "Corrige et retourne le nom scientifique correct de l'organisme. "
+                     "Réponds UNIQUEMENT avec le nom scientifique (ex: Homo sapiens, Mus musculus, "
+                     "Escherichia coli), rien d'autre, aucune explication.";
+        }
+
+        QJsonArray msgs = {
+            QJsonObject{{"role","system"},{"content",system}},
+            QJsonObject{{"role","user"},  {"content",userInput}}
+        };
+        QJsonObject body;
+        body["model"]       = GROQ_API_MODEL;
+        body["messages"]    = msgs;
+        body["max_tokens"]  = 20;
+        body["temperature"] = 0.1;
+
+        QUrl bioAiUrl(GROQ_API_URL);
+        QNetworkRequest req(bioAiUrl);
+        req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+        req.setRawHeader("Authorization", ("Bearer " + GROQ_API_KEY).toUtf8());
+        QSslConfiguration ssl = QSslConfiguration::defaultConfiguration();
+        ssl.setPeerVerifyMode(QSslSocket::VerifyNone);
+        req.setSslConfiguration(ssl);
+
+        QNetworkReply* rpl = bioAiNet->post(req, QJsonDocument(body).toJson());
+        connect(rpl, &QNetworkReply::sslErrors, rpl,
+                [rpl](const QList<QSslError>&){ rpl->ignoreSslErrors(); });
+        connect(rpl, &QNetworkReply::finished, this, [=](){
+            btn->setEnabled(true);
+            btn->setText("🤖");
+            QByteArray data = rpl->readAll();
+            rpl->deleteLater();
+            QJsonObject root = QJsonDocument::fromJson(data).object();
+            if (root.contains("error")) return;
+            QString corrected = root["choices"].toArray().first()
+                                    .toObject()["message"].toObject()["content"]
+                                    .toString().trimmed();
+            if (!corrected.isEmpty()) targetField->setText(corrected);
+        });
+    };
+
+    // ── Type field + AI button ──
     QLineEdit* cbType2 = new QLineEdit;
     cbType2->setPlaceholderText("Type (ex: DNA, RNA, Protéine...)");
-    cbType2->setFixedWidth(200);
-    right2L->addWidget(formRow(QStyle::SP_FileIcon, "Type", cbType2));
+    cbType2->setFixedWidth(160);
 
+    QPushButton* btnAiType = new QPushButton("🤖");
+    btnAiType->setFixedSize(30, 30);
+    btnAiType->setToolTip("Corriger avec IA (Groq)");
+    btnAiType->setCursor(Qt::PointingHandCursor);
+    btnAiType->setStyleSheet(
+        "QPushButton{ background:rgba(109,40,217,0.15); border-radius:8px; border:none; font-size:14px; }"
+        "QPushButton:hover{ background:rgba(109,40,217,0.30); }"
+        "QPushButton:disabled{ color:rgba(0,0,0,0.3); }"
+    );
+
+    QWidget* typeContainer = new QWidget;
+    QHBoxLayout* typeCL = new QHBoxLayout(typeContainer);
+    typeCL->setContentsMargins(0,0,0,0);
+    typeCL->setSpacing(4);
+    typeCL->addWidget(cbType2);
+    typeCL->addWidget(btnAiType);
+
+    right2L->addWidget(formRow(QStyle::SP_FileIcon, "Type", typeContainer));
+    QLabel* errType = mkErrLbl(); right2L->addWidget(errType);
+
+    connect(btnAiType, &QPushButton::clicked, this, [=](){
+        callGroqCorrect("type", cbType2->text(), cbType2, btnAiType);
+    });
+
+    // ── Organisme field + AI button ──
     QLineEdit* cbOrg2 = new QLineEdit;
     cbOrg2->setPlaceholderText("Organisme");
-    cbOrg2->setFixedWidth(200);
-    right2L->addWidget(formRow(QStyle::SP_DirIcon, "Organisme", cbOrg2));
+    cbOrg2->setFixedWidth(160);
+
+    QPushButton* btnAiOrg = new QPushButton("🤖");
+    btnAiOrg->setFixedSize(30, 30);
+    btnAiOrg->setToolTip("Corriger avec IA (Groq)");
+    btnAiOrg->setCursor(Qt::PointingHandCursor);
+    btnAiOrg->setStyleSheet(
+        "QPushButton{ background:rgba(109,40,217,0.15); border-radius:8px; border:none; font-size:14px; }"
+        "QPushButton:hover{ background:rgba(109,40,217,0.30); }"
+        "QPushButton:disabled{ color:rgba(0,0,0,0.3); }"
+    );
+
+    QWidget* orgContainer = new QWidget;
+    QHBoxLayout* orgCL = new QHBoxLayout(orgContainer);
+    orgCL->setContentsMargins(0,0,0,0);
+    orgCL->setSpacing(4);
+    orgCL->addWidget(cbOrg2);
+    orgCL->addWidget(btnAiOrg);
+
+    right2L->addWidget(formRow(QStyle::SP_DirIcon, "Organisme", orgContainer));
+    QLabel* errOrg = mkErrLbl(); right2L->addWidget(errOrg);
+
+    connect(btnAiOrg, &QPushButton::clicked, this, [=](){
+        callGroqCorrect("organisme", cbOrg2->text(), cbOrg2, btnAiOrg);
+    });
 
     // Emplacement : bouton + popup Congélateur/Étagère
     QPushButton* emplacBtn = new QPushButton("Emplacement de stockage");
@@ -3148,6 +3268,7 @@ MainWindow::MainWindow(QWidget *parent)
     emplacPopupL->addWidget(leEtagere);
     emplacPopup->setVisible(false);
     right2L->addWidget(emplacPopup);
+    QLabel* errEmplac = mkErrLbl(); right2L->addWidget(errEmplac);
 
     // Toggle popup
     QObject::connect(emplacBtn, &QPushButton::clicked, [=]{
@@ -3177,6 +3298,33 @@ MainWindow::MainWindow(QWidget *parent)
     };
     QObject::connect(leCongelateur, &QLineEdit::textChanged, syncEmplacBtn);
     QObject::connect(leEtagere,     &QLineEdit::textChanged, syncEmplacBtn);
+
+    // Projet selector
+    QComboBox* cbProjet = new QComboBox;
+    cbProjet->setFixedWidth(200);
+    cbProjet->addItem("-- Aucun projet --", 0);
+    right2L->addWidget(formRow(QStyle::SP_DirOpenIcon, "Projet", cbProjet));
+    QLabel* errProjet = mkErrLbl(); right2L->addWidget(errProjet);
+
+    auto loadProjetCombo = [=]() {
+        const int savedId = cbProjet->currentData().toInt();
+        cbProjet->blockSignals(true);
+        cbProjet->clear();
+        cbProjet->addItem("-- Aucun projet --", 0);
+        QSqlQuery pq;
+        if (pq.exec("SELECT \"Id_projet\", \"nom_du_projet\" FROM \"projet\" ORDER BY \"nom_du_projet\"")) {
+            while (pq.next())
+                cbProjet->addItem(pq.value(1).toString(), pq.value(0).toInt());
+        }
+        for (int i = 0; i < cbProjet->count(); ++i) {
+            if (cbProjet->itemData(i).toInt() == savedId) {
+                cbProjet->setCurrentIndex(i);
+                break;
+            }
+        }
+        cbProjet->blockSignals(false);
+    };
+    loadProjetCombo();
 
     right2L->addStretch(1);
 
@@ -3247,133 +3395,305 @@ MainWindow::MainWindow(QWidget *parent)
     QFrame* outer3 = new QFrame;
     outer3->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }").arg(C_PANEL_BG, C_PANEL_BR));
     QHBoxLayout* outer3L = new QHBoxLayout(outer3);
-    outer3L->setContentsMargins(12,12,12,12);
-    outer3L->setSpacing(12);
+    outer3L->setContentsMargins(10,10,10,10);
+    outer3L->setSpacing(10);
 
+    // ══════════════════════════════════════
+    // PANEL 1 — Congélateurs & Échantillons
+    // ══════════════════════════════════════
     QFrame* left3 = softBox();
-    left3->setFixedWidth(320);
+    left3->setFixedWidth(210);
     QVBoxLayout* left3L = new QVBoxLayout(left3);
-    left3L->setContentsMargins(10,10,10,10);
-    left3L->setSpacing(10);
+    left3L->setContentsMargins(8,8,8,8);
+    left3L->setSpacing(6);
 
-    QFrame* ddBox = new QFrame;
-    ddBox->setStyleSheet("QFrame{ background: rgba(255,255,255,0.72); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
-    QHBoxLayout* ddBoxL = new QHBoxLayout(ddBox);
-    ddBoxL->setContentsMargins(10,8,10,8);
+    auto p3SecTitle = [](const QString& t) -> QLabel* {
+        auto* l = new QLabel(t);
+        l->setStyleSheet("font-weight:900; font-size:12px; color:rgba(10,95,88,0.90); padding:2px 0;");
+        return l;
+    };
 
-    QLabel* ddText = new QLabel("Congélateur 01");
-    ddText->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
-    QToolButton* ddBtn = new QToolButton;
-    ddBtn->setAutoRaise(true);
-    ddBtn->setIcon(st->standardIcon(QStyle::SP_ArrowDown));
-    ddBtn->setCursor(Qt::PointingHandCursor);
-
-    ddBoxL->addWidget(ddText);
-    ddBoxL->addStretch(1);
-    ddBoxL->addWidget(ddBtn);
+    left3L->addWidget(p3SecTitle("Congélateurs"));
 
     QTreeWidget* tree3 = new QTreeWidget;
     tree3->setHeaderHidden(true);
-    tree3->setIndentation(18);
+    tree3->setIndentation(14);
+    tree3->setStyleSheet(
+        "QTreeWidget{ border:none; background:transparent; }"
+        "QTreeWidget::item{ padding:5px 3px; border-radius:6px; font-size:11px; color:rgba(0,0,0,0.65); }"
+        "QTreeWidget::item:selected{ background:rgba(10,95,88,0.18); color:rgba(10,95,88,0.95); font-weight:700; }"
+        "QTreeWidget::item:hover{ background:rgba(10,95,88,0.08); }");
+    tree3->setMaximumHeight(180);
+    left3L->addWidget(tree3);
 
-    auto* tF1 = new QTreeWidgetItem(tree3, QStringList() << "Congélateur 01");
-    auto* tF2 = new QTreeWidgetItem(tree3, QStringList() << "Congélateur 02");
-    auto* tF3 = new QTreeWidgetItem(tree3, QStringList() << "Congélateur 03");
-
-    tF1->setIcon(0, st->standardIcon(QStyle::SP_DriveHDIcon));
-    tF2->setIcon(0, st->standardIcon(QStyle::SP_DriveHDIcon));
-    tF3->setIcon(0, st->standardIcon(QStyle::SP_DriveHDIcon));
-
-    auto* tA = new QTreeWidgetItem(tF2, QStringList() << "Étagère A");
-    auto* t6 = new QTreeWidgetItem(tF2, QStringList() << "Étagère 6");
-    auto* tB = new QTreeWidgetItem(tF2, QStringList() << "Étagère B");
-    auto* tR = new QTreeWidgetItem(tF2, QStringList() << "Temp. ambiante");
-    tA->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
-    t6->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
-    tB->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
-    tR->setIcon(0, st->standardIcon(QStyle::SP_FileDialogInfoView));
-
-    tree3->expandAll();
-    tree3->setCurrentItem(tF2);
-
-    QPushButton* exportReport3 = actionBtn("Exporter le rapport",
-                                           "rgba(10,95,88,0.45)",
-                                           "rgba(255,255,255,0.92)",
-                                           st->standardIcon(QStyle::SP_DialogSaveButton),
-                                           true);
-
-    left3L->addWidget(ddBox);
-    left3L->addWidget(tree3, 1);
-    left3L->addWidget(exportReport3);
-
-    QFrame* right3 = softBox();
-    QVBoxLayout* right3L = new QVBoxLayout(right3);
-    right3L->setContentsMargins(10,10,10,10);
-    right3L->setSpacing(10);
-
-    QFrame* header3 = new QFrame;
-    header3->setStyleSheet("QFrame{ background: rgba(255,255,255,0.72); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
-    QHBoxLayout* header3L = new QHBoxLayout(header3);
-    header3L->setContentsMargins(10,8,10,8);
-
-    QPushButton* details3 = new QPushButton(st->standardIcon(QStyle::SP_FileDialogDetailedView), "  Détails");
-    details3->setCursor(Qt::PointingHandCursor);
-    details3->setStyleSheet(QString(R"(
-        QPushButton{
-            background:%1; color: rgba(255,255,255,0.95);
-            border:1px solid rgba(0,0,0,0.18);
-            border-radius: 12px; padding: 10px 16px; font-weight: 900;
+    auto buildTree3 = [=](){
+        tree3->clear();
+        QStringList congs = BasicBio::loadCongelateurs();
+        if (congs.isEmpty()) {
+            auto* ni = new QTreeWidgetItem(tree3, QStringList() << "Aucun congélateur");
+            ni->setFlags(Qt::NoItemFlags);
+            return;
         }
-        QPushButton:hover{ background: %2; }
-    )").arg(C_PRIMARY, C_TOPBAR));
-
-    auto eqChip = [&](const QString& t){
-        QLabel* c = new QLabel(t);
-        c->setStyleSheet("background: rgba(255,255,255,0.90); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; padding: 8px 12px; font-weight:900; color: rgba(0,0,0,0.55);");
-        return c;
+        for (const QString& c : congs) {
+            auto* cItem = new QTreeWidgetItem(tree3, QStringList() << c);
+            cItem->setIcon(0, st->standardIcon(QStyle::SP_DriveHDIcon));
+            cItem->setData(0, Qt::UserRole,     c);
+            cItem->setData(0, Qt::UserRole + 1, QString());
+            for (const QString& e : BasicBio::loadEtageres(c)) {
+                auto* eItem = new QTreeWidgetItem(cItem, QStringList() << e);
+                eItem->setIcon(0, st->standardIcon(QStyle::SP_DirIcon));
+                eItem->setData(0, Qt::UserRole,     c);
+                eItem->setData(0, Qt::UserRole + 1, e);
+            }
+        }
+        tree3->expandAll();
+        tree3->setCurrentItem(tree3->topLevelItem(0));
     };
 
-    header3L->addWidget(details3);
-    header3L->addStretch(1);
-    header3L->addWidget(eqChip("Enregistrements"));
-    header3L->addWidget(eqChip("Événements"));
+    QFrame* sep3a = new QFrame; sep3a->setFrameShape(QFrame::HLine);
+    sep3a->setStyleSheet("border-top:1px solid rgba(10,95,88,0.12);");
+    left3L->addWidget(sep3a);
 
-    QFrame* listBox3 = new QFrame;
-    listBox3->setStyleSheet("QFrame{ background: rgba(255,255,255,0.55); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
-    QVBoxLayout* listBox3L = new QVBoxLayout(listBox3);
-    listBox3L->setContentsMargins(12,12,12,12);
+    left3L->addWidget(p3SecTitle("Échantillons"));
 
     QListWidget* list3 = new QListWidget;
-    list3->setSpacing(8);
-    list3->setSelectionMode(QAbstractItemView::NoSelection);
+    list3->setSpacing(4);
+    list3->setSelectionMode(QAbstractItemView::SingleSelection);
+    list3->setStyleSheet(
+        "QListWidget{ border:none; background:transparent; }"
+        "QListWidget::item{ background:rgba(255,255,255,0.80); border:1px solid rgba(10,95,88,0.10);"
+        " border-radius:8px; padding:5px 8px; font-size:10px; color:rgba(0,0,0,0.70); }"
+        "QListWidget::item:selected{ background:rgba(10,95,88,0.15); color:rgba(10,95,88,0.95);"
+        " font-weight:700; border:1px solid rgba(10,95,88,0.35); }"
+        "QListWidget::item:hover{ background:rgba(10,95,88,0.07); }");
+    left3L->addWidget(list3, 1);
 
-    auto addListRow=[&](QWidget* w){
-        QListWidgetItem* it = new QListWidgetItem;
-        it->setSizeHint(QSize(10, 40));
-        list3->addItem(it);
-        list3->setItemWidget(it, w);
+    // ══════════════════════════════════════
+    // PANEL 2 — Détails de l'Échantillon
+    // ══════════════════════════════════════
+    QFrame* mid3 = softBox();
+    QVBoxLayout* mid3L = new QVBoxLayout(mid3);
+    mid3L->setContentsMargins(14,12,14,12);
+    mid3L->setSpacing(10);
+
+    mid3L->addWidget(p3SecTitle("Détails de l'Échantillon"));
+
+    auto mkDetRow = [&](const QString& lbl, QLabel*& valOut) {
+        QFrame* row = new QFrame;
+        row->setStyleSheet("QFrame{ background:rgba(255,255,255,0.70); border:1px solid rgba(10,95,88,0.12); border-radius:10px; }");
+        QHBoxLayout* hl = new QHBoxLayout(row);
+        hl->setContentsMargins(12,8,12,8); hl->setSpacing(10);
+        auto* key = new QLabel(lbl);
+        key->setStyleSheet("color:rgba(10,95,88,0.75); font-size:11px; font-weight:700; min-width:90px;");
+        valOut = new QLabel("—");
+        valOut->setStyleSheet("color:rgba(0,0,0,0.80); font-size:12px; font-weight:900;");
+        hl->addWidget(key); hl->addWidget(valOut, 1);
+        mid3L->addWidget(row);
     };
 
-    addListRow(new GradientRowWidget(st, "Échantillon A", "5×",   W_GREEN,  QStyle::SP_FileIcon, false));
-    addListRow(new GradientRowWidget(st, "Échantillon B", "0×",   W_GREEN,  QStyle::SP_FileIcon, false));
-    addListRow(new GradientRowWidget(st, "Échantillon C", "OK",   W_ORANGE, QStyle::SP_FileIcon, false));
-    addListRow(new GradientRowWidget(st, "Échantillon D", "BSL",  W_RED,    QStyle::SP_FileIcon, true));
+    QLabel *dv3Ref=nullptr, *dv3Type=nullptr, *dv3Org=nullptr, *dv3Proj=nullptr;
+    QLabel *dv3Bsl=nullptr, *dv3Qty=nullptr,  *dv3Cong=nullptr, *dv3Etag=nullptr, *dv3Temp=nullptr;
 
-    listBox3L->addWidget(list3);
+    mkDetRow("ID Échantillon",  dv3Ref);
+    mkDetRow("Type",            dv3Type);
+    mkDetRow("Organisme",       dv3Org);
+    mkDetRow("Projet",          dv3Proj);
+    mkDetRow("Niveau BSL",      dv3Bsl);
+    mkDetRow("Quantité",        dv3Qty);
+    mkDetRow("Congélateur",     dv3Cong);
+    mkDetRow("Étagère",         dv3Etag);
+    mkDetRow("Température",     dv3Temp);
+    mid3L->addStretch(1);
 
-    QWidget* bottomInfo3 = new QWidget;
-    QHBoxLayout* bottomInfo3L = new QHBoxLayout(bottomInfo3);
-    bottomInfo3L->setContentsMargins(0,0,0,0);
-    bottomInfo3L->setSpacing(12);
-    bottomInfo3L->addWidget(w3TempQtyBlock(st, "-80°C", "220"));
-    bottomInfo3L->addWidget(w3BottomLocationBar(st, "Congélateur 02, Étagère A"), 1);
+    // ══════════════════════════════════════
+    // PANEL 3 — Rapport + Export PDF
+    // ══════════════════════════════════════
+    QFrame* right3 = softBox();
+    right3->setFixedWidth(320);
+    QVBoxLayout* right3L = new QVBoxLayout(right3);
+    right3L->setContentsMargins(10,10,10,10);
+    right3L->setSpacing(8);
 
-    right3L->addWidget(header3);
-    right3L->addWidget(listBox3, 1);
-    right3L->addWidget(bottomInfo3);
+    // Report preview card (styled like the reference image, in green)
+    QFrame* reportCard = new QFrame;
+    reportCard->setStyleSheet(
+        "QFrame{ background:white; border:1.5px solid rgba(10,95,88,0.25); border-radius:12px; }");
+    QVBoxLayout* reportL = new QVBoxLayout(reportCard);
+    reportL->setContentsMargins(14,10,14,12);
+    reportL->setSpacing(6);
+
+    // Header row
+    QWidget* rHdr = new QWidget;
+    QHBoxLayout* rHdrL = new QHBoxLayout(rHdr);
+    rHdrL->setContentsMargins(0,0,0,0); rHdrL->setSpacing(8);
+    auto* rLogo = new QLabel("⊕  SmartVision");
+    rLogo->setStyleSheet("color:rgba(10,95,88,1); font-weight:900; font-size:13px;");
+    auto* rDateLbl = new QLabel;
+    rDateLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    rDateLbl->setStyleSheet("color:rgba(0,0,0,0.55); font-size:9px;");
+    rDateLbl->setText("Date : " + QDate::currentDate().toString("dd/MM/yyyy"));
+    rHdrL->addWidget(rLogo); rHdrL->addStretch(1); rHdrL->addWidget(rDateLbl);
+    reportL->addWidget(rHdr);
+
+    // Report title
+    auto* rTitle = new QLabel("Rapport de Stockage & Suivi");
+    rTitle->setAlignment(Qt::AlignCenter);
+    rTitle->setStyleSheet(
+        "font-weight:900; font-size:13px; color:rgba(10,95,88,0.95);"
+        "background:rgba(10,95,88,0.10); border-radius:6px; padding:5px 0;");
+    reportL->addWidget(rTitle);
+
+    // Section helper
+    auto rSec = [&](const QString& t) {
+        auto* l = new QLabel(t);
+        l->setStyleSheet(
+            "background:rgba(10,95,88,0.85); color:white; font-weight:900; font-size:10px;"
+            "border-radius:4px; padding:3px 8px;");
+        reportL->addWidget(l);
+    };
+    auto rRow = [&](const QString& lbl, QLabel*& out) {
+        auto* w = new QWidget;
+        auto* hl = new QHBoxLayout(w); hl->setContentsMargins(4,0,4,0); hl->setSpacing(4);
+        auto* k = new QLabel("• " + lbl + " :");
+        k->setStyleSheet("color:rgba(0,0,0,0.55); font-size:9px; font-weight:700;");
+        out = new QLabel("—");
+        out->setStyleSheet("color:rgba(0,0,0,0.80); font-size:9px; font-weight:900;");
+        hl->addWidget(k); hl->addWidget(out, 1);
+        reportL->addWidget(w);
+    };
+
+    QLabel *rRef=nullptr, *rType=nullptr, *rOrg=nullptr, *rBsl=nullptr;
+    QLabel *rQty=nullptr, *rCong=nullptr, *rEtag=nullptr, *rTemp=nullptr, *rProj=nullptr;
+
+    rSec("Détails de l'Échantillon");
+    rRow("ID Échantillon", rRef);
+    rRow("Type",           rType);
+    rRow("Organisme",      rOrg);
+    rRow("Projet",         rProj);
+    rRow("Niveau BSL",     rBsl);
+    rRow("Quantité",       rQty);
+
+    rSec("Localisation de Stockage");
+    rRow("Congélateur",    rCong);
+    rRow("Étagère",        rEtag);
+    rRow("Température",    rTemp);
+
+    rSec("Conformité");
+    for (const QString& txt : {
+            "Protocoles BSL respectés",
+            "Échantillons étiquetés & sécurisés",
+            "Inventaire mis à jour",
+            "Audit effectué"}) {
+        auto* cl = new QLabel("  ☑  " + txt);
+        cl->setStyleSheet("color:rgba(10,95,88,0.85); font-size:9px; font-weight:700;");
+        reportL->addWidget(cl);
+    }
+
+    reportL->addStretch(1);
+    right3L->addWidget(reportCard, 1);
+
+    // Export PDF button
+    QPushButton* pdfBtn = new QPushButton("  Exporter en PDF");
+    pdfBtn->setIcon(st->standardIcon(QStyle::SP_DialogSaveButton));
+    pdfBtn->setCursor(Qt::PointingHandCursor);
+    pdfBtn->setStyleSheet(QString(R"(
+        QPushButton{
+            background:%1; color:rgba(255,255,255,0.95);
+            border:none; border-radius:10px; padding:10px 18px;
+            font-weight:900; font-size:12px;
+        }
+        QPushButton:hover{ background:%2; }
+    )").arg(C_PRIMARY, C_TOPBAR));
+    right3L->addWidget(pdfBtn);
+
+    // ── Shared state ──
+    auto* bioInfos3 = new QList<BasicBioInfo>;
+
+    // Reset all detail / report labels
+    auto resetAll3 = [=](){
+        for (auto* l : {dv3Ref,dv3Type,dv3Org,dv3Proj,dv3Bsl,dv3Qty,dv3Cong,dv3Etag,dv3Temp})
+            l->setText("—");
+        for (auto* l : {rRef,rType,rOrg,rProj,rBsl,rQty,rCong,rEtag,rTemp})
+            l->setText("—");
+    };
+
+    // ── Tree → sample list ──
+    auto loadSamples3 = [=](const QString& cong, const QString& etag) {
+        *bioInfos3 = BasicBio::loadSamples(cong, etag);
+        list3->clear();
+        resetAll3();
+        if (bioInfos3->isEmpty()) {
+            list3->addItem("Aucun échantillon.");
+            return;
+        }
+        for (int i = 0; i < bioInfos3->size(); ++i) {
+            const BasicBioInfo& bi = (*bioInfos3)[i];
+            QString badge = bi.bslLevel.isEmpty() ? "" : "  [" + bi.bslLevel + "]";
+            auto* it = new QListWidgetItem(bi.reference + badge + "\n" + bi.type
+                                           + "  |  " + bi.etagere);
+            it->setData(Qt::UserRole, i);
+            list3->addItem(it);
+        }
+    };
+
+    // ── Sample clicked → fill panels 2 & 3 ──
+    QObject::connect(list3, &QListWidget::itemClicked, this, [=](QListWidgetItem* item) {
+        int idx = item->data(Qt::UserRole).toInt();
+        if (idx < 0 || idx >= bioInfos3->size()) return;
+        const BasicBioInfo& bi = (*bioInfos3)[idx];
+        auto val = [](const QString& s) { return s.isEmpty() ? "—" : s; };
+        QString qtyStr = QString::number(bi.quantite) + " µg";
+        QString tempStr = bi.temperature.isEmpty() ? "—" : bi.temperature + " °C";
+        // Panel 2
+        dv3Ref ->setText(val(bi.reference));
+        dv3Type->setText(val(bi.type));
+        dv3Org ->setText(val(bi.organisme));
+        dv3Proj->setText(val(bi.projet));
+        dv3Bsl ->setText(val(bi.bslLevel));
+        dv3Qty ->setText(qtyStr);
+        dv3Cong->setText(val(bi.congelateur));
+        dv3Etag->setText(val(bi.etagere));
+        dv3Temp->setText(tempStr);
+        // Panel 3 (report)
+        rRef ->setText(val(bi.reference));
+        rType->setText(val(bi.type));
+        rOrg ->setText(val(bi.organisme));
+        rProj->setText(val(bi.projet));
+        rBsl ->setText(val(bi.bslLevel));
+        rQty ->setText(qtyStr);
+        rCong->setText(val(bi.congelateur));
+        rEtag->setText(val(bi.etagere));
+        rTemp->setText(tempStr);
+        rDateLbl->setText("Date : " + QDate::currentDate().toString("dd/MM/yyyy"));
+    });
+
+    QObject::connect(tree3, &QTreeWidget::itemClicked, this, [=](QTreeWidgetItem* item, int) {
+        QString cong = item->data(0, Qt::UserRole).toString();
+        QString etag = item->data(0, Qt::UserRole + 1).toString();
+        if (cong.isEmpty()) return;
+        loadSamples3(cong, etag);
+    });
+
+    // ── PDF Export ──
+    QObject::connect(pdfBtn, &QPushButton::clicked, this, [=]() {
+        if (bioInfos3->isEmpty() || list3->currentRow() < 0) {
+            QMessageBox::information(this, "Information",
+                "Veuillez sélectionner un échantillon avant d'exporter.");
+            return;
+        }
+        QString path = QFileDialog::getSaveFileName(this, "Enregistrer le rapport PDF",
+            "rapport_echantillon.pdf", "PDF (*.pdf)");
+        if (path.isEmpty()) return;
+
+        const BasicBioInfo& bi = (*bioInfos3)[list3->currentRow()];
+        exportBioSamplePdf(bi, path);
+        QMessageBox::information(this, "Succès",
+            QString("Rapport exporté avec succès :\n%1").arg(path));
+    });
 
     outer3L->addWidget(left3);
-    outer3L->addWidget(right3, 1);
+    outer3L->addWidget(mid3, 1);
+    outer3L->addWidget(right3);
 
     p3->addWidget(outer3, 1);
 
@@ -3555,11 +3875,8 @@ MainWindow::MainWindow(QWidget *parent)
     QLabel* hint = new QLabel("Aperçu des indicateurs clés");
     hint->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
 
-    QPushButton* exportStats = actionBtn("Exporter", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.92)", st->standardIcon(QStyle::SP_DialogSaveButton), true);
-
     actL->addWidget(hint);
     actL->addStretch(1);
-    actL->addWidget(exportStats);
     outer5L->addWidget(actBar);
 
     QFrame* dash = new QFrame;
@@ -3577,11 +3894,7 @@ MainWindow::MainWindow(QWidget *parent)
     pieTitle->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
 
     DonutChart* pie = new DonutChart;
-    pie->setData({
-        {95,  QColor("#9FBEB9"), "DNA"},
-        {55,  W_GREEN,           "RNA"},
-        {30,  W_ORANGE,          "Protéine"}
-    });
+    // Data will be loaded dynamically from DB in updateBioStats
 
     pcL->addWidget(pieTitle);
     pcL->addWidget(pie, 1);
@@ -3611,10 +3924,7 @@ MainWindow::MainWindow(QWidget *parent)
         return row;
     };
 
-    lgL->addWidget(legendRow(QColor("#9FBEB9"), "DNA"));
-    lgL->addWidget(legendRow(W_GREEN,          "RNA"));
-    lgL->addWidget(legendRow(W_ORANGE,         "Protéine"));
-    lgL->addStretch(1);
+    lgL->addStretch(1); // rows added dynamically in updateBioStats
 
     QFrame* barCard = softBox();
     QVBoxLayout* bcL = new QVBoxLayout(barCard);
@@ -4373,7 +4683,7 @@ MainWindow::MainWindow(QWidget *parent)
         eProjet->clear();
         eProjet->addItem("Projet", QVariant());
         QSqlQuery pq;
-        if (pq.exec("SELECT ID_PROJET, NOM_DU_PROJET FROM PROJET ORDER BY ID_PROJET")) {
+        if (pq.exec("SELECT \"Id_projet\", \"nom_du_projet\" FROM \"projet\" ORDER BY \"Id_projet\"")) {
             while (pq.next())
                 eProjet->addItem(pq.value(1).toString(), pq.value(0).toInt());
         }
@@ -5448,6 +5758,21 @@ QPushButton:hover{ background: %2; }
         labRoom->lineEdit()->setStyleSheet("background: transparent; color: rgba(0,0,0,0.84); border:0; font-weight:700;");
     }
 
+    QComboBox* eqExpCombo = new QComboBox;
+    eqExpCombo->setStyleSheet(
+        "QComboBox{ background: rgba(255,255,255,0.96); color: rgba(0,0,0,0.82);"
+        " border:1px solid rgba(0,0,0,0.20); border-radius:8px; padding:6px 10px; font-weight:700; }"
+        "QComboBox::drop-down{ border:none; width:22px; }"
+        "QComboBox QAbstractItemView{ background:white; color:black; selection-background-color: rgba(10,95,88,0.20); }"
+    );
+    eqExpCombo->setMinimumHeight(34);
+    {
+        QList<ExperienceRecord> expList;
+        expCrud->loadExperiences(expList);
+        for (const auto& e : expList)
+            eqExpCombo->addItem(QString("[%1] %2").arg(e.id).arg(e.titre), e.id);
+    }
+
     eqFormGrid->addWidget(fieldBlock("Type d'équipement", comboRow(fcb1)), 0, 0);
     eqFormGrid->addWidget(fieldBlock("Fabricant", comboRow(fcb2)), 0, 1);
     eqFormGrid->addWidget(fieldBlock("Statut", comboRow(fcb3)), 1, 0);
@@ -5456,7 +5781,8 @@ QPushButton:hover{ background: %2; }
     eqFormGrid->addWidget(fieldBlock("Prochaine maintenance", maintRow), 2, 1);
     eqFormGrid->addWidget(fieldBlock("Calibration", calRow), 3, 0);
     eqFormGrid->addWidget(fieldBlock("Salle", miniRow(QStyle::SP_DirIcon, "Salle :", labRoom)), 3, 1);
-    eqFormGrid->setRowStretch(4, 1);
+    eqFormGrid->addWidget(fieldBlock("Expérience liée", comboRow(eqExpCombo)), 4, 0, 1, 2);
+    eqFormGrid->setRowStretch(5, 1);
 
     eqFormScroll->setWidget(eqFormContent);
     eqRight2L->addWidget(eqFormScroll, 1);
@@ -5570,6 +5896,12 @@ QPushButton:hover{ background: %2; }
     QVBoxLayout* eqRight3L = new QVBoxLayout(eqRight3);
     eqRight3L->setContentsMargins(10,10,10,10);
     eqRight3L->setSpacing(10);
+
+    auto eqChip = [&](const QString& t){
+        QLabel* c = new QLabel(t);
+        c->setStyleSheet("background: rgba(255,255,255,0.90); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; padding: 8px 12px; font-weight:900; color: rgba(0,0,0,0.55);");
+        return c;
+    };
 
     QFrame* eqHeader3 = new QFrame;
     eqHeader3->setStyleSheet("QFrame{ background: rgba(255,255,255,0.72); border:1px solid rgba(0,0,0,0.10); border-radius: 12px; }");
@@ -7155,6 +7487,8 @@ QPushButton:hover{ background: %2; }
         cbDanger->setCurrentIndex(0);
         dCollect->setDate(QDate::currentDate());
         dExpire->setDate(QDate::currentDate().addDays(30));
+        loadProjetCombo();
+        cbProjet->setCurrentIndex(0);
         setWindowTitle("Ajouter un échantillon");
         stack->setCurrentIndex(BIO_FORM);
     });
@@ -7199,6 +7533,14 @@ QPushButton:hover{ background: %2; }
         cbDanger->setCurrentText(s.niveauDanger);
         if (s.dateCollecte.isValid())   dCollect->setDate(s.dateCollecte);
         if (s.dateExpiration.isValid()) dExpire->setDate(s.dateExpiration);
+        // Select project in combo
+        loadProjetCombo();
+        for (int i = 0; i < cbProjet->count(); ++i) {
+            if (cbProjet->itemData(i).toInt() == s.idProjet) {
+                cbProjet->setCurrentIndex(i);
+                break;
+            }
+        }
         setWindowTitle("Modifier un échantillon");
         stack->setCurrentIndex(BIO_FORM);
     });
@@ -7234,16 +7576,70 @@ QPushButton:hover{ background: %2; }
 
     // ── ENREGISTRER : INSERT ou UPDATE selon le mode ──
     QObject::connect(saveBtn, &QPushButton::clicked, this, [=]{
+        // ── Reset all error labels ──
+        for (auto* e : {errRef, errCollect, errExpire, errQty, errTemp, errDanger,
+                        errType, errOrg, errEmplac, errProjet})
+            e->hide();
+
+        bool valid = true;
+        auto fail = [&](QLabel* lbl, const QString& msg){
+            lbl->setText("⚠  " + msg); lbl->show(); valid = false;
+        };
+
         QString ref = leRef->text().trimmed();
-        if (ref.isEmpty()) {
-            showToast(this, "Veuillez saisir la référence de l'échantillon.", false);
-            return;
+        // Référence obligatoire
+        if (ref.isEmpty())
+            fail(errRef, "La référence est obligatoire.");
+        // Référence unique (ajout seulement)
+        if (valid && !*bioEditMode) {
+            QSqlQuery dup;
+            dup.prepare("SELECT COUNT(1) FROM \"BioSample\" WHERE \"Reference_de_léchantillon\" = ?");
+            dup.addBindValue(ref);
+            if (dup.exec() && dup.next() && dup.value(0).toInt() > 0)
+                fail(errRef, "Cette référence existe déjà.");
         }
-        if (cbType2->text().trimmed().isEmpty()) {
-            showToast(this, "Veuillez saisir le type d'échantillon.", false);
-            return;
+
+        // Type obligatoire
+        if (cbType2->text().trimmed().isEmpty())
+            fail(errType, "Le type est obligatoire (ex: ADN, ARN, Protéine…).");
+
+        // Organisme obligatoire
+        if (cbOrg2->text().trimmed().isEmpty())
+            fail(errOrg, "L'organisme source est obligatoire.");
+
+        // Congélateur + Étagère obligatoires
+        if (leCongelateur->text().trimmed().isEmpty() || leEtagere->text().trimmed().isEmpty()) {
+            emplacPopup->setVisible(true);
+            fail(errEmplac, "Renseignez le congélateur et l'étagère.");
         }
-        // Build BioSample from form
+
+        // Quantité > 0
+        if (qty->value() <= 0)
+            fail(errQty, "La quantité doit être supérieure à 0.");
+
+        // Température obligatoire
+        if (cbTemp2->text().trimmed().isEmpty())
+            fail(errTemp, "La température de stockage est obligatoire (ex: -80).");
+
+        // Niveau de danger obligatoire
+        if (cbDanger->currentIndex() == 0)
+            fail(errDanger, "Choisissez un niveau de danger (BSL-1, BSL-2 ou BSL-3).");
+
+        // Date de collecte ≥ aujourd'hui (uniquement en mode ajout)
+        if (!*bioEditMode && dCollect->date() < QDate::currentDate())
+            fail(errCollect, "La date de collecte ne peut pas être antérieure à aujourd'hui.");
+
+        // Date d'expiration > date de collecte
+        if (dExpire->date() <= dCollect->date())
+            fail(errExpire, "La date d'expiration doit être postérieure à la date de collecte.");
+
+        // Projet obligatoire
+        if (cbProjet->currentData().toInt() <= 0)
+            fail(errProjet, "Veuillez sélectionner un projet.");
+
+        if (!valid) return;
+
+        // ── Build BioSample from form ──
         BioSample s;
         s.reference      = ref;
         s.type           = cbType2->text().trimmed();
@@ -7253,30 +7649,19 @@ QPushButton:hover{ background: %2; }
                                 leEtagere->text().trimmed());
         s.quantite       = qty->value();
         s.temperature    = cbTemp2->text().trimmed();
-        s.niveauDanger   = (cbDanger->currentText() == "Niveau de danger")
-                           ? "" : cbDanger->currentText();
+        s.niveauDanger   = cbDanger->currentText();
         s.dateCollecte   = dCollect->date();
         s.dateExpiration = dExpire->date();
-
-        s.idProjet = 1; // handled by add() auto-seed
+        s.idProjet       = cbProjet->currentData().toInt();
 
         bool ok = false;
         if (*bioEditMode) {
-            // ── UPDATE ──
             ok = crud->update(s);
             if (ok)
                 showToast(this, QString("Échantillon « %1 » modifié avec succès.").arg(ref), true);
             else
                 showToast(this, QString("Échec de la mise à jour : %1").arg(crud->lastError()), false);
         } else {
-            // ── INSERT — check duplicate first ──
-            QSqlQuery dup;
-            dup.prepare("SELECT COUNT(1) FROM ECHANTILLONS WHERE REFERENCE = ?");
-            dup.addBindValue(ref);
-            if (dup.exec() && dup.next() && dup.value(0).toInt() > 0) {
-                showToast(this, "Un échantillon avec cette référence existe déjà.", false);
-                return;
-            }
             ok = crud->add(s);
             if (ok)
                 showToast(this, QString("Échantillon « %1 » ajouté avec succès.").arg(ref), true);
@@ -7300,15 +7685,20 @@ QPushButton:hover{ background: %2; }
     // ── Localisation & Stockage ──
     QObject::connect(btnMore,  &QPushButton::clicked, this, [=]{
         setWindowTitle("Localisation & Stockage");
+        buildTree3();
+        if (tree3->topLevelItemCount() > 0) {
+            auto* first = tree3->topLevelItem(0);
+            tree3->setCurrentItem(first);
+            QString cong = first->data(0, Qt::UserRole).toString();
+            if (!cong.isEmpty()) {
+                loadSamples3(cong, QString());
+            }
+        }
         stack->setCurrentIndex(BIO_LOC);
     });
     QObject::connect(back3, &QPushButton::clicked, this, [=]{
         setWindowTitle("Gestion des Échantillons");
         stack->setCurrentIndex(BIO_LIST);
-    });
-    QObject::connect(details3, &QPushButton::clicked, this, [=]{
-        setWindowTitle("Localisation & Stockage");
-        stack->setCurrentIndex(BIO_RACK);
     });
     QObject::connect(back4, &QPushButton::clicked, this, [=]{
         setWindowTitle("Localisation & Stockage");
@@ -7317,23 +7707,47 @@ QPushButton:hover{ background: %2; }
 
     // ── STATISTIQUES — mise à jour depuis la BDD avant affichage ──
     auto updateBioStats = [=]{
-        // Donut chart : répartition par type
+        // Palette de couleurs pour les types d'échantillons
+        static const QList<QColor> palette = {
+            QColor("#9FBEB9"), QColor("#2E6F63"), QColor("#B5672C"),
+            QColor("#6366f1"), QColor("#f43f5e"), QColor("#f59e0b"),
+            QColor("#06b6d4"), QColor("#84cc16"), QColor("#a855f7")
+        };
+
+        // Donut chart : répartition par type (depuis BDD)
         auto typeMap = crud->countByType();
         QList<DonutChart::Slice> slices;
-        if (typeMap.contains("DNA"))
-            slices.append({(double)typeMap["DNA"],      QColor("#9FBEB9"), "DNA"});
-        if (typeMap.contains("RNA"))
-            slices.append({(double)typeMap["RNA"],      W_GREEN,           "RNA"});
-        if (typeMap.contains("Protéine"))
-            slices.append({(double)typeMap["Protéine"], W_ORANGE,          "Protéine"});
-        // Fallback si base vide
-        if (slices.isEmpty())
-            slices = {{95, QColor("#9FBEB9"), "DNA"},
-                      {55, W_GREEN,           "RNA"},
-                      {30, W_ORANGE,          "Protéine"}};
+        int ci = 0;
+        for (auto it = typeMap.cbegin(); it != typeMap.cend(); ++it, ++ci) {
+            QColor col = palette[ci % palette.size()];
+            slices.append({(double)it.value(), col, it.key()});
+        }
         pie->setData(slices);
 
-        // Bar chart : échantillons par mois
+        // Légende dynamique : vider (garder titre index 0), puis reconstruire
+        while (lgL->count() > 1) {
+            QLayoutItem* item = lgL->takeAt(1);
+            if (item->widget()) delete item->widget();
+            delete item;
+        }
+        for (const auto& sl : slices) {
+            QWidget* row = new QWidget;
+            QHBoxLayout* h = new QHBoxLayout(row);
+            h->setContentsMargins(0,0,0,0);
+            h->setSpacing(10);
+            QFrame* dot = new QFrame;
+            dot->setFixedSize(12,12);
+            dot->setStyleSheet(QString("background:%1; border-radius:6px;").arg(sl.color.name()));
+            QLabel* lab = new QLabel(sl.label);
+            lab->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+            h->addWidget(dot);
+            h->addWidget(lab);
+            h->addStretch(1);
+            lgL->addWidget(row);
+        }
+        lgL->addStretch(1);
+
+        // Bar chart : échantillons par mois (depuis BDD)
         auto monthVec = crud->countByMonth();
         QList<BarChart::Bar> barList;
         for (auto& p : monthVec)
@@ -7469,15 +7883,10 @@ QPushButton:hover{ background: %2; }
     });
 
     // Exports (démo)
-    QObject::connect(exportReport3, &QPushButton::clicked, this, [=](){
-        QMessageBox::information(this, "Export", "Export rapport (à connecter à PDF/Excel).");
-    });
     QObject::connect(export4, &QPushButton::clicked, this, [=](){
         QMessageBox::information(this, "Export", "Export rapport (à connecter à PDF/Excel).");
     });
-    QObject::connect(exportStats, &QPushButton::clicked, this, [=](){
-        QMessageBox::information(this, "Export", "Export statistiques BioSimple (à connecter à PDF/Excel).");
-    });
+
     QObject::connect(exportP3, &QPushButton::clicked, this, [=](){
         QMessageBox::information(this, "Export", "Export statistiques Projet (à connecter à PDF/Excel).");
     });
@@ -7527,6 +7936,7 @@ QPushButton:hover{ background: %2; }
     QObject::connect(expSave, &QPushButton::clicked, this, [=](){
         if (eName->text().trimmed().isEmpty()) { showToast(this, "Saisir le nom de l'expérience.", false); return; }
         if (eStatus->currentIndex() == 0)      { showToast(this, "Sélectionner un statut.", false); return; }
+        if (eProjet->currentData().isNull())   { showToast(this, "Sélectionner un projet.", false); return; }
         ExperienceRecord rec;
         rec.id        = *expEditId;
         rec.titre     = eName->text().trimmed();
@@ -7578,6 +7988,7 @@ QPushButton:hover{ background: %2; }
         maintDate->setDate(QDate::currentDate());
         calDate->setDate(QDate::currentDate());
         labRoom->setCurrentText("");
+        if (eqExpCombo->count() > 0) eqExpCombo->setCurrentIndex(0);
         const QString typeTxt = fcb1->currentText().trimmed();
         const QString fabTxt  = fcb2->currentText().trimmed();
         const QString locTxt  = labRoom->currentText().trimmed();
@@ -7623,6 +8034,10 @@ QPushButton:hover{ background: %2; }
         if (rec.dateProchaineMaintenance.isValid()) maintDate->setDate(rec.dateProchaineMaintenance);
         if (rec.dateLimiteCalibration.isValid()) calDate->setDate(rec.dateLimiteCalibration);
         if (!rec.localisation.trimmed().isEmpty()) labRoom->setCurrentText(rec.localisation);
+        if (!rec.idExp.isNull()) {
+            int idx = eqExpCombo->findData(rec.idExp.toInt());
+            if (idx >= 0) eqExpCombo->setCurrentIndex(idx);
+        }
         eqTypeSummary->setText("  " + (rec.nomEquipement.trimmed().isEmpty() ? QString("—") : rec.nomEquipement.trimmed()));
         eqFabSummary->setText("  " + (rec.fabricant.trimmed().isEmpty() ? QString("—") : rec.fabricant.trimmed()));
         eqSalleSummary->setText("  Salle : " + (rec.localisation.trimmed().isEmpty() ? QString("—") : rec.localisation.trimmed()));
@@ -7658,7 +8073,7 @@ QPushButton:hover{ background: %2; }
         rec.statut = fcb3->currentText();
         rec.localisation = labRoom->currentText().trimmed();
         rec.dateLimiteCalibration = calDate->date();
-        rec.idExp = QVariant();
+        rec.idExp = eqExpCombo->currentData().isValid() ? QVariant(eqExpCombo->currentData().toInt()) : QVariant(QMetaType::fromType<int>());
 
         QString err;
         const bool ok = *eqEditMode ? eqCrud->updateEquipement(rec, &err)
@@ -7717,6 +8132,10 @@ QPushButton:hover{ background: %2; }
                 if (rec.dateProchaineMaintenance.isValid()) maintDate->setDate(rec.dateProchaineMaintenance);
                 if (rec.dateLimiteCalibration.isValid()) calDate->setDate(rec.dateLimiteCalibration);
                 if (!rec.localisation.trimmed().isEmpty()) labRoom->setCurrentText(rec.localisation);
+                if (!rec.idExp.isNull()) {
+                    int idx = eqExpCombo->findData(rec.idExp.toInt());
+                    if (idx >= 0) eqExpCombo->setCurrentIndex(idx);
+                }
                 eqTypeSummary->setText("  " + (rec.nomEquipement.trimmed().isEmpty() ? QString("—") : rec.nomEquipement.trimmed()));
                 eqFabSummary->setText("  " + (rec.fabricant.trimmed().isEmpty() ? QString("—") : rec.fabricant.trimmed()));
                 eqSalleSummary->setText("  Salle : " + (rec.localisation.trimmed().isEmpty() ? QString("—") : rec.localisation.trimmed()));
@@ -7963,5 +8382,13 @@ QPushButton:hover{ background: %2; }
 
     setWindowTitle("SmartVision - Connexion");
     stack->setCurrentIndex(LOGIN);
+
+    // ── Bouton chatbot flottant (visible sur toutes les pages) ──────
+    FloatingChatBtn* floatChat = new FloatingChatBtn(root);
+    floatChat->raise();
+    // Re-raise après chaque changement de page pour rester au-dessus
+    QObject::connect(stack, &QStackedWidget::currentChanged, floatChat, [=]() {
+        floatChat->raise();
+    });
 
 }
