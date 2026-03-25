@@ -35,13 +35,83 @@ QT_WARNING_DISABLE_GCC("-Wuseless-cast")
 namespace {
 
 #ifdef QT_MOC_HAS_STRINGDATA
+struct qt_meta_stringdata_CLASSAiBubbleENDCLASS_t {};
+constexpr auto qt_meta_stringdata_CLASSAiBubbleENDCLASS = QtMocHelpers::stringData(
+    "AiBubble"
+);
+#else  // !QT_MOC_HAS_STRINGDATA
+#error "qtmochelpers.h not found or too old."
+#endif // !QT_MOC_HAS_STRINGDATA
+} // unnamed namespace
+
+Q_CONSTINIT static const uint qt_meta_data_CLASSAiBubbleENDCLASS[] = {
+
+ // content:
+      12,       // revision
+       0,       // classname
+       0,    0, // classinfo
+       0,    0, // methods
+       0,    0, // properties
+       0,    0, // enums/sets
+       0,    0, // constructors
+       0,       // flags
+       0,       // signalCount
+
+       0        // eod
+};
+
+Q_CONSTINIT const QMetaObject AiBubble::staticMetaObject = { {
+    QMetaObject::SuperData::link<QFrame::staticMetaObject>(),
+    qt_meta_stringdata_CLASSAiBubbleENDCLASS.offsetsAndSizes,
+    qt_meta_data_CLASSAiBubbleENDCLASS,
+    qt_static_metacall,
+    nullptr,
+    qt_incomplete_metaTypeArray<qt_meta_stringdata_CLASSAiBubbleENDCLASS_t,
+        // Q_OBJECT / Q_GADGET
+        QtPrivate::TypeAndForceComplete<AiBubble, std::true_type>
+    >,
+    nullptr
+} };
+
+void AiBubble::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, void **_a)
+{
+    (void)_o;
+    (void)_id;
+    (void)_c;
+    (void)_a;
+}
+
+const QMetaObject *AiBubble::metaObject() const
+{
+    return QObject::d_ptr->metaObject ? QObject::d_ptr->dynamicMetaObject() : &staticMetaObject;
+}
+
+void *AiBubble::qt_metacast(const char *_clname)
+{
+    if (!_clname) return nullptr;
+    if (!strcmp(_clname, qt_meta_stringdata_CLASSAiBubbleENDCLASS.stringdata0))
+        return static_cast<void*>(this);
+    return QFrame::qt_metacast(_clname);
+}
+
+int AiBubble::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
+{
+    _id = QFrame::qt_metacall(_c, _id, _a);
+    return _id;
+}
+namespace {
+
+#ifdef QT_MOC_HAS_STRINGDATA
 struct qt_meta_stringdata_CLASSFreezerWidgetENDCLASS_t {};
 constexpr auto qt_meta_stringdata_CLASSFreezerWidgetENDCLASS = QtMocHelpers::stringData(
     "FreezerWidget",
     "slotClicked",
     "",
     "shelf",
-    "slot"
+    "slot",
+    "openDoor",
+    "closeDoor",
+    "doorOpen"
 );
 #else  // !QT_MOC_HAS_STRINGDATA
 #error "qtmochelpers.h not found or too old."
@@ -54,18 +124,29 @@ Q_CONSTINIT static const uint qt_meta_data_CLASSFreezerWidgetENDCLASS[] = {
       12,       // revision
        0,       // classname
        0,    0, // classinfo
-       1,   14, // methods
-       0,    0, // properties
+       3,   14, // methods
+       1,   39, // properties
        0,    0, // enums/sets
        0,    0, // constructors
        0,       // flags
        1,       // signalCount
 
  // signals: name, argc, parameters, tag, flags, initial metatype offsets
-       1,    2,   20,    2, 0x06,    1 /* Public */,
+       1,    2,   32,    2, 0x06,    2 /* Public */,
+
+ // slots: name, argc, parameters, tag, flags, initial metatype offsets
+       5,    0,   37,    2, 0x0a,    5 /* Public */,
+       6,    0,   38,    2, 0x0a,    6 /* Public */,
 
  // signals: parameters
     QMetaType::Void, QMetaType::Int, QMetaType::Int,    3,    4,
+
+ // slots: parameters
+    QMetaType::Void,
+    QMetaType::Void,
+
+ // properties: name, type, flags
+       7, QMetaType::Float, 0x00015103, uint(-1), 0,
 
        0        // eod
 };
@@ -77,12 +158,18 @@ Q_CONSTINIT const QMetaObject FreezerWidget::staticMetaObject = { {
     qt_static_metacall,
     nullptr,
     qt_incomplete_metaTypeArray<qt_meta_stringdata_CLASSFreezerWidgetENDCLASS_t,
+        // property 'doorOpen'
+        QtPrivate::TypeAndForceComplete<float, std::true_type>,
         // Q_OBJECT / Q_GADGET
         QtPrivate::TypeAndForceComplete<FreezerWidget, std::true_type>,
         // method 'slotClicked'
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
         QtPrivate::TypeAndForceComplete<int, std::false_type>,
-        QtPrivate::TypeAndForceComplete<int, std::false_type>
+        QtPrivate::TypeAndForceComplete<int, std::false_type>,
+        // method 'openDoor'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        // method 'closeDoor'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>
     >,
     nullptr
 } };
@@ -94,6 +181,8 @@ void FreezerWidget::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _i
         (void)_t;
         switch (_id) {
         case 0: _t->slotClicked((*reinterpret_cast< std::add_pointer_t<int>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<int>>(_a[2]))); break;
+        case 1: _t->openDoor(); break;
+        case 2: _t->closeDoor(); break;
         default: ;
         }
     } else if (_c == QMetaObject::IndexOfMethod) {
@@ -105,6 +194,24 @@ void FreezerWidget::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _i
                 return;
             }
         }
+    } else if (_c == QMetaObject::ReadProperty) {
+        auto *_t = static_cast<FreezerWidget *>(_o);
+        (void)_t;
+        void *_v = _a[0];
+        switch (_id) {
+        case 0: *reinterpret_cast< float*>(_v) = _t->doorOpen(); break;
+        default: break;
+        }
+    } else if (_c == QMetaObject::WriteProperty) {
+        auto *_t = static_cast<FreezerWidget *>(_o);
+        (void)_t;
+        void *_v = _a[0];
+        switch (_id) {
+        case 0: _t->setDoorOpen(*reinterpret_cast< float*>(_v)); break;
+        default: break;
+        }
+    } else if (_c == QMetaObject::ResetProperty) {
+    } else if (_c == QMetaObject::BindableProperty) {
     }
 }
 
@@ -127,12 +234,17 @@ int FreezerWidget::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 1)
+        if (_id < 3)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 1;
+        _id -= 3;
     } else if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 1)
+        if (_id < 3)
             *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType();
+        _id -= 3;
+    }else if (_c == QMetaObject::ReadProperty || _c == QMetaObject::WriteProperty
+            || _c == QMetaObject::ResetProperty || _c == QMetaObject::BindableProperty
+            || _c == QMetaObject::RegisterPropertyMetaType) {
+        qt_static_metacall(this, _c, _id, _a);
         _id -= 1;
     }
     return _id;

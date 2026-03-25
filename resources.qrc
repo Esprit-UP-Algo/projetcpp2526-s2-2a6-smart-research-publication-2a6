@@ -4,4 +4,9 @@
         <file>smartvision.png</file>
         <file>chatia.png</file>
     </qresource>
+    <qresource prefix="/new/prefix1">
+        <file>backchatbot.mp4</file>
+        <file>iconechatbot.mp4</file>
+        <file>msgbio.mp4</file>
+    </qresource>
 </RCC>

@@ -1,3 +1,4 @@
+debug/captchawidget.o
 debug/gestproj.o
 debug/integration.o
 debug/signupserver.o
@@ -9,9 +10,14 @@ debug/crudebiosimple.o
 debug/crudexperience.o
 debug/chatbotbiosimple.o
 debug/cong.o
+debug/basicbio.o
+debug/pdfbiosample.o
+debug/floatingchatbtn.o
 debug/main.o
 debug/qrc_resources.o
+debug/moc_captchawidget.o
 debug/moc_integration.o
 debug/moc_signupserver.o
 debug/moc_chatbotbiosimple.o
 debug/moc_cong.o
+debug/moc_floatingchatbtn.o

@@ -1,8 +1,7 @@
 #include "chatbotbiosimple.h"
 
 #include <QPainter>
-#include <QLinearGradient>
-#include <QRadialGradient>
+#include <QPainterPath>
 #include <QMouseEvent>
 #include <QScrollBar>
 #include <QGraphicsOpacityEffect>
@@ -13,13 +12,9 @@
 #include <QJsonArray>
 #include <QSslConfiguration>
 #include <QRegularExpression>
-#include <cmath>
+#include <QUrl>
 
-// ── API config ─────────────────────────────────────────────────
-static const QString API_KEY = "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";
-
-static const QString API_URL  = "https://api.groq.com/openai/v1/chat/completions";
-static const QString MODEL    = "llama-3.1-8b-instant";
+#include "apiconfig.h"
 
 static const QString SYSTEM_PROMPT =
     "Tu es un assistant intelligent intégré dans l'application SmartVision, "
@@ -264,11 +259,14 @@ ChatBotBioSimple::ChatBotBioSimple(QWidget* parent)
     m_scroll = new QScrollArea;
     m_scroll->setWidgetResizable(true);
     m_scroll->setStyleSheet(
-        "QScrollArea{ background:rgba(245,243,255,0.88); border:none; }"
+        "QScrollArea{ background:transparent; border:none; }"
         "QScrollBar:vertical{ width:4px; background:transparent; }"
-        "QScrollBar::handle:vertical{ background:rgba(109,40,217,0.35); border-radius:2px; }"
+        "QScrollBar::handle:vertical{ background:rgba(255,255,255,0.35); border-radius:2px; }"
         "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical{ height:0; }"
     );
+    m_scroll->viewport()->setStyleSheet("background:transparent;");
+    m_scroll->setAttribute(Qt::WA_TranslucentBackground);
+    m_scroll->viewport()->setAttribute(Qt::WA_TranslucentBackground);
     m_msgContainer = new QWidget;
     m_msgContainer->setStyleSheet("background:transparent;");
     m_msgLayout = new QVBoxLayout(m_msgContainer);
@@ -332,10 +330,23 @@ ChatBotBioSimple::ChatBotBioSimple(QWidget* parent)
     connect(m_clearBtn, &QPushButton::clicked,    this, &ChatBotBioSimple::clearConversation);
     connect(m_input,    &QLineEdit::returnPressed, this, &ChatBotBioSimple::sendMessage);
 
-    // ── Background animation ──
-    m_bgTimer = new QTimer(this);
-    connect(m_bgTimer, &QTimer::timeout, this, &ChatBotBioSimple::animateBg);
-    m_bgTimer->start(30);
+    // ── Vidéo de fond (sans son) ──────────────────────────────────
+    m_bgPlayer = new QMediaPlayer(this);
+    m_bgSink   = new QVideoSink(this);
+    m_bgPlayer->setVideoSink(m_bgSink);
+    m_bgPlayer->setSource(QUrl("qrc:/new/prefix1/backchatbot.mp4"));
+    // Pas de QAudioOutput → pas de son
+    connect(m_bgSink, &QVideoSink::videoFrameChanged,
+            this, [=](const QVideoFrame& frame) {
+        m_bgFrame = frame;
+        update();
+    });
+    connect(m_bgPlayer, &QMediaPlayer::mediaStatusChanged,
+            this, [=](QMediaPlayer::MediaStatus status) {
+        if (status == QMediaPlayer::EndOfMedia)
+            m_bgPlayer->play();   // lecture en boucle
+    });
+    m_bgPlayer->play();
 
     // ── Welcome ──
     addMessage("Bonjour ! 👋 Je suis votre assistant BioSimple.\n"
@@ -344,68 +355,35 @@ ChatBotBioSimple::ChatBotBioSimple(QWidget* parent)
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  Background animation
+//  paintEvent — fond vidéo + zones semi-transparentes
 // ─────────────────────────────────────────────────────────────────
-void ChatBotBioSimple::animateBg()
-{
-    m_bgAngle += 0.8f;
-    if (m_bgAngle >= 360.0f) m_bgAngle -= 360.0f;
-    update();
-}
-
 void ChatBotBioSimple::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    float a = m_bgAngle * 3.14159f / 180.0f;
+    // Clip arrondi
+    QPainterPath clip;
+    clip.addRoundedRect(rect(), 20, 20);
+    p.setClipPath(clip);
 
-    int r1 = 30  + int(25 * std::sin(a));
-    int g1 = 20  + int(10 * std::cos(a * 0.7f));
-    int b1 = 160 + int(60 * std::sin(a * 0.5f));
-    int r2 = 90  + int(50 * std::cos(a * 0.8f));
-    int g2 = 0   + int(20 * std::sin(a * 1.2f));
-    int b2 = 210 + int(45 * std::cos(a * 0.6f));
-    int r3 = 140 + int(60 * std::sin(a * 0.4f));
-    int g3 = 30  + int(20 * std::cos(a * 0.9f));
-    int b3 = 180 + int(50 * std::sin(a * 1.1f));
+    // Fond vidéo
+    if (m_bgFrame.isValid()) {
+        QImage img = m_bgFrame.toImage();
+        if (!img.isNull())
+            p.drawImage(rect(), img);
+    } else {
+        // Fallback tant que la vidéo n'est pas encore chargée
+        p.fillPath(clip, QColor(30, 20, 120));
+    }
 
-    QLinearGradient grad(0, 0, width(), height());
-    grad.setColorAt(0.0, QColor(r1, g1, b1));
-    grad.setColorAt(0.5, QColor(r2, g2, b2));
-    grad.setColorAt(1.0, QColor(r3, g3, b3));
-
-    p.setPen(Qt::NoPen);
-    p.setBrush(grad);
-    p.drawRoundedRect(rect(), 20, 20);
-
-    // Floating blobs
-    auto blob = [&](float cx, float cy, float radius, QColor c) {
-        QRadialGradient rg(cx, cy, radius);
-        rg.setColorAt(0, c);
-        rg.setColorAt(1, QColor(c.red(), c.green(), c.blue(), 0));
-        p.fillRect(rect(), rg);
-    };
-
-    blob(width() * 0.15f + 30 * std::cos(a * 0.3f),
-         height() * 0.12f + 20 * std::sin(a * 0.5f),
-         80, QColor(255, 255, 255, 30));
-
-    blob(width() * 0.80f + 40 * std::sin(a * 0.4f),
-         height() * 0.08f + 25 * std::cos(a * 0.6f),
-         70, QColor(200, 100, 255, 35));
-
-    blob(width() * 0.50f + 35 * std::cos(a * 0.7f),
-         height() * 0.04f + 15 * std::sin(a * 0.9f),
-         55, QColor(100, 200, 255, 25));
-
-    // Messages area
+    // Zone messages — voile très léger pour lisibilité des bulles
     p.fillRect(QRect(0, 66, width(), height() - 66 - 60),
-               QColor(245, 243, 255, 220));
+               QColor(0, 0, 0, 55));
 
-    // Input bar
+    // Barre de saisie
     p.fillRect(QRect(0, height() - 60, width(), 60),
-               QColor(255, 255, 255, 235));
+               QColor(255, 255, 255, 210));
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -492,17 +470,17 @@ void ChatBotBioSimple::callOpenAI(const QString& /*userMessage*/)
     }
 
     QJsonObject body;
-    body["model"]       = MODEL;
+    body["model"]       = GROQ_API_MODEL;
     body["messages"]    = messages;
     body["temperature"] = 0.7;
     body["max_tokens"]  = 400;
 
     QJsonDocument doc(body);
 
-    QUrl endpoint(API_URL);
+    QUrl endpoint(GROQ_API_URL);
     QNetworkRequest req(endpoint);
     req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-    req.setRawHeader("Authorization", ("Bearer " + API_KEY).toUtf8());
+    req.setRawHeader("Authorization", ("Bearer " + GROQ_API_KEY).toUtf8());
 
     // Ignore SSL peer verification (works without OpenSSL DLLs)
     QSslConfiguration ssl = QSslConfiguration::defaultConfiguration();

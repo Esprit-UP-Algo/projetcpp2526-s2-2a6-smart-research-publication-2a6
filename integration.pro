@@ -1,4 +1,4 @@
-QT       += core gui sql network
+QT       += core gui sql network printsupport multimedia
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -21,6 +21,9 @@ SOURCES += \
     crudexperience.cpp \
     chatbotbiosimple.cpp \
     cong.cpp \
+    basicbio.cpp \
+    pdfbiosample.cpp \
+    floatingchatbtn.cpp \
     main.cpp
 
 HEADERS += \
@@ -35,7 +38,10 @@ HEADERS += \
     crudebiosimple.h \
     crudexperience.h \
     chatbotbiosimple.h \
-    cong.h
+    cong.h \
+    basicbio.h \
+    pdfbiosample.h \
+    floatingchatbtn.h
 
 
 # Default rules for deployment.
