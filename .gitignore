@@ -4,3 +4,4 @@ build/
 moc_*
 ui_*.h
 qrc_*.cpp
+*.mp4
