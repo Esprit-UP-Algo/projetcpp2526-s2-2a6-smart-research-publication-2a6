@@ -310,9 +310,14 @@ void CrudeBioSimple::loadAll(QTableWidget* table)
         // Format temperature as integer °C (Oracle NUMBER → avoid scientific notation)
         QString tempStr;
         if (!q.value(4).isNull()) {
-            bool ok;
+            bool ok = false;
             double tv = q.value(4).toDouble(&ok);
-            tempStr = ok ? QString::number(qRound(tv)) + "°C" : q.value(4).toString() + "°C";
+            if (!ok) {
+                // Oracle ODBC may return locale string with comma e.g. "-3,0E+001"
+                QString s = q.value(4).toString().replace(',', '.');
+                tv = s.toDouble(&ok);
+            }
+            if (ok) tempStr = QString::number(qRound(tv)) + "°C";
         }
         QDate   dc      = q.value(6).toDate();
         QDate   de      = q.value(7).toDate();

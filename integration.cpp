@@ -59,6 +59,12 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QSslConfiguration>
+#include <QSslSocket>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include "apiconfig.h"
 #include <QTimer>
 #include <QPropertyAnimation>
 #include <QGraphicsOpacityEffect>
@@ -2774,9 +2780,15 @@ MainWindow::MainWindow(QWidget *parent)
                                   this);
         successDlg.exec();
 
-        // Go to a stable landing page after login
-        setWindowTitle("Gestion des Échantillons");
-        stack->setCurrentIndex(BIO_LIST);
+        // Go to Employee module after login
+        setWindowTitle("Gestion des Employés");
+        if (globalBar->bBioSimple)   globalBar->bBioSimple->setChecked(false);
+        if (globalBar->bPublication) globalBar->bPublication->setChecked(false);
+        if (globalBar->bEquipement)  globalBar->bEquipement->setChecked(false);
+        if (globalBar->bExp)         globalBar->bExp->setChecked(false);
+        if (globalBar->bProjet)      globalBar->bProjet->setChecked(false);
+        if (globalBar->bEmployee)    globalBar->bEmployee->setChecked(true);
+        stack->setCurrentIndex(EMP_LIST);
     });
 
     // Handle logout button
@@ -3108,17 +3120,124 @@ MainWindow::MainWindow(QWidget *parent)
 
     right2L->addWidget(sectionTitle("Données"));
 
+    // ── Network manager for AI field correction ──
+    QNetworkAccessManager* bioAiNet = new QNetworkAccessManager(this);
+
+    // ── Helper: call Groq to correct a field value ──
+    auto callGroqCorrect = [=](const QString& fieldType,
+                                const QString& userInput,
+                                QLineEdit* targetField,
+                                QPushButton* btn)
+    {
+        if (userInput.trimmed().isEmpty()) return;
+        btn->setEnabled(false);
+        btn->setText("⏳");
+
+        QString system;
+        if (fieldType == "type") {
+            system = "Tu es un expert en biologie. L'utilisateur saisit un type d'échantillon biologique. "
+                     "Corrige et normalise le terme en UN SEUL MOT parmi exactement : "
+                     "ADN, ARN, Protéine, Cellule, Tissu, Organisme. "
+                     "Réponds UNIQUEMENT avec le terme corrigé, rien d'autre, aucune explication.";
+        } else {
+            system = "Tu es un expert en biologie. L'utilisateur saisit un nom d'organisme source. "
+                     "Corrige et retourne le nom scientifique correct de l'organisme. "
+                     "Réponds UNIQUEMENT avec le nom scientifique (ex: Homo sapiens, Mus musculus, "
+                     "Escherichia coli), rien d'autre, aucune explication.";
+        }
+
+        QJsonArray msgs = {
+            QJsonObject{{"role","system"},{"content",system}},
+            QJsonObject{{"role","user"},  {"content",userInput}}
+        };
+        QJsonObject body;
+        body["model"]       = GROQ_API_MODEL;
+        body["messages"]    = msgs;
+        body["max_tokens"]  = 20;
+        body["temperature"] = 0.1;
+
+        QUrl bioAiUrl(GROQ_API_URL);
+        QNetworkRequest req(bioAiUrl);
+        req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+        req.setRawHeader("Authorization", ("Bearer " + GROQ_API_KEY).toUtf8());
+        QSslConfiguration ssl = QSslConfiguration::defaultConfiguration();
+        ssl.setPeerVerifyMode(QSslSocket::VerifyNone);
+        req.setSslConfiguration(ssl);
+
+        QNetworkReply* rpl = bioAiNet->post(req, QJsonDocument(body).toJson());
+        connect(rpl, &QNetworkReply::sslErrors, rpl,
+                [rpl](const QList<QSslError>&){ rpl->ignoreSslErrors(); });
+        connect(rpl, &QNetworkReply::finished, this, [=](){
+            btn->setEnabled(true);
+            btn->setText("🤖");
+            QByteArray data = rpl->readAll();
+            rpl->deleteLater();
+            QJsonObject root = QJsonDocument::fromJson(data).object();
+            if (root.contains("error")) return;
+            QString corrected = root["choices"].toArray().first()
+                                    .toObject()["message"].toObject()["content"]
+                                    .toString().trimmed();
+            if (!corrected.isEmpty()) targetField->setText(corrected);
+        });
+    };
+
+    // ── Type field + AI button ──
     QLineEdit* cbType2 = new QLineEdit;
     cbType2->setPlaceholderText("Type (ex: DNA, RNA, Protéine...)");
-    cbType2->setFixedWidth(200);
-    right2L->addWidget(formRow(QStyle::SP_FileIcon, "Type", cbType2));
+    cbType2->setFixedWidth(160);
+
+    QPushButton* btnAiType = new QPushButton("🤖");
+    btnAiType->setFixedSize(30, 30);
+    btnAiType->setToolTip("Corriger avec IA (Groq)");
+    btnAiType->setCursor(Qt::PointingHandCursor);
+    btnAiType->setStyleSheet(
+        "QPushButton{ background:rgba(109,40,217,0.15); border-radius:8px; border:none; font-size:14px; }"
+        "QPushButton:hover{ background:rgba(109,40,217,0.30); }"
+        "QPushButton:disabled{ color:rgba(0,0,0,0.3); }"
+    );
+
+    QWidget* typeContainer = new QWidget;
+    QHBoxLayout* typeCL = new QHBoxLayout(typeContainer);
+    typeCL->setContentsMargins(0,0,0,0);
+    typeCL->setSpacing(4);
+    typeCL->addWidget(cbType2);
+    typeCL->addWidget(btnAiType);
+
+    right2L->addWidget(formRow(QStyle::SP_FileIcon, "Type", typeContainer));
     QLabel* errType = mkErrLbl(); right2L->addWidget(errType);
 
+    connect(btnAiType, &QPushButton::clicked, this, [=](){
+        callGroqCorrect("type", cbType2->text(), cbType2, btnAiType);
+    });
+
+    // ── Organisme field + AI button ──
     QLineEdit* cbOrg2 = new QLineEdit;
     cbOrg2->setPlaceholderText("Organisme");
-    cbOrg2->setFixedWidth(200);
-    right2L->addWidget(formRow(QStyle::SP_DirIcon, "Organisme", cbOrg2));
+    cbOrg2->setFixedWidth(160);
+
+    QPushButton* btnAiOrg = new QPushButton("🤖");
+    btnAiOrg->setFixedSize(30, 30);
+    btnAiOrg->setToolTip("Corriger avec IA (Groq)");
+    btnAiOrg->setCursor(Qt::PointingHandCursor);
+    btnAiOrg->setStyleSheet(
+        "QPushButton{ background:rgba(109,40,217,0.15); border-radius:8px; border:none; font-size:14px; }"
+        "QPushButton:hover{ background:rgba(109,40,217,0.30); }"
+        "QPushButton:disabled{ color:rgba(0,0,0,0.3); }"
+    );
+
+    QWidget* orgContainer = new QWidget;
+    QHBoxLayout* orgCL = new QHBoxLayout(orgContainer);
+    orgCL->setContentsMargins(0,0,0,0);
+    orgCL->setSpacing(4);
+    orgCL->addWidget(cbOrg2);
+    orgCL->addWidget(btnAiOrg);
+
+    right2L->addWidget(formRow(QStyle::SP_DirIcon, "Organisme", orgContainer));
     QLabel* errOrg = mkErrLbl(); right2L->addWidget(errOrg);
+
+    connect(btnAiOrg, &QPushButton::clicked, this, [=](){
+        callGroqCorrect("organisme", cbOrg2->text(), cbOrg2, btnAiOrg);
+    });
 
     // Emplacement : bouton + popup Congélateur/Étagère
     QPushButton* emplacBtn = new QPushButton("Emplacement de stockage");
@@ -3756,11 +3875,8 @@ MainWindow::MainWindow(QWidget *parent)
     QLabel* hint = new QLabel("Aperçu des indicateurs clés");
     hint->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
 
-    QPushButton* exportStats = actionBtn("Exporter", "rgba(10,95,88,0.45)", "rgba(255,255,255,0.92)", st->standardIcon(QStyle::SP_DialogSaveButton), true);
-
     actL->addWidget(hint);
     actL->addStretch(1);
-    actL->addWidget(exportStats);
     outer5L->addWidget(actBar);
 
     QFrame* dash = new QFrame;
@@ -3778,11 +3894,7 @@ MainWindow::MainWindow(QWidget *parent)
     pieTitle->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
 
     DonutChart* pie = new DonutChart;
-    pie->setData({
-        {95,  QColor("#9FBEB9"), "DNA"},
-        {55,  W_GREEN,           "RNA"},
-        {30,  W_ORANGE,          "Protéine"}
-    });
+    // Data will be loaded dynamically from DB in updateBioStats
 
     pcL->addWidget(pieTitle);
     pcL->addWidget(pie, 1);
@@ -3812,10 +3924,7 @@ MainWindow::MainWindow(QWidget *parent)
         return row;
     };
 
-    lgL->addWidget(legendRow(QColor("#9FBEB9"), "DNA"));
-    lgL->addWidget(legendRow(W_GREEN,          "RNA"));
-    lgL->addWidget(legendRow(W_ORANGE,         "Protéine"));
-    lgL->addStretch(1);
+    lgL->addStretch(1); // rows added dynamically in updateBioStats
 
     QFrame* barCard = softBox();
     QVBoxLayout* bcL = new QVBoxLayout(barCard);
@@ -7582,23 +7691,47 @@ QPushButton:hover{ background: %2; }
 
     // ── STATISTIQUES — mise à jour depuis la BDD avant affichage ──
     auto updateBioStats = [=]{
-        // Donut chart : répartition par type
+        // Palette de couleurs pour les types d'échantillons
+        static const QList<QColor> palette = {
+            QColor("#9FBEB9"), QColor("#2E6F63"), QColor("#B5672C"),
+            QColor("#6366f1"), QColor("#f43f5e"), QColor("#f59e0b"),
+            QColor("#06b6d4"), QColor("#84cc16"), QColor("#a855f7")
+        };
+
+        // Donut chart : répartition par type (depuis BDD)
         auto typeMap = crud->countByType();
         QList<DonutChart::Slice> slices;
-        if (typeMap.contains("DNA"))
-            slices.append({(double)typeMap["DNA"],      QColor("#9FBEB9"), "DNA"});
-        if (typeMap.contains("RNA"))
-            slices.append({(double)typeMap["RNA"],      W_GREEN,           "RNA"});
-        if (typeMap.contains("Protéine"))
-            slices.append({(double)typeMap["Protéine"], W_ORANGE,          "Protéine"});
-        // Fallback si base vide
-        if (slices.isEmpty())
-            slices = {{95, QColor("#9FBEB9"), "DNA"},
-                      {55, W_GREEN,           "RNA"},
-                      {30, W_ORANGE,          "Protéine"}};
+        int ci = 0;
+        for (auto it = typeMap.cbegin(); it != typeMap.cend(); ++it, ++ci) {
+            QColor col = palette[ci % palette.size()];
+            slices.append({(double)it.value(), col, it.key()});
+        }
         pie->setData(slices);
 
-        // Bar chart : échantillons par mois
+        // Légende dynamique : vider (garder titre index 0), puis reconstruire
+        while (lgL->count() > 1) {
+            QLayoutItem* item = lgL->takeAt(1);
+            if (item->widget()) delete item->widget();
+            delete item;
+        }
+        for (const auto& sl : slices) {
+            QWidget* row = new QWidget;
+            QHBoxLayout* h = new QHBoxLayout(row);
+            h->setContentsMargins(0,0,0,0);
+            h->setSpacing(10);
+            QFrame* dot = new QFrame;
+            dot->setFixedSize(12,12);
+            dot->setStyleSheet(QString("background:%1; border-radius:6px;").arg(sl.color.name()));
+            QLabel* lab = new QLabel(sl.label);
+            lab->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+            h->addWidget(dot);
+            h->addWidget(lab);
+            h->addStretch(1);
+            lgL->addWidget(row);
+        }
+        lgL->addStretch(1);
+
+        // Bar chart : échantillons par mois (depuis BDD)
         auto monthVec = crud->countByMonth();
         QList<BarChart::Bar> barList;
         for (auto& p : monthVec)
@@ -7737,9 +7870,7 @@ QPushButton:hover{ background: %2; }
     QObject::connect(export4, &QPushButton::clicked, this, [=](){
         QMessageBox::information(this, "Export", "Export rapport (à connecter à PDF/Excel).");
     });
-    QObject::connect(exportStats, &QPushButton::clicked, this, [=](){
-        QMessageBox::information(this, "Export", "Export statistiques BioSimple (à connecter à PDF/Excel).");
-    });
+
     QObject::connect(exportP3, &QPushButton::clicked, this, [=](){
         QMessageBox::information(this, "Export", "Export statistiques Projet (à connecter à PDF/Excel).");
     });
