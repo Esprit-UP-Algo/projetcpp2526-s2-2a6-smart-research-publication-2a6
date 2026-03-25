@@ -14,14 +14,14 @@ bool EmployesCrud::loadEmployes(QList<EmployeRecord>& out,
 
     QSqlQuery q;
     q.prepare(
-        "SELECT EMPLOYEE_ID, CIN, NOM, PRENOM, ROLE, SPECIALIZATION "
-        "FROM EMPLOYES "
-        "WHERE (:cin IS NULL OR :cin = '' OR LOWER(CIN) LIKE '%' || LOWER(:cin) || '%') "
-        "  AND (:nom IS NULL OR :nom = '' OR LOWER(NOM) LIKE '%' || LOWER(:nom) || '%') "
-        "  AND (:prenom IS NULL OR :prenom = '' OR LOWER(PRENOM) LIKE '%' || LOWER(:prenom) || '%') "
-        "  AND (:role IS NULL OR :role = '' OR LOWER(ROLE) LIKE '%' || LOWER(:role) || '%') "
-        "  AND (:spec IS NULL OR :spec = '' OR LOWER(SPECIALIZATION) LIKE '%' || LOWER(:spec) || '%') "
-        "ORDER BY NOM, PRENOM, EMPLOYEE_ID");
+        "SELECT \"employee_id\", \"CIN\", \"nom\", \"prenom\", \"ROLE\", \"specialization\" "
+        "FROM \"Employés\" "
+        "WHERE (:cin IS NULL OR :cin = '' OR LOWER(\"CIN\") LIKE '%' || LOWER(:cin) || '%') "
+        "  AND (:nom IS NULL OR :nom = '' OR LOWER(\"nom\") LIKE '%' || LOWER(:nom) || '%') "
+        "  AND (:prenom IS NULL OR :prenom = '' OR LOWER(\"prenom\") LIKE '%' || LOWER(:prenom) || '%') "
+        "  AND (:role IS NULL OR :role = '' OR LOWER(\"ROLE\") LIKE '%' || LOWER(:role) || '%') "
+        "  AND (:spec IS NULL OR :spec = '' OR LOWER(\"specialization\") LIKE '%' || LOWER(:spec) || '%') "
+        "ORDER BY \"nom\", \"prenom\", \"employee_id\"");
 
     q.bindValue(":cin", cin);
     q.bindValue(":nom", nom);
@@ -54,8 +54,8 @@ bool EmployesCrud::loadEmployes(QList<EmployeRecord>& out,
 bool EmployesCrud::fetchEmploye(int employeeId, EmployeRecord& out, QString* error)
 {
     QSqlQuery q;
-    q.prepare("SELECT CIN, NOM, PRENOM, ROLE, SPECIALIZATION "
-              "FROM EMPLOYES WHERE EMPLOYEE_ID = :id");
+    q.prepare("SELECT \"CIN\", \"nom\", \"prenom\", \"ROLE\", \"specialization\" "
+              "FROM \"Employés\" WHERE \"employee_id\" = :id");
     q.bindValue(":id", employeeId);
 
     if (!q.exec() || !q.next()) {
@@ -79,7 +79,7 @@ bool EmployesCrud::fetchEmploye(int employeeId, EmployeRecord& out, QString* err
 bool EmployesCrud::deleteEmploye(int employeeId, QString* error)
 {
     QSqlQuery q;
-    q.prepare("DELETE FROM EMPLOYES WHERE EMPLOYEE_ID = :id");
+    q.prepare("DELETE FROM \"Employés\" WHERE \"employee_id\" = :id");
     q.bindValue(":id", employeeId);
 
     if (!q.exec()) {
@@ -93,7 +93,7 @@ bool EmployesCrud::deleteEmploye(int employeeId, QString* error)
 int EmployesCrud::nextEmployeId(QString* error)
 {
     QSqlQuery q;
-    if (!q.exec("SELECT NVL(MAX(EMPLOYEE_ID),0)+1 FROM EMPLOYES") || !q.next()) {
+    if (!q.exec("SELECT NVL(MAX(\"employee_id\"),0)+1 FROM \"Employés\"") || !q.next()) {
         if (error) *error = q.lastError().text();
         return -1;
     }
@@ -123,8 +123,8 @@ bool EmployesCrud::insertEmploye(const EmployeRecord& in, QString* error)
     }
 
     QSqlQuery q;
-    q.prepare("INSERT INTO EMPLOYES "
-              "(EMPLOYEE_ID, CIN, NOM, PRENOM, ROLE, SPECIALIZATION) "
+    q.prepare("INSERT INTO \"Employés\" "
+              "(\"employee_id\", \"CIN\", \"nom\", \"prenom\", \"ROLE\", \"specialization\") "
               "VALUES (:id, :cin, :nom, :prenom, :role, :spec)");
 
     auto nullStr = QVariant(QMetaType::fromType<QString>());
@@ -164,9 +164,10 @@ bool EmployesCrud::updateEmploye(const EmployeRecord& in, QString* error)
     }
 
     QSqlQuery q;
-    q.prepare("UPDATE EMPLOYES "
-              "SET CIN = :cin, NOM = :nom, PRENOM = :prenom, ROLE = :role, SPECIALIZATION = :spec "
-              "WHERE EMPLOYEE_ID = :id");
+    q.prepare("UPDATE \"Employés\" "
+              "SET \"CIN\" = :cin, \"nom\" = :nom, \"prenom\" = :prenom, "
+              "    \"ROLE\" = :role, \"specialization\" = :spec "
+              "WHERE \"employee_id\" = :id");
 
     auto nullStr = QVariant(QMetaType::fromType<QString>());
 
