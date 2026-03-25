@@ -173,6 +173,7 @@ debug/qrc_resources.cpp: ../../resources.qrc \
 		../../background2.png \
 		../../chatia.png \
 		../../smartvision.png \
+		../../backgroundpr.mp4 \
 		../../backchatbot.mp4 \
 		../../iconechatbot.mp4 \
 		../../msgbio.mp4
@@ -2211,7 +2212,20 @@ debug/integration.o: ../../integration.cpp ../../integration.h \
 		C:/Qt/6.7.3/mingw_64/include/QtGui/QColor \
 		C:/Qt/6.7.3/mingw_64/include/QtGui/QDesktopServices \
 		C:/Qt/6.7.3/mingw_64/include/QtGui/qdesktopservices.h \
+		C:/Qt/6.7.3/mingw_64/include/QtNetwork/QSslSocket \
+		C:/Qt/6.7.3/mingw_64/include/QtCore/QJsonDocument \
+		C:/Qt/6.7.3/mingw_64/include/QtCore/qjsondocument.h \
+		C:/Qt/6.7.3/mingw_64/include/QtCore/qjsonvalue.h \
+		C:/Qt/6.7.3/mingw_64/include/QtCore/qcborvalue.h \
+		C:/Qt/6.7.3/mingw_64/include/QtCore/qcborcommon.h \
+		C:/Qt/6.7.3/mingw_64/include/QtCore/quuid.h \
+		C:/Qt/6.7.3/mingw_64/include/QtCore/QJsonObject \
+		C:/Qt/6.7.3/mingw_64/include/QtCore/qjsonobject.h \
+		C:/Qt/6.7.3/mingw_64/include/QtCore/QJsonArray \
+		C:/Qt/6.7.3/mingw_64/include/QtCore/qjsonarray.h \
+		../../apiconfig.h \
 		C:/Qt/6.7.3/mingw_64/include/QtWidgets/QGraphicsOpacityEffect \
+		C:/Qt/6.7.3/mingw_64/include/QtWidgets/QGraphicsBlurEffect \
 		C:/Qt/6.7.3/mingw_64/include/QtWidgets/QGraphicsColorizeEffect \
 		C:/Qt/6.7.3/mingw_64/include/QtCore/QEasingCurve \
 		C:/Qt/6.7.3/mingw_64/include/QtWidgets/QStackedLayout \
