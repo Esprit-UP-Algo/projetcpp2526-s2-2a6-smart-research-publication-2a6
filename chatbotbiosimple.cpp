@@ -1,8 +1,7 @@
 #include "chatbotbiosimple.h"
 
 #include <QPainter>
-#include <QLinearGradient>
-#include <QRadialGradient>
+#include <QPainterPath>
 #include <QMouseEvent>
 #include <QScrollBar>
 #include <QGraphicsOpacityEffect>
@@ -13,33 +12,65 @@
 #include <QJsonArray>
 #include <QSslConfiguration>
 #include <QRegularExpression>
-#include <cmath>
+#include <QUrl>
 
-// ── API config ─────────────────────────────────────────────────
-static const QString API_KEY = "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";
-
-static const QString API_URL  = "https://api.groq.com/openai/v1/chat/completions";
-static const QString MODEL    = "llama-3.1-8b-instant";
+#include "apiconfig.h"
 
 static const QString SYSTEM_PROMPT =
     "Tu es un assistant intelligent intégré dans l'application SmartVision, "
-    "module BioSimple — un système de gestion d'échantillons biologiques.\n\n"
-    "Tu connais parfaitement :\n"
-    "- La table BIOSAMPLE avec les colonnes : REFERENCE_ECHANTILLON (unique), "
-    "TYPE_ECHANTILLON (DNA/RNA/Protéine), ORGANISME_SOURCE, EMPLACEMENT_DE_STOCKAGE "
-    "(format Cong:xx/Etag:xx), TEMPERATURE_DE_STOCKAGE (°C), QUANTITE_RESTANTE (µg), "
-    "DATE_DE_COLLECTE, DATE_EXPIRATION, NIVEAU_DE_DANGEROSITE (BSL-1/BSL-2/BSL-3).\n"
-    "- Les niveaux BSL : BSL-1 risque minimal, BSL-2 risque modéré, BSL-3 risque élevé.\n"
-    "- Les températures : -80°C pour RNA/virus, -20°C pour DNA/protéines, "
-    "2-8°C pour anticorps, 20-25°C pour réactifs stables.\n"
-    "- Le statut d'expiration : OK (>30j), Bientôt expiré (<30j), Expiré (date dépassée), "
-    "Haut risque (BSL-3).\n"
-    "- Les opérations CRUD : Ajouter, Modifier, Supprimer, Afficher des échantillons.\n"
-    "- L'unité de quantité : µg (microgrammes).\n"
-    "- Le format d'emplacement : Cong:C01/Etag:A3 (congélateur/étagère).\n\n"
+    "un système complet de gestion de laboratoire de recherche scientifique.\n\n"
+    "Tu connais parfaitement tous les modules de l'application :\n\n"
+
+    "=== MODULE BIOSAMPLE (Échantillons biologiques) ===\n"
+    "- Champs : Référence (unique), Type (ADN/ARN/Protéine/Cellule/Tissu/Organisme), "
+    "Organisme source, Emplacement (format Cong:xx/Etag:xx), Température (°C), "
+    "Quantité restante (µg), Date de collecte, Date d'expiration, Niveau de dangerosité (BSL-1/2/3).\n"
+    "- Niveaux BSL : BSL-1 risque minimal, BSL-2 risque modéré, BSL-3 risque élevé.\n"
+    "- Températures standards : -80°C (ARN/virus), -20°C (ADN/protéines), 4°C (anticorps).\n"
+    "- Statuts : OK (>30j avant expiration), Bientôt expiré (<30j), Expiré, Haut risque (BSL-3).\n\n"
+
+    "=== MODULE CONGÉLATEUR (Gestion du stockage) ===\n"
+    "- Gestion des congélateurs et étagères du laboratoire.\n"
+    "- Permet de localiser les échantillons par congélateur et étagère.\n"
+    "- Format d'emplacement : Cong:C01/Etag:A3.\n"
+    "- Filtres IA pour rechercher des emplacements disponibles.\n\n"
+
+    "=== MODULE EXPÉRIENCE (Expériences scientifiques) ===\n"
+    "- Champs : ID, Titre, Hypothèse, Date de début, Date de fin, Statut, Projet associé.\n"
+    "- Statuts possibles : En cours, Terminée, Suspendue, Planifiée.\n"
+    "- Lien avec les projets et les équipements utilisés.\n\n"
+
+    "=== MODULE EMPLOYÉS (Gestion du personnel) ===\n"
+    "- Champs : CIN (identifiant), Nom, Prénom, Rôle, Spécialisation, Qualification, "
+    "Temps de travail, Laboratoire.\n"
+    "- Rôles : Chercheur, Technicien, Responsable, Stagiaire, etc.\n"
+    "- CRUD complet : ajouter, modifier, supprimer, rechercher par CIN/nom/rôle/spécialisation.\n\n"
+
+    "=== MODULE ÉQUIPEMENT (Matériel de laboratoire) ===\n"
+    "- Champs : Nom, Fabricant, Numéro de modèle, Date d'achat, Date dernière maintenance, "
+    "Date prochaine maintenance, Statut, Localisation, Date limite de calibration, Expérience liée.\n"
+    "- Statuts : Opérationnel, En maintenance, Hors service, En calibration.\n"
+    "- Alertes de maintenance et calibration selon les dates.\n\n"
+
+    "=== MODULE PROJETS (Gestion de projets de recherche) ===\n"
+    "- Champs : Nom du projet, Domaine de recherche, Date début, Date fin, Budget (DT), "
+    "Statut, Source de financement, Numéro d'approbation éthique, Nombre de publications.\n"
+    "- Statuts : En cours, Terminé, Suspendu, Planifié.\n"
+    "- Les projets regroupent les expériences et les échantillons.\n\n"
+
+    "=== MODULE PUBLICATION (Publications scientifiques) ===\n"
+    "- Champs : Titre, Journal, Année, DOI, Statut, Résumé (abstract), Projet lié, Employé auteur.\n"
+    "- Statuts : Soumis, En révision, Accepté, Publié, Rejeté.\n"
+    "- Lien avec les projets de recherche et les employés chercheurs.\n\n"
+
+    "=== MODULE AUTHENTIFICATION ===\n"
+    "- Connexion sécurisée avec captcha.\n"
+    "- Gestion des comptes utilisateurs du laboratoire.\n\n"
+
     "Réponds toujours en français, de façon concise et utile. "
-    "Si la question ne concerne pas le module BioSimple, "
-    "réponds poliment que tu es spécialisé dans ce module uniquement.";
+    "Tu peux aider avec toutes les fonctionnalités de SmartVision : "
+    "CRUD, recherches, statistiques, conseils de gestion de laboratoire, "
+    "interprétation des données, et bonnes pratiques scientifiques.";
 
 // ─────────────────────────────────────────────────────────────────
 //  Bubble widget
@@ -229,7 +260,7 @@ ChatBotBioSimple::ChatBotBioSimple(QWidget* parent)
         "background:rgba(255,255,255,0.20); border-radius:20px; font-size:20px;"
     );
 
-    QLabel* titleLbl = new QLabel("Chatbot  BioSimple");
+    QLabel* titleLbl = new QLabel("Assistant SmartVision");
     titleLbl->setStyleSheet(
         "color:white; font-size:16px; font-weight:800; background:transparent;"
     );
@@ -264,11 +295,14 @@ ChatBotBioSimple::ChatBotBioSimple(QWidget* parent)
     m_scroll = new QScrollArea;
     m_scroll->setWidgetResizable(true);
     m_scroll->setStyleSheet(
-        "QScrollArea{ background:rgba(245,243,255,0.88); border:none; }"
+        "QScrollArea{ background:transparent; border:none; }"
         "QScrollBar:vertical{ width:4px; background:transparent; }"
-        "QScrollBar::handle:vertical{ background:rgba(109,40,217,0.35); border-radius:2px; }"
+        "QScrollBar::handle:vertical{ background:rgba(255,255,255,0.35); border-radius:2px; }"
         "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical{ height:0; }"
     );
+    m_scroll->viewport()->setStyleSheet("background:transparent;");
+    m_scroll->setAttribute(Qt::WA_TranslucentBackground);
+    m_scroll->viewport()->setAttribute(Qt::WA_TranslucentBackground);
     m_msgContainer = new QWidget;
     m_msgContainer->setStyleSheet("background:transparent;");
     m_msgLayout = new QVBoxLayout(m_msgContainer);
@@ -332,80 +366,61 @@ ChatBotBioSimple::ChatBotBioSimple(QWidget* parent)
     connect(m_clearBtn, &QPushButton::clicked,    this, &ChatBotBioSimple::clearConversation);
     connect(m_input,    &QLineEdit::returnPressed, this, &ChatBotBioSimple::sendMessage);
 
-    // ── Background animation ──
-    m_bgTimer = new QTimer(this);
-    connect(m_bgTimer, &QTimer::timeout, this, &ChatBotBioSimple::animateBg);
-    m_bgTimer->start(30);
+    // ── Vidéo de fond (sans son) ──────────────────────────────────
+    m_bgPlayer = new QMediaPlayer(this);
+    m_bgSink   = new QVideoSink(this);
+    m_bgPlayer->setVideoSink(m_bgSink);
+    m_bgPlayer->setSource(QUrl("qrc:/new/prefix1/backchatbot.mp4"));
+    // Pas de QAudioOutput → pas de son
+    connect(m_bgSink, &QVideoSink::videoFrameChanged,
+            this, [=](const QVideoFrame& frame) {
+        m_bgFrame = frame;
+        update();
+    });
+    connect(m_bgPlayer, &QMediaPlayer::mediaStatusChanged,
+            this, [=](QMediaPlayer::MediaStatus status) {
+        if (status == QMediaPlayer::EndOfMedia)
+            m_bgPlayer->play();   // lecture en boucle
+    });
+    m_bgPlayer->play();
 
     // ── Welcome ──
-    addMessage("Bonjour ! 👋 Je suis votre assistant BioSimple.\n"
-               "Propulsé par GPT-4.1-mini — posez-moi n'importe quelle\n"
-               "question sur vos échantillons biologiques !", false);
+    addMessage("Bonjour ! 👋 Je suis l'assistant SmartVision.\n"
+               "Propulsé par Groq · Llama — posez-moi n'importe quelle\n"
+               "question sur BioSample, Congélateur, Expériences,\n"
+               "Employés, Équipements, Projets ou Publications !", false);
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  Background animation
+//  paintEvent — fond vidéo + zones semi-transparentes
 // ─────────────────────────────────────────────────────────────────
-void ChatBotBioSimple::animateBg()
-{
-    m_bgAngle += 0.8f;
-    if (m_bgAngle >= 360.0f) m_bgAngle -= 360.0f;
-    update();
-}
-
 void ChatBotBioSimple::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    float a = m_bgAngle * 3.14159f / 180.0f;
+    // Clip arrondi
+    QPainterPath clip;
+    clip.addRoundedRect(rect(), 20, 20);
+    p.setClipPath(clip);
 
-    int r1 = 30  + int(25 * std::sin(a));
-    int g1 = 20  + int(10 * std::cos(a * 0.7f));
-    int b1 = 160 + int(60 * std::sin(a * 0.5f));
-    int r2 = 90  + int(50 * std::cos(a * 0.8f));
-    int g2 = 0   + int(20 * std::sin(a * 1.2f));
-    int b2 = 210 + int(45 * std::cos(a * 0.6f));
-    int r3 = 140 + int(60 * std::sin(a * 0.4f));
-    int g3 = 30  + int(20 * std::cos(a * 0.9f));
-    int b3 = 180 + int(50 * std::sin(a * 1.1f));
+    // Fond vidéo
+    if (m_bgFrame.isValid()) {
+        QImage img = m_bgFrame.toImage();
+        if (!img.isNull())
+            p.drawImage(rect(), img);
+    } else {
+        // Fallback tant que la vidéo n'est pas encore chargée
+        p.fillPath(clip, QColor(30, 20, 120));
+    }
 
-    QLinearGradient grad(0, 0, width(), height());
-    grad.setColorAt(0.0, QColor(r1, g1, b1));
-    grad.setColorAt(0.5, QColor(r2, g2, b2));
-    grad.setColorAt(1.0, QColor(r3, g3, b3));
-
-    p.setPen(Qt::NoPen);
-    p.setBrush(grad);
-    p.drawRoundedRect(rect(), 20, 20);
-
-    // Floating blobs
-    auto blob = [&](float cx, float cy, float radius, QColor c) {
-        QRadialGradient rg(cx, cy, radius);
-        rg.setColorAt(0, c);
-        rg.setColorAt(1, QColor(c.red(), c.green(), c.blue(), 0));
-        p.fillRect(rect(), rg);
-    };
-
-    blob(width() * 0.15f + 30 * std::cos(a * 0.3f),
-         height() * 0.12f + 20 * std::sin(a * 0.5f),
-         80, QColor(255, 255, 255, 30));
-
-    blob(width() * 0.80f + 40 * std::sin(a * 0.4f),
-         height() * 0.08f + 25 * std::cos(a * 0.6f),
-         70, QColor(200, 100, 255, 35));
-
-    blob(width() * 0.50f + 35 * std::cos(a * 0.7f),
-         height() * 0.04f + 15 * std::sin(a * 0.9f),
-         55, QColor(100, 200, 255, 25));
-
-    // Messages area
+    // Zone messages — voile très léger pour lisibilité des bulles
     p.fillRect(QRect(0, 66, width(), height() - 66 - 60),
-               QColor(245, 243, 255, 220));
+               QColor(0, 0, 0, 55));
 
-    // Input bar
+    // Barre de saisie
     p.fillRect(QRect(0, height() - 60, width(), 60),
-               QColor(255, 255, 255, 235));
+               QColor(255, 255, 255, 210));
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -492,17 +507,17 @@ void ChatBotBioSimple::callOpenAI(const QString& /*userMessage*/)
     }
 
     QJsonObject body;
-    body["model"]       = MODEL;
+    body["model"]       = GROQ_API_MODEL;
     body["messages"]    = messages;
     body["temperature"] = 0.7;
     body["max_tokens"]  = 400;
 
     QJsonDocument doc(body);
 
-    QUrl endpoint(API_URL);
+    QUrl endpoint(GROQ_API_URL);
     QNetworkRequest req(endpoint);
     req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-    req.setRawHeader("Authorization", ("Bearer " + API_KEY).toUtf8());
+    req.setRawHeader("Authorization", ("Bearer " + GROQ_API_KEY).toUtf8());
 
     // Ignore SSL peer verification (works without OpenSSL DLLs)
     QSslConfiguration ssl = QSslConfiguration::defaultConfiguration();
@@ -588,9 +603,10 @@ void ChatBotBioSimple::clearConversation()
     m_lastUserMsg.clear();
 
     // Re-show welcome message
-    addMessage("Bonjour ! 👋 Je suis votre assistant BioSimple.<br/>"
-               "Propulsé par GPT-4.1-mini — posez-moi n'importe quelle<br/>"
-               "question sur vos échantillons biologiques !", false, true);
+    addMessage("Bonjour ! 👋 Je suis l'assistant SmartVision.<br/>"
+               "Propulsé par <b>Groq · Llama</b> — posez-moi n'importe quelle<br/>"
+               "question sur BioSample, Congélateur, Expériences,<br/>"
+               "Employés, Équipements, Projets ou Publications !", false, true);
 }
 
 // ─────────────────────────────────────────────────────────────────

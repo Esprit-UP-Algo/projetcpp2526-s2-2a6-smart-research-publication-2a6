@@ -8,12 +8,14 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QLabel>
-#include <QTimer>
 #include <QWidget>
 #include <QFrame>
 #include <QScrollBar>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
+#include <QMediaPlayer>
+#include <QVideoSink>
+#include <QVideoFrame>
 
 class ChatBotBioSimple : public QDialog
 {
@@ -30,7 +32,6 @@ protected:
 private slots:
     void sendMessage();
     void clearConversation();
-    void animateBg();
     void onApiReply(QNetworkReply* reply);
 
 private:
@@ -38,7 +39,7 @@ private:
     void    addTypingIndicator();
     void    removeTypingIndicator();
     void    callOpenAI(const QString& userMessage);
-    QString formatResponse(const QString& text);   // **bold** + bullet lists → HTML
+    QString formatResponse(const QString& text);
 
     QWidget*     m_msgContainer;
     QVBoxLayout* m_msgLayout;
@@ -50,13 +51,13 @@ private:
     QNetworkAccessManager* m_net;
     QWidget*               m_typingWidget = nullptr;
 
-    // Conversation history for context
-    QList<QPair<QString,QString>> m_history; // role, content
+    QList<QPair<QString,QString>> m_history;
     QString m_lastUserMsg;
 
-    // Background animation
-    QTimer* m_bgTimer;
-    float   m_bgAngle = 0.0f;
+    // Vidéo de fond
+    QMediaPlayer* m_bgPlayer;
+    QVideoSink*   m_bgSink;
+    QVideoFrame   m_bgFrame;
 
     // Drag
     QPoint m_dragPos;
