@@ -20,6 +20,9 @@ struct ExperienceRecord {
     QDate    dateDebut;
     QDate    dateFin;
     QString  status;
+    QString  disponibiliteEquipement;
+    QString  resultat;
+    QString  typeExperience;
     QVariant projetId;   // can be NULL / int
 };
 
@@ -33,6 +36,7 @@ public:
     int  nextExperienceId(                              QString* error = nullptr);
     bool insertExperience(const ExperienceRecord& in,   QString* error = nullptr);
     bool updateExperience(const ExperienceRecord& in,   QString* error = nullptr);
+    QString suggestedEquipAvailability(QString* error = nullptr);
 };
 
 #endif // CRUDEXPERIENCE_H

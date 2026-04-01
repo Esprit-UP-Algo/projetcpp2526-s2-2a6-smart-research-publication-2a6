@@ -3,10 +3,19 @@
 #include <QHostAddress>
 #include <QTcpSocket>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QSqlDatabase>
 #include <QSqlError>
 #include <QSqlQuery>
+#include <QNetworkRequest>
+#include <QNetworkReply>
+#include <QUrlQuery>
+#include <QUrl>
+#include <QSslConfiguration>
+#include <QSslSocket>
+#include <cmath>
+#include <limits>
 
 SignupServer::SignupServer(QObject* parent)
     : QObject(parent)
@@ -57,6 +66,276 @@ bool SignupServer::start(quint16 preferredPort)
 QUrl SignupServer::signupUrl() const
 {
     return QUrl(QString("http://127.0.0.1:%1/signup").arg(m_server.serverPort()));
+}
+
+// ─── Google OAuth natif ───────────────────────────────────────────
+void SignupServer::setGoogleCredentials(const QString& clientId, const QString& clientSecret)
+{
+    m_googleClientId     = clientId;
+    m_googleClientSecret = clientSecret;
+    if (!m_net) m_net = new QNetworkAccessManager(this);
+}
+
+QString SignupServer::googleCallbackUrl() const
+{
+    return QString("http://127.0.0.1:%1/google-callback").arg(m_server.serverPort());
+}
+
+void SignupServer::exchangeGoogleCode(const QString& code)
+{
+    if (!m_net || m_googleClientId.isEmpty() || m_googleClientSecret.isEmpty()) return;
+
+    // POST to Google token endpoint to exchange code → id_token
+    QUrlQuery postData;
+    postData.addQueryItem("code",          code);
+    postData.addQueryItem("client_id",     m_googleClientId);
+    postData.addQueryItem("client_secret", m_googleClientSecret);
+    postData.addQueryItem("redirect_uri",  googleCallbackUrl());
+    postData.addQueryItem("grant_type",    "authorization_code");
+
+    QNetworkRequest req(QUrl("https://oauth2.googleapis.com/token"));
+    req.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
+    QSslConfiguration ssl = QSslConfiguration::defaultConfiguration();
+    ssl.setPeerVerifyMode(QSslSocket::VerifyNone);
+    req.setSslConfiguration(ssl);
+
+    QNetworkReply* reply = m_net->post(req, postData.toString(QUrl::FullyEncoded).toUtf8());
+    connect(reply, &QNetworkReply::sslErrors, reply,
+            [reply](const QList<QSslError>&){ reply->ignoreSslErrors(); });
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) return;
+
+        const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+        if (!doc.isObject()) return;
+
+        // Decode JWT id_token payload (base64url, middle segment) — no signature verify needed
+        // since we received it directly over HTTPS from Google's token endpoint.
+        const QString idToken = doc.object()["id_token"].toString();
+        const QStringList parts = idToken.split('.');
+        if (parts.size() < 2) return;
+
+        const QByteArray payload = QByteArray::fromBase64(
+            parts[1].toUtf8(),
+            QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals);
+
+        const QJsonDocument payloadDoc = QJsonDocument::fromJson(payload);
+        if (!payloadDoc.isObject()) return;
+
+        const QString email = payloadDoc.object()["email"].toString().trimmed();
+        const QString name  = payloadDoc.object()["name"].toString().trimmed();
+        if (email.isEmpty()) return;
+
+        const QString identity = name.isEmpty() ? email : name;
+        emit googleLoginSucceeded(identity);
+    });
+}
+
+static QByteArray facePageHtml(const QString& title, const QString& subtitle, bool registerMode)
+{
+        const QString action = registerMode
+            ? QStringLiteral("Capturer et enregistrer")
+            : QStringLiteral("Verifier mon visage");
+        const QString mode = registerMode
+            ? QStringLiteral("register")
+            : QStringLiteral("verify");
+
+        const QString html = QString(
+R"HTML(<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>%1</title>
+    <style>
+        :root { --p:#0A5F58; --bg:#eef6f4; --txt:#2d4f48; }
+        * { box-sizing: border-box; }
+        body { margin:0; font-family:Segoe UI, Arial, sans-serif; background:var(--bg); color:var(--txt); }
+        .card { max-width:760px; margin:24px auto; background:#fff; border-radius:14px; padding:20px; box-shadow:0 10px 24px rgba(0,0,0,.12); }
+        h2 { margin:0 0 8px; color:var(--p); }
+        p { margin:0 0 14px; color:#56756f; }
+        video { width:100%; border-radius:12px; background:#111; }
+        .row { margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; }
+        button { border:none; border-radius:10px; background:var(--p); color:#fff; padding:10px 14px; cursor:pointer; font-weight:700; }
+        button.secondary { background:#667f7a; }
+        .auth-box { margin-top: 12px; display:none; gap:8px; flex-direction:column; }
+        .auth-box input { border:1px solid #c7d8d4; border-radius:10px; padding:10px; font-size:14px; }
+        #status { margin-top:12px; font-size:14px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>%1</h2>
+        <p>%2</p>
+        <video id="video" autoplay playsinline></video>
+        <div class="row">
+            <button id="start">Activer la camera</button>
+            <button id="act" class="secondary" disabled>%3</button>
+        </div>
+        <div id="authBox" class="auth-box">
+            <input id="email" type="email" placeholder="Adresse e-mail du compte" />
+            <input id="password" type="password" placeholder="Mot de passe" />
+        </div>
+        <div id="status">Pret.</div>
+    </div>
+    <script>
+        let stream = null;
+        const MODE = '%4';
+        const video = document.getElementById('video');
+        const startBtn = document.getElementById('start');
+        const actBtn = document.getElementById('act');
+        const statusBox = document.getElementById('status');
+        const authBox = document.getElementById('authBox');
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
+
+        if (MODE === 'register') {
+            authBox.style.display = 'flex';
+        }
+
+        function buildDescriptor(videoEl) {
+            const w = videoEl.videoWidth || 0;
+            const h = videoEl.videoHeight || 0;
+            if (w < 80 || h < 80) {
+                throw new Error('Flux video indisponible');
+            }
+
+            const src = document.createElement('canvas');
+            src.width = w;
+            src.height = h;
+            const sctx = src.getContext('2d', { willReadFrequently: true });
+            sctx.drawImage(videoEl, 0, 0, w, h);
+
+            const cropSize = Math.floor(Math.min(w, h) * 0.72);
+            const sx = Math.floor((w - cropSize) / 2);
+            const sy = Math.floor((h - cropSize) / 2);
+
+            const normalized = document.createElement('canvas');
+            normalized.width = 16;
+            normalized.height = 16;
+            const nctx = normalized.getContext('2d', { willReadFrequently: true });
+            nctx.drawImage(src, sx, sy, cropSize, cropSize, 0, 0, 16, 16);
+
+            const pixels = nctx.getImageData(0, 0, 16, 16).data;
+            const descriptor = [];
+            let sum = 0;
+
+            for (let i = 0; i < pixels.length; i += 4) {
+                const gray = (0.299 * pixels[i]) + (0.587 * pixels[i + 1]) + (0.114 * pixels[i + 2]);
+                descriptor.push(gray / 255.0);
+                sum += gray / 255.0;
+            }
+
+            const mean = sum / descriptor.length;
+            let norm = 0;
+            for (let i = 0; i < descriptor.length; i++) {
+                descriptor[i] = descriptor[i] - mean;
+                norm += descriptor[i] * descriptor[i];
+            }
+
+            norm = Math.sqrt(norm) || 1;
+            for (let i = 0; i < descriptor.length; i++) {
+                descriptor[i] = Number((descriptor[i] / norm).toFixed(6));
+            }
+
+            return descriptor;
+        }
+
+        async function sendJson(url, payload) {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            let data = {};
+            try {
+                data = await res.json();
+            } catch (_) {
+                data = { ok: false, message: 'Reponse serveur invalide.' };
+            }
+
+            if (!res.ok || !data.ok) {
+                throw new Error(data.message || 'Operation echouee.');
+            }
+
+            return data;
+        }
+
+        startBtn.addEventListener('click', async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+                video.srcObject = stream;
+                actBtn.disabled = false;
+                statusBox.textContent = 'Camera activee.';
+            } catch (e) {
+                statusBox.textContent = 'Impossible d\'acceder a la camera. Verifiez les permissions navigateur.';
+            }
+        });
+
+        actBtn.addEventListener('click', async () => {
+            try {
+                const faceEmbedding = buildDescriptor(video);
+
+                if (MODE === 'register') {
+                    const email = emailInput.value.trim();
+                    const password = passwordInput.value;
+                    if (!email || !password) {
+                        statusBox.textContent = 'Saisissez e-mail et mot de passe pour lier le Face ID.';
+                        return;
+                    }
+
+                    statusBox.textContent = 'Enregistrement Face ID en cours...';
+                    const out = await sendJson('/api/face-register', {
+                        email,
+                        password,
+                        faceEmbedding
+                    });
+                    statusBox.textContent = out.message || 'Face ID enregistre avec succes.';
+                    return;
+                }
+
+                statusBox.textContent = 'Verification Face ID en cours...';
+                const out = await sendJson('/api/face-verify', { faceEmbedding });
+                statusBox.textContent = out.message || 'Visage reconnu.';
+            } catch (e) {
+                statusBox.textContent = e && e.message
+                    ? e.message
+                    : 'Erreur lors du traitement Face ID.';
+            }
+        });
+    </script>
+</body>
+</html>)HTML")
+        .arg(title, subtitle, action, mode);
+
+        return html.toUtf8();
+}
+
+static QVector<double> jsonToVector(const QJsonArray& arr)
+{
+    QVector<double> out;
+    out.reserve(arr.size());
+    for (const QJsonValue& v : arr) {
+        out.push_back(v.toDouble(0.0));
+    }
+    return out;
+}
+
+static double euclideanDistance(const QVector<double>& a, const QVector<double>& b)
+{
+    if (a.isEmpty() || b.isEmpty() || a.size() != b.size()) {
+        return std::numeric_limits<double>::infinity();
+    }
+
+    double sum = 0.0;
+    for (int i = 0; i < a.size(); ++i) {
+        const double d = a[i] - b[i];
+        sum += d * d;
+    }
+
+    return std::sqrt(sum);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -454,11 +733,207 @@ void SignupServer::handleHttpRequest(const QByteArray& requestData, QTcpSocket* 
         return;
     }
 
-    const QByteArray method = requestLine.at(0).trimmed().toUpper();
-    const QByteArray path   = requestLine.at(1).trimmed();
+    const QByteArray method  = requestLine.at(0).trimmed().toUpper();
+    const QByteArray rawPath = requestLine.at(1).trimmed();
+
+    // Séparer chemin et query string (ex: /google-callback?code=xxx&state=yyy)
+    const int qmark = rawPath.indexOf('?');
+    const QByteArray path      = (qmark >= 0) ? rawPath.left(qmark) : rawPath;
+    const QByteArray queryPart = (qmark >= 0) ? rawPath.mid(qmark + 1) : QByteArray();
+
+    // ── Callback Google OAuth natif (sans PHP) ────────────────────
+    if (method == "GET" && path == "/google-callback") {
+        // Répondre immédiatement au navigateur (page auto-fermante)
+        const QByteArray successHtml =
+            "<!DOCTYPE html><html lang='fr'><head><meta charset='UTF-8'>"
+            "<title>SmartVision - Connexion Google</title>"
+            "<style>body{margin:0;display:flex;align-items:center;justify-content:center;"
+            "min-height:100vh;font-family:Segoe UI,Arial,sans-serif;"
+            "background:linear-gradient(135deg,#0a5f58,#0d7a70);color:#fff;}"
+            ".card{text-align:center;background:rgba(255,255,255,.12);"
+            "border-radius:18px;padding:40px 50px;backdrop-filter:blur(12px);}"
+            "h2{margin:0 0 10px;font-size:24px;}p{opacity:.8;margin:0 0 20px;}"
+            ".ok{font-size:48px;}</style>"
+            "<script>setTimeout(()=>window.close(),2500);</script>"
+            "</head><body><div class='card'>"
+            "<div class='ok'>✅</div>"
+            "<h2>Connexion réussie !</h2>"
+            "<p>Vous pouvez fermer cette fenêtre.</p>"
+            "</div></body></html>";
+        sendHttpResponse(socket, 200, successHtml, "text/html; charset=utf-8");
+
+        // Extraire le code OAuth depuis la query string
+        QUrlQuery q(QString::fromUtf8(queryPart));
+        const QString code = q.queryItemValue("code");
+        if (!code.isEmpty()) {
+            exchangeGoogleCode(code);
+        }
+        return;
+    }
 
     if (method == "GET" && (path == "/" || path == "/signup")) {
         sendHttpResponse(socket, 200, signupHtml(), "text/html");
+        return;
+    }
+
+    if (method == "GET" && path == "/face-register") {
+        sendHttpResponse(
+            socket,
+            200,
+            facePageHtml("Enregistrement Face ID", "Associez votre visage a votre compte SmartVision.", true),
+            "text/html");
+        return;
+    }
+
+    if (method == "GET" && path == "/face-verify") {
+        sendHttpResponse(
+            socket,
+            200,
+            facePageHtml("Connexion Face ID", "Verification faciale locale contre la base SmartVision.", false),
+            "text/html");
+        return;
+    }
+
+    if (method == "POST" && path == "/api/face-register") {
+        QJsonParseError parseError;
+        const QJsonDocument doc = QJsonDocument::fromJson(body, &parseError);
+        if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+            sendJson(socket, 400, "Payload JSON invalide.", false);
+            return;
+        }
+
+        const QJsonObject obj = doc.object();
+        const QString email = obj.value("email").toString().trimmed();
+        const QString password = obj.value("password").toString();
+        const QJsonArray embeddingArr = obj.value("faceEmbedding").toArray();
+
+        if (email.isEmpty() || password.isEmpty() || embeddingArr.isEmpty()) {
+            sendJson(socket, 400, "E-mail, mot de passe et visage sont requis.", false);
+            return;
+        }
+
+        QSqlDatabase db = QSqlDatabase::database();
+        if (!db.isOpen()) {
+            sendJson(socket, 500, "La connexion a la base de donnees est indisponible.", false);
+            return;
+        }
+
+        const QByteArray faceBlob = QJsonDocument(embeddingArr).toJson(QJsonDocument::Compact);
+
+        QSqlQuery query(db);
+        query.prepare(
+            "UPDATE \"Employés\" "
+            "SET \"FACE_ID\" = ? "
+            "WHERE LOWER(\"EMAIL\") = LOWER(?) "
+            "AND \"USER_PASSWORD\" = ? "
+            "AND \"ACTIVE\" = 'O'");
+        query.addBindValue(faceBlob);
+        query.addBindValue(email);
+        query.addBindValue(password);
+
+        if (!query.exec()) {
+            sendJson(socket, 500, "Erreur SQL lors de l'enregistrement Face ID : " + query.lastError().text(), false);
+            return;
+        }
+
+        if (query.numRowsAffected() <= 0) {
+            sendJson(socket, 400, "Compte introuvable ou identifiants invalides.", false);
+            return;
+        }
+
+        sendJson(socket, 200, "Face ID enregistre avec succes.", true);
+        return;
+    }
+
+    if (method == "POST" && path == "/api/face-verify") {
+        QJsonParseError parseError;
+        const QJsonDocument doc = QJsonDocument::fromJson(body, &parseError);
+        if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+            sendJson(socket, 400, "Payload JSON invalide.", false);
+            return;
+        }
+
+        const QJsonArray inputArr = doc.object().value("faceEmbedding").toArray();
+        const QVector<double> inputVec = jsonToVector(inputArr);
+        if (inputVec.isEmpty()) {
+            sendJson(socket, 400, "Empreinte faciale manquante.", false);
+            return;
+        }
+
+        QSqlDatabase db = QSqlDatabase::database();
+        if (!db.isOpen()) {
+            sendJson(socket, 500, "La connexion a la base de donnees est indisponible.", false);
+            return;
+        }
+
+        QSqlQuery query(db);
+        query.prepare(
+            "SELECT \"EMAIL\", NVL(\"FULL_NAME\", \"nom\" || ' ' || \"prenom\"), \"FACE_ID\" "
+            "FROM \"Employés\" "
+            "WHERE \"ACTIVE\" = 'O' AND \"FACE_ID\" IS NOT NULL");
+
+        if (!query.exec()) {
+            sendJson(socket, 500, "Erreur SQL lors de la verification Face ID : " + query.lastError().text(), false);
+            return;
+        }
+
+        QString bestEmail;
+        QString bestName;
+        double bestDistance = std::numeric_limits<double>::infinity();
+
+        while (query.next()) {
+            const QString email = query.value(0).toString();
+            const QString fullName = query.value(1).toString();
+            const QByteArray blob = query.value(2).toByteArray();
+            if (blob.isEmpty()) continue;
+
+            QJsonParseError rowErr;
+            const QJsonDocument rowDoc = QJsonDocument::fromJson(blob, &rowErr);
+            if (rowErr.error != QJsonParseError::NoError || !rowDoc.isArray()) continue;
+
+            const QVector<double> rowVec = jsonToVector(rowDoc.array());
+            const double dist = euclideanDistance(inputVec, rowVec);
+            if (dist < bestDistance) {
+                bestDistance = dist;
+                bestEmail = email;
+                bestName = fullName;
+            }
+        }
+
+        const double threshold = 0.95;
+        if (!bestEmail.isEmpty() && bestDistance <= threshold) {
+            const QString displayName = bestName.trimmed().isEmpty() ? bestEmail : bestName;
+            emit faceLoginSucceeded(displayName);
+            sendJson(socket, 200,
+                     QString("Visage reconnu : %1 (score %.3f)").arg(displayName).arg(bestDistance),
+                     true);
+            return;
+        }
+
+        sendJson(socket, 401, "Visage non reconnu. Rapprochez-vous de la camera et reessayez.", false);
+        return;
+    }
+
+    if (method == "POST" && path == "/api/google-oauth-success") {
+        QJsonParseError parseError;
+        const QJsonDocument doc = QJsonDocument::fromJson(body, &parseError);
+        if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+            sendJson(socket, 400, "Payload JSON invalide.", false);
+            return;
+        }
+
+        const QJsonObject obj = doc.object();
+        const QString email = obj.value("email").toString().trimmed();
+        const QString name = obj.value("name").toString().trimmed();
+
+        if (email.isEmpty()) {
+            sendJson(socket, 400, "Email Google manquant.", false);
+            return;
+        }
+
+        const QString identity = name.isEmpty() ? email : name;
+        emit googleLoginSucceeded(identity);
+        sendJson(socket, 200, "Connexion Google transmise a l'application.", true);
         return;
     }
 

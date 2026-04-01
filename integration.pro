@@ -1,8 +1,9 @@
-QT       += core gui sql network printsupport multimedia
+QT       += core gui sql network printsupport multimedia texttospeech
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 CONFIG += c++17
+QMAKE_CXXFLAGS += -std=c++17
 
 # You can make your code fail to compile if it uses deprecated APIs.
 # In order to do so, uncomment the following line.
@@ -16,6 +17,7 @@ SOURCES += \
     connection.cpp \
     employes.cpp \
     publication.cpp \
+    crudEquipement.cpp \
     equipement.cpp \
     crudebiosimple.cpp \
     crudexperience.cpp \
@@ -23,7 +25,12 @@ SOURCES += \
     cong.cpp \
     basicbio.cpp \
     pdfbiosample.cpp \
+    pdfequipement.cpp \
+    pdfExp.cpp \
+    pdfemploye.cpp \
     floatingchatbtn.cpp \
+    voicecommande.cpp \
+    simple.cpp \
     main.cpp
 
 HEADERS += \
@@ -34,6 +41,7 @@ HEADERS += \
     connection.h \
     employes.h \
     publication.h \
+    crudEquipement.h \
     equipement.h \
     crudebiosimple.h \
     crudexperience.h \
@@ -41,7 +49,12 @@ HEADERS += \
     cong.h \
     basicbio.h \
     pdfbiosample.h \
-    floatingchatbtn.h
+    pdfequipement.h \
+    pdfExp.h \
+    pdfemploye.h \
+    floatingchatbtn.h \
+    voicecommande.h \
+    simple.h
 
 
 # Default rules for deployment.

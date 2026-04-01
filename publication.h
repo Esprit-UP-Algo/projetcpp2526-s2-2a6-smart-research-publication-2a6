@@ -16,7 +16,9 @@ public:
                 const QString& status,
                 const QString& abstractText,
                 int idProjet,
-                int employeeId);
+                int employeeId,
+                double impactFactor = 0.0,
+                int citationCount = 0);
 
     int id() const;
     QString titre() const;
@@ -27,6 +29,8 @@ public:
     QString abstractText() const;
     int idProjet() const;
     int employeeId() const;
+    double impactFactor() const;
+    int citationCount() const;
 
     void setId(int id);
     void setTitre(const QString& titre);
@@ -37,6 +41,8 @@ public:
     void setAbstractText(const QString& abstractText);
     void setIdProjet(int idProjet);
     void setEmployeeId(int employeeId);
+    void setImpactFactor(double impactFactor);
+    void setCitationCount(int citationCount);
 
     bool create(QString* errorMessage = nullptr) const;
     bool update(QString* errorMessage = nullptr) const;
@@ -55,6 +61,8 @@ private:
     QString m_abstractText;
     int m_idProjet;
     int m_employeeId;
+    double m_impactFactor;
+    int m_citationCount;
 };
 
 #endif // PUBLICATION_H

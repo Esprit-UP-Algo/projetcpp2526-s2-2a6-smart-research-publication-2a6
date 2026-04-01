@@ -2,6 +2,7 @@
 
 #include <QPainter>
 #include <QPainterPath>
+#include <QLinearGradient>
 #include <QMouseEvent>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -15,6 +16,7 @@
 #include <QSslError>
 #include <QSslConfiguration>
 #include <QTime>
+#include <QTextToSpeech>
 #include "apiconfig.h"
 
 // ─── Emplacement helpers ──────────────────────────────────────
@@ -54,7 +56,10 @@ AiBubble::AiBubble(QWidget* parent)
     : QFrame(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint)
 {
     setFixedSize(380, 330);
-    setAttribute(Qt::WA_DeleteOnClose, false);
+    setAttribute(Qt::WA_DeleteOnClose,        false);
+    setAttribute(Qt::WA_QuitOnClose,          false);
+    // Ne pas voler le focus quand la bulle s'affiche
+    setAttribute(Qt::WA_ShowWithoutActivating, true);
 
     // ── Video background via QVideoSink (no black bars, overlay works correctly) ──
     m_videoBg = new QLabel(this);
@@ -91,6 +96,53 @@ AiBubble::AiBubble(QWidget* parent)
     titleLbl->setStyleSheet(
         "color: rgba(0,232,168,0.95); font-weight:900; font-size:13px;"
         "background:transparent; border:none;");
+    // TTS engine
+    m_tts = new QTextToSpeech(this);
+    m_tts->setLocale(QLocale(QLocale::French));
+
+    m_speakBtn = new QPushButton("🔊");
+    m_speakBtn->setFixedSize(24, 24);
+    m_speakBtn->setCursor(Qt::PointingHandCursor);
+    m_speakBtn->setToolTip("Lire le texte");
+    m_speakBtn->setStyleSheet(
+        "QPushButton{ background:rgba(0,232,168,0.25); color:white; border:none;"
+        " border-radius:12px; font-size:12px; }"
+        "QPushButton:hover{ background:rgba(0,232,168,0.55); }"
+        "QPushButton:checked{ background:rgba(0,180,120,0.75); }");
+    m_speakBtn->setCheckable(true);
+
+    connect(m_speakBtn, &QPushButton::clicked, this, [this](bool checked){
+        if (!m_tts) return;
+        if (checked) {
+            const QString plain = m_textBrowser->toPlainText().trimmed();
+            if (!plain.isEmpty()) {
+                m_speakBtn->setText("🔇");
+                m_speakBtn->setToolTip("Arrêter la lecture");
+                m_tts->say(plain);
+            } else {
+                m_speakBtn->setChecked(false);
+            }
+        } else {
+            // Arrêt sécurisé : vérifier l'état avant d'appeler stop()
+            if (m_tts->state() == QTextToSpeech::Speaking)
+                m_tts->stop();
+            m_speakBtn->setText("🔊");
+            m_speakBtn->setToolTip("Lire le texte");
+        }
+    });
+
+    // QueuedConnection : rompt la ré-entrance synchrone du backend Windows SAPI/WinRT
+    // qui appelle stateChanged() directement depuis stop() → crash sans QueuedConnection
+    connect(m_tts, &QTextToSpeech::stateChanged, this,
+            [this](QTextToSpeech::State state){
+        if (!m_speakBtn) return;
+        if (state == QTextToSpeech::Ready || state == QTextToSpeech::Error) {
+            m_speakBtn->setChecked(false);
+            m_speakBtn->setText("🔊");
+            m_speakBtn->setToolTip("Lire le texte");
+        }
+    }, Qt::QueuedConnection);
+
     auto* closeBtn = new QPushButton("✕");
     closeBtn->setFixedSize(24, 24);
     closeBtn->setCursor(Qt::PointingHandCursor);
@@ -98,9 +150,20 @@ AiBubble::AiBubble(QWidget* parent)
         "QPushButton{ background:rgba(220,55,48,0.85); color:white; border:none;"
         " border-radius:12px; font-weight:900; font-size:11px; }"
         "QPushButton:hover{ background:rgba(255,75,65,1.0); }");
-    connect(closeBtn, &QPushButton::clicked, this, &AiBubble::hideResponse);
+    connect(closeBtn, &QPushButton::clicked, this, [this](){
+        // Arrêt sécurisé : ne pas appeler stop() si déjà à l'arrêt
+        if (m_tts && m_tts->state() == QTextToSpeech::Speaking)
+            m_tts->stop();
+        if (m_speakBtn) {
+            m_speakBtn->setChecked(false);
+            m_speakBtn->setText("🔊");
+        }
+        // Cacher uniquement — ne jamais propager un close au parent
+        setVisible(false);
+    });
     titleRow->addWidget(titleIco);
     titleRow->addWidget(titleLbl, 1);
+    titleRow->addWidget(m_speakBtn);
     titleRow->addWidget(closeBtn);
     vl->addLayout(titleRow);
 
@@ -142,6 +205,13 @@ void AiBubble::resizeEvent(QResizeEvent* e) {
 }
 
 void AiBubble::showResponse(const QString& html) {
+    // Arrêter la lecture en cours (vérification d'état pour éviter le crash SAPI)
+    if (m_tts && m_tts->state() == QTextToSpeech::Speaking)
+        m_tts->stop();
+    if (m_speakBtn) {
+        m_speakBtn->setChecked(false);
+        m_speakBtn->setText("🔊");
+    }
     m_statusLbl->hide();
     m_textBrowser->setHtml(html);
     m_textBrowser->show();
@@ -154,10 +224,23 @@ void AiBubble::showResponse(const QString& html) {
     }
     show();
     raise();
-    activateWindow();
 }
 
 void AiBubble::hideResponse() {
+    hide();
+}
+
+void AiBubble::closeEvent(QCloseEvent* event)
+{
+    // Ne jamais vraiment fermer la bulle — juste la cacher
+    // Cela empêche Qt de quitter l'application via WA_QuitOnClose
+    event->ignore();
+    if (m_tts && m_tts->state() == QTextToSpeech::Speaking)
+        m_tts->stop();
+    if (m_speakBtn) {
+        m_speakBtn->setChecked(false);
+        m_speakBtn->setText("🔊");
+    }
     hide();
 }
 
@@ -860,8 +943,8 @@ void FreezerWidget::mousePressEvent(QMouseEvent* e) {
 // ═══════════════════════════════════════════════════════════════
 static QWidget* card(QWidget* parent = nullptr) {
     auto* f = new QFrame(parent);
-    f->setStyleSheet("QFrame{ background:rgba(255,255,255,0.82);"
-                     "border:1px solid rgba(10,95,88,0.15); border-radius:14px; }");
+    f->setStyleSheet("QFrame{ background:rgba(255,255,255,0.62);"
+                     "border:1px solid rgba(10,95,88,0.20); border-radius:14px; }");
     return f;
 }
 static QLabel* sectionTitle(const QString& t) {
@@ -886,11 +969,16 @@ CongelateurDialog::CongelateurDialog(QWidget* parent) : QDialog(parent)
     setWindowTitle("❄  AI Congélateur — Localisation des Échantillons");
     setWindowFlags(Qt::Dialog | Qt::WindowCloseButtonHint | Qt::WindowMaximizeButtonHint);
     resize(1200, 720);
+
+    // ── Image de fond ─────────────────────────────────────────────
+    m_bgPixmap.load(":/image/cong.png");
+    setAttribute(Qt::WA_OpaquePaintEvent, false);
+
     setStyleSheet(
-        "QDialog{ background:qlineargradient(x1:0,y1:0,x2:1,y2:1,"
-        "    stop:0 #e4f2ef, stop:1 #cde8e3); }"
+        // Fond géré par paintEvent — QDialog transparent
+        "QDialog{ background: transparent; }"
         "QScrollBar:vertical{ background:transparent; width:6px; }"
-        "QScrollBar::handle:vertical{ background:rgba(10,95,88,0.30); border-radius:3px; }"
+        "QScrollBar::handle:vertical{ background:rgba(10,95,88,0.40); border-radius:3px; }"
         "QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{ height:0; }");
 
     m_net  = new QNetworkAccessManager(this);
@@ -1265,4 +1353,30 @@ void CongelateurDialog::onAiReply(QNetworkReply* reply) {
             if (!m_slotData[r][c].reference.isEmpty()
                 && answer.contains(m_slotData[r][c].reference, Qt::CaseInsensitive))
             { onSlotClicked(r, c); return; }
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  paintEvent — image de fond :/image/cong.png
+// ─────────────────────────────────────────────────────────────────
+void CongelateurDialog::paintEvent(QPaintEvent*)
+{
+    QPainter p(this);
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
+
+    if (!m_bgPixmap.isNull()) {
+        // Étirer l'image pour couvrir toute la fenêtre (même après redimensionnement)
+        p.drawPixmap(rect(),
+                     m_bgPixmap.scaled(size(),
+                                       Qt::KeepAspectRatioByExpanding,
+                                       Qt::SmoothTransformation));
+    } else {
+        // Fallback si l'image est absente : dégradé vert
+        QLinearGradient grad(rect().topLeft(), rect().bottomRight());
+        grad.setColorAt(0, QColor("#e4f2ef"));
+        grad.setColorAt(1, QColor("#cde8e3"));
+        p.fillRect(rect(), grad);
+    }
+
+    // Voile semi-transparent pour améliorer la lisibilité des cartes
+    p.fillRect(rect(), QColor(0, 0, 0, 30));
 }

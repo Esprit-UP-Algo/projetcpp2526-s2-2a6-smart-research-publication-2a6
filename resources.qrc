@@ -3,11 +3,11 @@
         <file>background2.png</file>
         <file>smartvision.png</file>
         <file>chatia.png</file>
+        <file>cong.png</file>
     </qresource>
     <qresource prefix="/new/prefix1">
         <file>backchatbot.mp4</file>
         <file>iconechatbot.mp4</file>
         <file>msgbio.mp4</file>
-        <file>backgroundpr.mp4</file>
     </qresource>
 </RCC>

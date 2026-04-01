@@ -13,6 +13,12 @@
 #include <QSslConfiguration>
 #include <QRegularExpression>
 #include <QUrl>
+#include <QHttpMultiPart>
+#include <QIODevice>
+#include <QByteArray>
+#include <QDataStream>
+#include <QLocale>
+#include <QTimer>
 
 #include "apiconfig.h"
 
@@ -71,6 +77,24 @@ static const QString SYSTEM_PROMPT =
     "Tu peux aider avec toutes les fonctionnalités de SmartVision : "
     "CRUD, recherches, statistiques, conseils de gestion de laboratoire, "
     "interprétation des données, et bonnes pratiques scientifiques.";
+
+static QByteArray le32(quint32 v)
+{
+    QByteArray b(4, '\0');
+    b[0] = char(v & 0xFF);
+    b[1] = char((v >> 8) & 0xFF);
+    b[2] = char((v >> 16) & 0xFF);
+    b[3] = char((v >> 24) & 0xFF);
+    return b;
+}
+
+static QByteArray le16(quint16 v)
+{
+    QByteArray b(2, '\0');
+    b[0] = char(v & 0xFF);
+    b[1] = char((v >> 8) & 0xFF);
+    return b;
+}
 
 // ─────────────────────────────────────────────────────────────────
 //  Bubble widget
@@ -296,9 +320,11 @@ ChatBotBioSimple::ChatBotBioSimple(QWidget* parent)
     m_scroll->setWidgetResizable(true);
     m_scroll->setStyleSheet(
         "QScrollArea{ background:transparent; border:none; }"
-        "QScrollBar:vertical{ width:4px; background:transparent; }"
-        "QScrollBar::handle:vertical{ background:rgba(255,255,255,0.35); border-radius:2px; }"
+        "QScrollBar:vertical{ width:8px; background:transparent; margin:0; }"
+        "QScrollBar::handle:vertical{ background:rgba(255,255,255,0.55); border-radius:4px; min-height:20px; }"
+        "QScrollBar::handle:vertical:hover{ background:rgba(255,255,255,0.80); }"
         "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical{ height:0; }"
+        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical{ background:transparent; }"
     );
     m_scroll->viewport()->setStyleSheet("background:transparent;");
     m_scroll->setAttribute(Qt::WA_TranslucentBackground);
@@ -357,7 +383,21 @@ ChatBotBioSimple::ChatBotBioSimple(QWidget* parent)
         "QPushButton:disabled{ background:rgba(200,200,200,0.5); }"
     );
 
+    m_micBtn = new QPushButton("🎤");
+    m_micBtn->setFixedSize(38, 38);
+    m_micBtn->setCursor(Qt::PointingHandCursor);
+    m_micBtn->setCheckable(true);
+    m_micBtn->setToolTip("Activer/Désactiver le micro (Ctrl+M)");
+    m_micBtn->setStyleSheet(
+        "QPushButton{ background:rgba(59,130,246,0.16); border-radius:19px;"
+        " color:#1d4ed8; font-size:15px; border:none; }"
+        "QPushButton:hover{ background:rgba(59,130,246,0.30); }"
+        "QPushButton:checked{ background:rgba(239,68,68,0.20); color:#dc2626; }"
+        "QPushButton:disabled{ background:rgba(200,200,200,0.5); color:#999; }"
+    );
+
     inputL->addWidget(m_input, 1);
+    inputL->addWidget(m_micBtn);
     inputL->addWidget(m_clearBtn);
     inputL->addWidget(m_sendBtn);
     cardL->addWidget(inputBar);
@@ -365,6 +405,12 @@ ChatBotBioSimple::ChatBotBioSimple(QWidget* parent)
     connect(m_sendBtn,  &QPushButton::clicked,    this, &ChatBotBioSimple::sendMessage);
     connect(m_clearBtn, &QPushButton::clicked,    this, &ChatBotBioSimple::clearConversation);
     connect(m_input,    &QLineEdit::returnPressed, this, &ChatBotBioSimple::sendMessage);
+    connect(m_micBtn,   &QPushButton::clicked,    this, &ChatBotBioSimple::toggleMicro);
+    QShortcut* micShortcut = new QShortcut(QKeySequence("Ctrl+M"), this);
+    connect(micShortcut, &QShortcut::activated, this, &ChatBotBioSimple::toggleMicro);
+
+    // TTS désactivé — les réponses restent uniquement en texte
+    m_tts = nullptr;
 
     // ── Vidéo de fond (sans son) ──────────────────────────────────
     m_bgPlayer = new QMediaPlayer(this);
@@ -442,6 +488,9 @@ void ChatBotBioSimple::addMessage(const QString& text, bool isUser, bool richTex
     m_msgLayout->insertWidget(pos, bubble);
     anim->start(QAbstractAnimation::DeleteWhenStopped);
 
+    QTimer::singleShot(50, this, [this](){
+        m_scroll->verticalScrollBar()->setValue(m_scroll->verticalScrollBar()->maximum());
+    });
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -474,6 +523,7 @@ void ChatBotBioSimple::sendMessage()
     m_input->clear();
     m_input->setEnabled(false);
     m_sendBtn->setEnabled(false);
+    m_micBtn->setEnabled(false);
 
     addMessage(text, true);
     m_history.append({"user", text});
@@ -525,6 +575,7 @@ void ChatBotBioSimple::callOpenAI(const QString& /*userMessage*/)
     req.setSslConfiguration(ssl);
 
     QNetworkReply* rpl = m_net->post(req, doc.toJson());
+    rpl->setProperty("requestType", "chat");
     // Ignore SSL errors on this specific reply
     connect(rpl, &QNetworkReply::sslErrors, rpl, [rpl](const QList<QSslError>&){
         rpl->ignoreSslErrors();
@@ -536,16 +587,52 @@ void ChatBotBioSimple::callOpenAI(const QString& /*userMessage*/)
 // ─────────────────────────────────────────────────────────────────
 void ChatBotBioSimple::onApiReply(QNetworkReply* reply)
 {
-    removeTypingIndicator();
-    m_input->setEnabled(true);
-    m_sendBtn->setEnabled(true);
-    m_input->setFocus();
-
     // Read everything BEFORE deleteLater
     QByteArray data   = reply->readAll();
     bool netError     = (reply->error() != QNetworkReply::NoError);
     QString errStr    = reply->errorString();   // save before deleteLater
+    const QString requestType = reply->property("requestType").toString();
     reply->deleteLater();
+
+    if (requestType == "stt") {
+        m_input->setEnabled(true);
+        m_sendBtn->setEnabled(true);
+        m_micBtn->setEnabled(true);
+        m_input->setFocus();
+
+        QJsonDocument sttDoc = QJsonDocument::fromJson(data);
+        if (netError) {
+            addMessage("Erreur STT : " + errStr, false);
+            return;
+        }
+        if (!sttDoc.isObject()) {
+            addMessage("Erreur STT : réponse invalide.", false);
+            return;
+        }
+
+        const QJsonObject sttObj = sttDoc.object();
+        if (sttObj.contains("error")) {
+            const QString apiErr = sttObj["error"].toObject().value("message").toString();
+            addMessage("Erreur STT : " + (apiErr.isEmpty() ? QString("transcription indisponible") : apiErr), false);
+            return;
+        }
+
+        const QString transcribed = sttObj.value("text").toString().trimmed();
+        if (transcribed.isEmpty()) {
+            addMessage("Je n'ai pas bien entendu. Réessaie avec le micro.", false);
+            return;
+        }
+
+        m_input->setText(transcribed);
+        sendMessage();
+        return;
+    }
+
+    removeTypingIndicator();
+    m_input->setEnabled(true);
+    m_sendBtn->setEnabled(true);
+    m_micBtn->setEnabled(true);
+    m_input->setFocus();
 
     QJsonDocument doc = QJsonDocument::fromJson(data);
 
@@ -627,5 +714,175 @@ void ChatBotBioSimple::mouseMoveEvent(QMouseEvent* e)
 void ChatBotBioSimple::mouseReleaseEvent(QMouseEvent*)
 {
     m_dragging = false;
+}
+
+void ChatBotBioSimple::keyPressEvent(QKeyEvent* event)
+{
+    // Prevent Enter/Return from closing the dialog (QDialog default behavior)
+    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+        sendMessage();
+        return;
+    }
+    // Escape closes the chatbot
+    if (event->key() == Qt::Key_Escape) {
+        close();
+        return;
+    }
+    // All other keys pass normally (but NOT to QDialog to avoid accept/reject)
+    QWidget::keyPressEvent(event);
+}
+
+void ChatBotBioSimple::toggleMicro()
+{
+    if (m_isRecording) {
+        stopMicroCaptureAndTranscribe();
+    } else {
+        startMicroCapture();
+    }
+}
+
+void ChatBotBioSimple::startMicroCapture()
+{
+    if (m_isRecording) return;
+
+    QAudioFormat format;
+    format.setSampleRate(16000);
+    format.setChannelCount(1);
+    format.setSampleFormat(QAudioFormat::Int16);
+
+    m_audioSource = new QAudioSource(format, this);
+    m_audioBuffer = new QBuffer(this);
+    m_audioBuffer->open(QIODevice::WriteOnly);
+    m_audioSource->start(m_audioBuffer);
+
+    m_isRecording = true;
+    m_micBtn->setChecked(true);
+    m_input->setPlaceholderText("Écoute en cours... (Ctrl+M pour arrêter)");
+}
+
+void ChatBotBioSimple::stopMicroCaptureAndTranscribe()
+{
+    if (!m_isRecording) return;
+
+    m_isRecording = false;
+    m_micBtn->setChecked(false);
+    m_input->setPlaceholderText("Écrivez ici...");
+
+    QByteArray pcmData;
+    if (m_audioSource) m_audioSource->stop();
+    if (m_audioBuffer) {
+        pcmData = m_audioBuffer->data();
+        m_audioBuffer->close();
+    }
+    if (m_audioSource) {
+        m_audioSource->deleteLater();
+        m_audioSource = nullptr;
+    }
+    if (m_audioBuffer) {
+        m_audioBuffer->deleteLater();
+        m_audioBuffer = nullptr;
+    }
+
+    if (pcmData.size() < 2048) {
+        addMessage("Audio trop court. Maintiens le micro un peu plus longtemps.", false);
+        return;
+    }
+
+    m_input->setEnabled(false);
+    m_sendBtn->setEnabled(false);
+    m_micBtn->setEnabled(false);
+    callSpeechToText(pcmData);
+}
+
+QByteArray ChatBotBioSimple::buildWavFromPcm16(const QByteArray& pcmData, int sampleRate, int channels) const
+{
+    const quint32 dataSize = quint32(pcmData.size());
+    const quint16 bitsPerSample = 16;
+    const quint32 byteRate = quint32(sampleRate * channels * (bitsPerSample / 8));
+    const quint16 blockAlign = quint16(channels * (bitsPerSample / 8));
+
+    QByteArray wav;
+    wav.reserve(int(44 + dataSize));
+    wav.append("RIFF", 4);
+    wav.append(le32(36 + dataSize));
+    wav.append("WAVE", 4);
+    wav.append("fmt ", 4);
+    wav.append(le32(16));
+    wav.append(le16(1));
+    wav.append(le16(quint16(channels)));
+    wav.append(le32(quint32(sampleRate)));
+    wav.append(le32(byteRate));
+    wav.append(le16(blockAlign));
+    wav.append(le16(bitsPerSample));
+    wav.append("data", 4);
+    wav.append(le32(dataSize));
+    wav.append(pcmData);
+    return wav;
+}
+
+void ChatBotBioSimple::callSpeechToText(const QByteArray& pcmData)
+{
+    const QByteArray wavData = buildWavFromPcm16(pcmData, 16000, 1);
+
+    QUrl endpoint(GROQ_STT_API_URL);
+    QNetworkRequest req(endpoint);
+    req.setRawHeader("Authorization", ("Bearer " + GROQ_API_KEY).toUtf8());
+
+    QSslConfiguration ssl = QSslConfiguration::defaultConfiguration();
+    ssl.setPeerVerifyMode(QSslSocket::VerifyNone);
+    req.setSslConfiguration(ssl);
+
+    QHttpMultiPart* mp = new QHttpMultiPart(QHttpMultiPart::FormDataType);
+
+    auto addPart = [&](const QString& name, const QByteArray& val) {
+        QHttpPart p;
+        p.setHeader(QNetworkRequest::ContentDispositionHeader,
+                    QString("form-data; name=\"%1\"").arg(name));
+        p.setBody(val);
+        mp->append(p);
+    };
+
+    addPart("model",           GROQ_STT_API_MODEL.toUtf8());
+    addPart("language",        "fr");
+    addPart("response_format", "json");
+    addPart("temperature",     "0");
+    // Hint de vocabulaire : aide Whisper à reconnaître les termes métier
+    addPart("prompt",
+            "BioSample, congélateur, expérience, équipement, projet, publication, employé, "
+            "biosample, laboratoire, échantillon, réfrigérateur, statistiques, modifier, "
+            "supprimer, ajouter, rechercher, exporter, PDF, SmartVision.");
+
+    QHttpPart filePart;
+    filePart.setHeader(QNetworkRequest::ContentTypeHeader, QVariant("audio/wav"));
+    filePart.setHeader(QNetworkRequest::ContentDispositionHeader,
+                       QVariant("form-data; name=\"file\"; filename=\"speech.wav\""));
+    filePart.setBody(wavData);
+    mp->append(filePart);
+
+    QNetworkReply* rpl = m_net->post(req, mp);
+    mp->setParent(rpl);
+    rpl->setProperty("requestType", "stt");
+    connect(rpl, &QNetworkReply::sslErrors, rpl, [rpl](const QList<QSslError>&){
+        rpl->ignoreSslErrors();
+    });
+}
+
+void ChatBotBioSimple::speakAssistantText(const QString& text)
+{
+    if (!m_tts) return;
+    if (m_tts->state() == QTextToSpeech::Speaking)
+        m_tts->stop();
+
+    // Strip markdown formatting before speaking
+    QString clean = text;
+    clean.replace(QRegularExpression("\\*\\*([^*]+)\\*\\*"), "\\1");
+    clean.replace(QRegularExpression("\\*([^*]+)\\*"),       "\\1");
+    clean.replace(QRegularExpression("#+\\s*"),              "");
+    clean.replace(QRegularExpression("[`]{1,3}[^`]*[`]{1,3}"), "");
+    clean.replace(QRegularExpression("[•\\-]\\s+"),          "");
+    clean.replace(QRegularExpression("\\[([^\\]]+)\\]\\([^)]*\\)"), "\\1");
+    clean = clean.simplified().trimmed();
+    if (!clean.isEmpty())
+        m_tts->say(clean);
 }
 

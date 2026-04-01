@@ -49,6 +49,90 @@ QString formatSqlError(const QSqlError& error, const QString& sql = QString())
     return lines.join("\n");
 }
 
+bool publicationColumnExists(const QString& columnName)
+{
+    QSqlQuery query;
+    if (!query.prepare(
+            "SELECT COUNT(*) "
+            "FROM USER_TAB_COLS "
+            "WHERE UPPER(TABLE_NAME) = UPPER('Publication') "
+            "  AND UPPER(COLUMN_NAME) = UPPER(?)")) {
+        return false;
+    }
+    query.addBindValue(columnName);
+    if (!query.exec() || !query.next()) {
+        return false;
+    }
+    return query.value(0).toInt() > 0;
+}
+
+bool publicationTableExists(const QString& tableName)
+{
+    QSqlQuery query;
+    if (!query.prepare(
+            "SELECT COUNT(*) FROM USER_TABLES WHERE UPPER(TABLE_NAME) = UPPER(?)")) {
+        return false;
+    }
+    query.addBindValue(tableName);
+    if (!query.exec() || !query.next()) {
+        return false;
+    }
+    return query.value(0).toInt() > 0;
+}
+
+QString publicationLinkTableIdentifier()
+{
+    if (publicationTableExists("Ecrire")) {
+        return "\"Ecrire\"";
+    }
+
+    QSqlQuery query;
+    if (!query.exec(
+            "SELECT table_name "
+            "FROM ( "
+            "    SELECT table_name "
+            "    FROM USER_TAB_COLS "
+            "    GROUP BY table_name "
+            "    HAVING SUM(CASE WHEN UPPER(column_name) = UPPER('employee_id') THEN 1 ELSE 0 END) > 0 "
+            "       AND SUM(CASE WHEN UPPER(column_name) = UPPER('id_publication') THEN 1 ELSE 0 END) > 0 "
+            "    ORDER BY table_name "
+            ") "
+            "WHERE ROWNUM = 1")) {
+        return QString();
+    }
+
+    if (!query.next()) {
+        return QString();
+    }
+
+    const QString tableName = query.value(0).toString().trimmed();
+    if (tableName.isEmpty()) {
+        return QString();
+    }
+
+    return QString("\"") + tableName + QString("\"");
+}
+
+QString publicationYearColumnIdentifier()
+{
+    QSqlQuery query;
+    if (query.prepare(
+            "SELECT COLUMN_NAME "
+            "FROM USER_TAB_COLS "
+            "WHERE UPPER(TABLE_NAME) = UPPER('Publication') "
+            "  AND COLUMN_ID = 4")) {
+        if (query.exec() && query.next()) {
+            const QString col = query.value(0).toString().trimmed();
+            if (!col.isEmpty()) {
+                return QString("\"") + col + QString("\"");
+            }
+        }
+    }
+
+    // Fallback for older schemas.
+    return "\"année\"";
+}
+
 void setError(QString* errorMessage, const QSqlQuery& query);
 
 bool ensureDbConnection(QString* errorMessage)
@@ -75,6 +159,46 @@ void setError(QString* errorMessage, const QSqlQuery& query)
     }
 }
 
+bool replacePublicationEmployeeLink(int publicationId, int employeeId, QString* errorMessage)
+{
+    const QString linkTable = publicationLinkTableIdentifier();
+    if (linkTable.isEmpty()) {
+        // Some environments may not have the association table. Do not block publication CRUD.
+        return true;
+    }
+
+    QSqlQuery deleteQuery;
+    if (!deleteQuery.prepare(QString("DELETE FROM %1 WHERE \"id_publication\" = ?").arg(linkTable))) {
+        setError(errorMessage, deleteQuery);
+        return false;
+    }
+    deleteQuery.addBindValue(publicationId);
+
+    if (!deleteQuery.exec()) {
+        setError(errorMessage, deleteQuery);
+        return false;
+    }
+
+    if (employeeId <= 0) {
+        return true;
+    }
+
+    QSqlQuery insertQuery;
+    if (!insertQuery.prepare(QString("INSERT INTO %1 (\"employee_id\", \"id_publication\") VALUES (?, ?)").arg(linkTable)) ) {
+        setError(errorMessage, insertQuery);
+        return false;
+    }
+    insertQuery.addBindValue(employeeId);
+    insertQuery.addBindValue(publicationId);
+
+    if (!insertQuery.exec()) {
+        setError(errorMessage, insertQuery);
+        return false;
+    }
+
+    return true;
+}
+
 }
 
 Publication::Publication()
@@ -82,6 +206,8 @@ Publication::Publication()
     , m_annee(0)
     , m_idProjet(0)
     , m_employeeId(0)
+    , m_impactFactor(0.0)
+    , m_citationCount(0)
 {
 }
 
@@ -93,7 +219,9 @@ Publication::Publication(int id,
                          const QString& status,
                          const QString& abstractText,
                          int idProjet,
-                         int employeeId)
+                         int employeeId,
+                         double impactFactor,
+                         int citationCount)
     : m_id(id)
     , m_titre(titre)
     , m_journal(journal)
@@ -103,6 +231,8 @@ Publication::Publication(int id,
     , m_abstractText(abstractText)
     , m_idProjet(idProjet)
     , m_employeeId(employeeId)
+    , m_impactFactor(impactFactor)
+    , m_citationCount(citationCount)
 {
 }
 
@@ -115,6 +245,8 @@ QString Publication::status() const { return m_status; }
 QString Publication::abstractText() const { return m_abstractText; }
 int Publication::idProjet() const { return m_idProjet; }
 int Publication::employeeId() const { return m_employeeId; }
+double Publication::impactFactor() const { return m_impactFactor; }
+int Publication::citationCount() const { return m_citationCount; }
 
 void Publication::setId(int id) { m_id = id; }
 void Publication::setTitre(const QString& titre) { m_titre = titre; }
@@ -125,6 +257,8 @@ void Publication::setStatus(const QString& status) { m_status = status; }
 void Publication::setAbstractText(const QString& abstractText) { m_abstractText = abstractText; }
 void Publication::setIdProjet(int idProjet) { m_idProjet = idProjet; }
 void Publication::setEmployeeId(int employeeId) { m_employeeId = employeeId; }
+void Publication::setImpactFactor(double impactFactor) { m_impactFactor = impactFactor; }
+void Publication::setCitationCount(int citationCount) { m_citationCount = citationCount; }
 
 bool Publication::create(QString* errorMessage) const
 {
@@ -146,10 +280,29 @@ bool Publication::create(QString* errorMessage) const
         }
     }
 
+    const QString yearCol = publicationYearColumnIdentifier();
+    const bool hasImpactFactor = publicationColumnExists("impact_factor");
+    const bool hasCitationCount = publicationColumnExists("citation_count");
+
+    QString sql =
+        "INSERT INTO \"Publication\" (\"id_publication\", \"titre\", \"journal\", " + yearCol + ", \"DOI\", \"status\", \"abstract\"";
+    if (hasImpactFactor) {
+        sql += ", \"impact_factor\"";
+    }
+    if (hasCitationCount) {
+        sql += ", \"citation_count\"";
+    }
+    sql += ") VALUES (?, ?, ?, ?, ?, ?, ?";
+    if (hasImpactFactor) {
+        sql += ", ?";
+    }
+    if (hasCitationCount) {
+        sql += ", ?";
+    }
+    sql += ")";
+
     QSqlQuery query;
-    if (!query.prepare(
-            "INSERT INTO \"Publication\" (\"id_publication\", \"titre\", \"journal\", \"année\", \"DOI\", \"status\", \"abstract\") "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+    if (!query.prepare(sql)) {
         setError(errorMessage, query);
         return false;
     }
@@ -161,9 +314,19 @@ bool Publication::create(QString* errorMessage) const
     query.addBindValue(m_doi);
     query.addBindValue(m_status);
     query.addBindValue(m_abstractText);
+    if (hasImpactFactor) {
+        query.addBindValue(m_impactFactor);
+    }
+    if (hasCitationCount) {
+        query.addBindValue(m_citationCount);
+    }
 
     if (!query.exec()) {
         setError(errorMessage, query);
+        return false;
+    }
+
+    if (!replacePublicationEmployeeLink(generatedId, m_employeeId, errorMessage)) {
         return false;
     }
 
@@ -176,16 +339,28 @@ bool Publication::update(QString* errorMessage) const
         return false;
     }
 
+    const QString yearCol = publicationYearColumnIdentifier();
+    const bool hasImpactFactor = publicationColumnExists("impact_factor");
+    const bool hasCitationCount = publicationColumnExists("citation_count");
+
+    QString sql =
+        "UPDATE \"Publication\" "
+        "SET \"titre\" = ?, "
+        "    \"journal\" = ?, "
+        "    " + yearCol + " = ?, "
+        "    \"DOI\" = ?, "
+        "    \"status\" = ?, "
+        "    \"abstract\" = ?";
+    if (hasImpactFactor) {
+        sql += ", \"impact_factor\" = ?";
+    }
+    if (hasCitationCount) {
+        sql += ", \"citation_count\" = ?";
+    }
+    sql += " WHERE \"id_publication\" = ?";
+
     QSqlQuery query;
-    if (!query.prepare(
-            "UPDATE \"Publication\" "
-            "SET \"titre\" = ?, "
-            "    \"journal\" = ?, "
-            "    \"année\" = ?, "
-            "    \"DOI\" = ?, "
-            "    \"status\" = ?, "
-            "    \"abstract\" = ? "
-            "WHERE \"id_publication\" = ?")) {
+    if (!query.prepare(sql)) {
         setError(errorMessage, query);
         return false;
     }
@@ -196,10 +371,20 @@ bool Publication::update(QString* errorMessage) const
     query.addBindValue(m_doi);
     query.addBindValue(m_status);
     query.addBindValue(m_abstractText);
+    if (hasImpactFactor) {
+        query.addBindValue(m_impactFactor);
+    }
+    if (hasCitationCount) {
+        query.addBindValue(m_citationCount);
+    }
     query.addBindValue(m_id);
 
     if (!query.exec()) {
         setError(errorMessage, query);
+        return false;
+    }
+
+    if (!replacePublicationEmployeeLink(m_id, m_employeeId, errorMessage)) {
         return false;
     }
 
@@ -217,6 +402,20 @@ bool Publication::remove(int id, QString* errorMessage)
 {
     if (!ensureDbConnection(errorMessage)) {
         return false;
+    }
+
+    const QString linkTable = publicationLinkTableIdentifier();
+    if (!linkTable.isEmpty()) {
+        QSqlQuery deleteLinkQuery;
+        if (!deleteLinkQuery.prepare(QString("DELETE FROM %1 WHERE \"id_publication\" = ?").arg(linkTable))) {
+            setError(errorMessage, deleteLinkQuery);
+            return false;
+        }
+        deleteLinkQuery.addBindValue(id);
+        if (!deleteLinkQuery.exec()) {
+            setError(errorMessage, deleteLinkQuery);
+            return false;
+        }
     }
 
     QSqlQuery query;
@@ -247,11 +446,22 @@ bool Publication::readById(int id, Publication& outPublication, QString* errorMe
         return false;
     }
 
+    const QString yearCol = publicationYearColumnIdentifier();
+    const bool hasImpactFactor = publicationColumnExists("impact_factor");
+    const bool hasCitationCount = publicationColumnExists("citation_count");
+
+    QString sql =
+        "SELECT \"id_publication\", \"titre\", \"journal\", " + yearCol + ", \"DOI\", \"status\", \"abstract\"";
+    if (hasImpactFactor) {
+        sql += ", NVL(\"impact_factor\", 0)";
+    }
+    if (hasCitationCount) {
+        sql += ", NVL(\"citation_count\", 0)";
+    }
+    sql += " FROM \"Publication\" WHERE \"id_publication\" = ?";
+
     QSqlQuery query;
-    if (!query.prepare(
-            "SELECT \"id_publication\", \"titre\", \"journal\", \"année\", \"DOI\", \"status\", \"abstract\" "
-            "FROM \"Publication\" "
-            "WHERE \"id_publication\" = ?")) {
+    if (!query.prepare(sql)) {
         setError(errorMessage, query);
         return false;
     }
@@ -276,6 +486,23 @@ bool Publication::readById(int id, Publication& outPublication, QString* errorMe
     outPublication.setDoi(query.value(4).toString());
     outPublication.setStatus(query.value(5).toString());
     outPublication.setAbstractText(query.value(6).toString());
+    int metricCol = 7;
+    outPublication.setImpactFactor(hasImpactFactor ? query.value(metricCol++).toDouble() : 0.0);
+    outPublication.setCitationCount(hasCitationCount ? query.value(metricCol).toInt() : 0);
+
+    QSqlQuery employeeQuery;
+    const QString linkTable = publicationLinkTableIdentifier();
+    if (!linkTable.isEmpty() && employeeQuery.prepare(
+            QString("SELECT \"employee_id\" FROM %1 WHERE \"id_publication\" = ? ORDER BY \"employee_id\"").arg(linkTable))) {
+        employeeQuery.addBindValue(id);
+        if (employeeQuery.exec() && employeeQuery.next()) {
+            outPublication.setEmployeeId(employeeQuery.value(0).toInt());
+        } else {
+            outPublication.setEmployeeId(0);
+        }
+    } else {
+        outPublication.setEmployeeId(0);
+    }
 
     return true;
 }
@@ -286,11 +513,39 @@ QSqlQueryModel* Publication::readAll(QObject* parent, QString* errorMessage)
         return nullptr;
     }
 
+    const QString yearCol = publicationYearColumnIdentifier();
+    const bool hasImpactFactor = publicationColumnExists("impact_factor");
+    const bool hasCitationCount = publicationColumnExists("citation_count");
+    const QString linkTable = publicationLinkTableIdentifier();
+
+    const QString impactExpr = hasImpactFactor
+        ? "NVL(p.\"impact_factor\", 0)"
+        : "0";
+    const QString citationExpr = hasCitationCount
+        ? "NVL(p.\"citation_count\", 0)"
+        : "0";
+
+    QString employeeExpr = "'Aucun employé'";
+    if (!linkTable.isEmpty()) {
+        employeeExpr =
+            "NVL((SELECT LISTAGG(NVL(NULLIF(TRIM(e.\"FULL_NAME\"), ''), TRIM(e.\"prenom\" || ' ' || e.\"nom\")), ', ') "
+            "      WITHIN GROUP (ORDER BY e.\"nom\", e.\"prenom\", e.\"employee_id\") "
+            "      FROM " + linkTable + " ec "
+            "      JOIN \"Employés\" e ON e.\"employee_id\" = ec.\"employee_id\" "
+            "      WHERE ec.\"id_publication\" = p.\"id_publication\"), 'Aucun employé')";
+    }
+
+    const QString sql =
+        "SELECT p.\"id_publication\", p.\"titre\", p.\"journal\", p." + yearCol + ", p.\"DOI\", p.\"status\", "
+        "       " + employeeExpr + " AS \"employe\", "
+        "       NVL(p.\"abstract\", '') AS \"mots_cles\", "
+        "       " + impactExpr + " AS \"impact_factor\", "
+        "       " + citationExpr + " AS \"citation_count\" "
+        "FROM \"Publication\" p "
+        "ORDER BY p." + yearCol + " DESC, p.\"id_publication\" DESC";
+
     QSqlQueryModel* model = new QSqlQueryModel(parent);
-    model->setQuery(
-        "SELECT \"id_publication\", \"titre\", \"journal\", \"année\", \"DOI\", \"status\" "
-        "FROM \"Publication\" "
-        "ORDER BY \"année\" DESC, \"id_publication\" DESC");
+    model->setQuery(sql);
 
     if (model->lastError().isValid()) {
         if (errorMessage) {
@@ -306,6 +561,10 @@ QSqlQueryModel* Publication::readAll(QObject* parent, QString* errorMessage)
     model->setHeaderData(3, Qt::Horizontal, "Année");
     model->setHeaderData(4, Qt::Horizontal, "DOI");
     model->setHeaderData(5, Qt::Horizontal, "Status");
+    model->setHeaderData(6, Qt::Horizontal, "Employé");
+    model->setHeaderData(7, Qt::Horizontal, "Mots-clés");
+    model->setHeaderData(8, Qt::Horizontal, "Impact Factor");
+    model->setHeaderData(9, Qt::Horizontal, "Citations");
 
     return model;
 }
