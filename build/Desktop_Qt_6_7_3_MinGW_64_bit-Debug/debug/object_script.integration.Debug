@@ -1,0 +1,17 @@
+debug/gestproj.o
+debug/integration.o
+debug/signupserver.o
+debug/connection.o
+debug/employes.o
+debug/publication.o
+debug/equipement.o
+debug/crudebiosimple.o
+debug/crudexperience.o
+debug/chatbotbiosimple.o
+debug/cong.o
+debug/main.o
+debug/qrc_resources.o
+debug/moc_integration.o
+debug/moc_signupserver.o
+debug/moc_chatbotbiosimple.o
+debug/moc_cong.o
