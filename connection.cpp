@@ -25,6 +25,10 @@ Connection* Connection::instance()
 // Méthode pour établir la connexion
 bool Connection::createConnect()
 {
+    if (db.isValid() && db.isOpen()) {
+        return true;
+    }
+
     bool test = false;
 
     db.setDatabaseName("smartvision");//inserer le nom de la source de données

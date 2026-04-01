@@ -5,9 +5,12 @@
 #include <QPainterPath>
 #include <QMouseEvent>
 #include <QEnterEvent>
+#include <QEvent>
+#include <QShowEvent>
 #include <QUrl>
 
 static const int BTN_SIZE = 72;
+static const int BTN_MARGIN = 24;
 
 FloatingChatBtn::FloatingChatBtn(QWidget* parent)
     : QWidget(parent)
@@ -16,10 +19,10 @@ FloatingChatBtn::FloatingChatBtn(QWidget* parent)
     setAttribute(Qt::WA_TranslucentBackground);
     setCursor(Qt::PointingHandCursor);
     setToolTip("Ouvrir le chatbot IA");
+    m_fallbackIcon.load(":/image/chatia.png");
 
-    // Position initiale : coin inférieur droit avec marge
     if (parent)
-        move(parent->width() - BTN_SIZE - 24, parent->height() - BTN_SIZE - 24);
+        parent->installEventFilter(this);
 
     // ── Vidéo icône (sans son) ────────────────────────────────────
     m_iconPlayer = new QMediaPlayer(this);
@@ -40,7 +43,58 @@ FloatingChatBtn::FloatingChatBtn(QWidget* parent)
     });
     m_iconPlayer->play();
 
+    positionFloatingButton(true);
     raise();
+}
+
+bool FloatingChatBtn::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == parentWidget() && event) {
+        switch (event->type()) {
+        case QEvent::Resize:
+        case QEvent::Move:
+        case QEvent::Show:
+        case QEvent::WindowStateChange:
+        case QEvent::ZOrderChange:
+            positionFloatingButton(false);
+            raise();
+            break;
+        default:
+            break;
+        }
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+void FloatingChatBtn::showEvent(QShowEvent* event)
+{
+    QWidget::showEvent(event);
+    positionFloatingButton(false);
+    raise();
+}
+
+void FloatingChatBtn::positionFloatingButton(bool forceCenter)
+{
+    QWidget* parent = parentWidget();
+    if (!parent)
+        return;
+
+    const QRect area = parent->rect();
+    const int minX = BTN_MARGIN;
+    const int maxX = qMax(minX, area.width() - width() - BTN_MARGIN);
+    const int minY = BTN_MARGIN;
+    const int maxY = qMax(minY, area.height() - height() - BTN_MARGIN);
+
+    QPoint target = pos();
+    if (forceCenter || !m_userMoved) {
+        target.setX(maxX);
+        target.setY(qMax(minY, (area.height() - height()) / 2));
+    } else {
+        target.setX(qBound(minX, target.x(), maxX));
+        target.setY(qBound(minY, target.y(), maxY));
+    }
+
+    move(target);
 }
 
 void FloatingChatBtn::paintEvent(QPaintEvent*)
@@ -85,12 +139,23 @@ void FloatingChatBtn::paintEvent(QPaintEvent*)
         p.setPen(QPen(QColor(255, 255, 255, 90), 2.5));
         p.drawEllipse(2, 2, S - 6, S - 6);
 
-        // Bulle de dialogue
-        p.setPen(Qt::NoPen);
-        p.setBrush(Qt::white);
-        QPainterPath bubble;
-        bubble.addRoundedRect(S * 0.22f, S * 0.22f, S * 0.56f, S * 0.40f, 6, 6);
-        p.drawPath(bubble);
+        if (!m_fallbackIcon.isNull()) {
+            QPainterPath circle;
+            circle.addEllipse(6, 6, S - 12, S - 12);
+            p.setClipPath(circle);
+            p.drawPixmap(QRect(6, 6, S - 12, S - 12), m_fallbackIcon);
+            p.setClipping(false);
+            p.setPen(QPen(QColor(255, 255, 255, 125), 2));
+            p.setBrush(Qt::NoBrush);
+            p.drawEllipse(4, 4, S - 8, S - 8);
+        } else {
+            // Bulle de dialogue
+            p.setPen(Qt::NoPen);
+            p.setBrush(Qt::white);
+            QPainterPath bubble;
+            bubble.addRoundedRect(S * 0.22f, S * 0.22f, S * 0.56f, S * 0.40f, 6, 6);
+            p.drawPath(bubble);
+        }
     }
 }
 
@@ -117,9 +182,12 @@ void FloatingChatBtn::mouseMoveEvent(QMouseEvent* e)
             newPos = parentWidget()->mapFromGlobal(newPos);
 
         if (parentWidget()) {
-            newPos.setX(qBound(0, newPos.x(), parentWidget()->width()  - width()));
-            newPos.setY(qBound(0, newPos.y(), parentWidget()->height() - height()));
+            const int maxX = qMax(BTN_MARGIN, parentWidget()->width()  - width()  - BTN_MARGIN);
+            const int maxY = qMax(BTN_MARGIN, parentWidget()->height() - height() - BTN_MARGIN);
+            newPos.setX(qBound(BTN_MARGIN, newPos.x(), maxX));
+            newPos.setY(qBound(BTN_MARGIN, newPos.y(), maxY));
         }
+        m_userMoved = true;
         move(newPos);
     }
 }
@@ -127,11 +195,7 @@ void FloatingChatBtn::mouseMoveEvent(QMouseEvent* e)
 void FloatingChatBtn::mouseReleaseEvent(QMouseEvent* e)
 {
     if (e->button() == Qt::LeftButton && !m_dragging) {
-        ChatBotBioSimple* bot = new ChatBotBioSimple(window());
-        QPoint center = window()->geometry().center();
-        bot->move(center.x() - bot->width() / 2,
-                  center.y() - bot->height() / 2);
-        bot->exec();
+        openChatbot();
     }
     m_dragging = false;
 }
@@ -146,4 +210,16 @@ void FloatingChatBtn::leaveEvent(QEvent*)
 {
     m_hovered = false;
     update();
+}
+
+void FloatingChatBtn::openChatbot()
+{
+    QWidget* hostWindow = window();
+    ChatBotBioSimple* bot = new ChatBotBioSimple(hostWindow);
+    if (hostWindow) {
+        const QRect hostRect = hostWindow->geometry();
+        bot->move(hostRect.center().x() - bot->width() / 2,
+                  hostRect.center().y() - bot->height() / 2);
+    }
+    bot->exec();
 }

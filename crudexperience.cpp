@@ -87,6 +87,84 @@ QString toUiStatus(const QString& dbStatus)
     return dbStatus;
 }
 
+QString normalizeEquipAvailability(const QString& value)
+{
+    const QString t = value.trimmed().toLower();
+    if (t.contains("non")) return "Non disponible";
+    if (t.contains("dispon")) return "Disponible";
+    return QString();
+}
+
+bool equipementHasIdExpColumn()
+{
+    static bool resolved = false;
+    static bool hasColumn = false;
+    if (resolved) return hasColumn;
+
+    QSqlQuery q;
+    q.prepare(
+        "SELECT COUNT(*) "
+        "FROM USER_TAB_COLUMNS "
+        "WHERE TABLE_NAME = :tbl "
+        "  AND COLUMN_NAME = 'Id_exp'");
+    q.bindValue(":tbl", QString::fromUtf8("Équipement"));
+
+    if (q.exec() && q.next()) {
+        hasColumn = q.value(0).toInt() > 0;
+    } else {
+        hasColumn = false;
+    }
+    resolved = true;
+    return hasColumn;
+}
+
+QString inferEquipAvailabilityFromEquipement(QString* error)
+{
+    QSqlQuery q;
+    q.prepare(
+        "SELECT COUNT(*) "
+        "FROM \"Équipement\" "
+        "WHERE LOWER(\"statut\") LIKE '%actif%' "
+        "   OR LOWER(\"statut\") LIKE '%dispon%' "
+        "   OR LOWER(\"statut\") LIKE '%op%rationnel%'");
+
+    if (!q.exec() || !q.next()) {
+        if (error) *error = q.lastError().text();
+        return QString();
+    }
+
+    return q.value(0).toInt() > 0 ? "Disponible" : "Non disponible";
+}
+
+QString inferEquipAvailabilityForExperience(int experienceId, QString* error)
+{
+    if (experienceId <= 0 || !equipementHasIdExpColumn()) {
+        return QString();
+    }
+
+    QSqlQuery q;
+    q.prepare(
+        "SELECT "
+        "  SUM(CASE WHEN LOWER(\"statut\") LIKE '%actif%' "
+        "            OR LOWER(\"statut\") LIKE '%dispon%' "
+        "            OR LOWER(\"statut\") LIKE '%op%rationnel%' "
+        "      THEN 1 ELSE 0 END) AS cnt_dispo, "
+        "  COUNT(*) AS cnt_total "
+        "FROM \"Équipement\" "
+        "WHERE \"Id_exp\" = :id");
+    q.bindValue(":id", experienceId);
+
+    if (!q.exec() || !q.next()) {
+        if (error) *error = q.lastError().text();
+        return QString();
+    }
+
+    const int cntDispo = q.value(0).toInt();
+    const int cntTotal = q.value(1).toInt();
+    if (cntTotal <= 0) return QString();
+    return cntDispo > 0 ? QString("Disponible") : QString("Non disponible");
+}
+
 }
 
 bool ExperienceCrud::loadProjects(QList<ProjectItem>& out, QString* error)
@@ -111,7 +189,8 @@ bool ExperienceCrud::loadExperiences(QList<ExperienceRecord>& out, QString* erro
 {
     out.clear();
     QSqlQuery q;
-    q.prepare("SELECT \"Id_exp\", \"Titre\", \"Hypothese\", \"Date_Debut\", \"Date_fin\", \"Status\" "
+    q.prepare("SELECT \"Id_exp\", \"Titre\", \"Hypothese\", \"Date_Debut\", \"Date_fin\", \"Status\", "
+              "\"Disponibilite_Equipement\", \"Resultat\", \"Type_Experience\" "
               "FROM \"Expérience\" ORDER BY \"Id_exp\" DESC");
     if (!q.exec()) {
         if (error) *error = q.lastError().text();
@@ -125,6 +204,15 @@ bool ExperienceCrud::loadExperiences(QList<ExperienceRecord>& out, QString* erro
         rec.dateDebut = q.value(3).toDate();
         rec.dateFin   = q.value(4).toDate();
         rec.status    = toUiStatus(q.value(5).toString());
+        rec.disponibiliteEquipement = normalizeEquipAvailability(q.value(6).toString());
+        rec.resultat = q.value(7).toString();
+        rec.typeExperience = q.value(8).toString();
+        const QString linkedAvail = inferEquipAvailabilityForExperience(rec.id, nullptr);
+        if (!linkedAvail.isEmpty()) {
+            rec.disponibiliteEquipement = linkedAvail;
+        } else if (rec.disponibiliteEquipement.isEmpty()) {
+            rec.disponibiliteEquipement = inferEquipAvailabilityFromEquipement(nullptr);
+        }
         out.push_back(rec);
     }
     return true;
@@ -133,7 +221,8 @@ bool ExperienceCrud::loadExperiences(QList<ExperienceRecord>& out, QString* erro
 bool ExperienceCrud::fetchExperience(int id, ExperienceRecord& out, QString* error)
 {
     QSqlQuery q;
-    q.prepare("SELECT \"Titre\", \"Hypothese\", \"Date_Debut\", \"Date_fin\", \"Status\", \"Id_projet\" "
+    q.prepare("SELECT \"Titre\", \"Hypothese\", \"Date_Debut\", \"Date_fin\", \"Status\", \"Id_projet\", "
+              "\"Disponibilite_Equipement\", \"Resultat\", \"Type_Experience\" "
               "FROM \"Expérience\" WHERE \"Id_exp\" = :id");
     q.bindValue(":id", id);
     if (!q.exec() || !q.next()) {
@@ -147,11 +236,29 @@ bool ExperienceCrud::fetchExperience(int id, ExperienceRecord& out, QString* err
     out.dateFin   = q.value(3).toDate();
     out.status    = toUiStatus(q.value(4).toString());
     out.projetId  = q.value(5);
+    out.disponibiliteEquipement = normalizeEquipAvailability(q.value(6).toString());
+    out.resultat = q.value(7).toString();
+    out.typeExperience = q.value(8).toString();
+    const QString linkedAvail = inferEquipAvailabilityForExperience(id, nullptr);
+    if (!linkedAvail.isEmpty()) {
+        out.disponibiliteEquipement = linkedAvail;
+    } else if (out.disponibiliteEquipement.isEmpty()) {
+        out.disponibiliteEquipement = inferEquipAvailabilityFromEquipement(nullptr);
+    }
     return true;
 }
 
 bool ExperienceCrud::deleteExperience(int id, QString* error)
 {
+    // Supprimer d'abord les liens équipement (FK_EQUIPEMENT_EXP)
+    QSqlQuery qEq;
+    qEq.prepare("DELETE FROM \"Équipement\" WHERE \"Id_exp\" = :id");
+    qEq.bindValue(":id", id);
+    if (!qEq.exec()) {
+        if (error) *error = qEq.lastError().text();
+        return false;
+    }
+
     QSqlQuery q;
     q.prepare("DELETE FROM \"Expérience\" WHERE \"Id_exp\" = :id");
     q.bindValue(":id", id);
@@ -182,11 +289,17 @@ bool ExperienceCrud::insertExperience(const ExperienceRecord& in, QString* error
 
     QSqlQuery q;
     q.prepare("INSERT INTO \"Expérience\" "
-              "(\"Id_exp\", \"Titre\", \"Hypothese\", \"Date_Debut\", \"Date_fin\", \"Status\", \"Id_projet\") "
-              "VALUES (:id, :t, :h, TO_DATE(:d,'YYYY-MM-DD'), TO_DATE(:df,'YYYY-MM-DD'), :s, :p)");
+              "(\"Id_exp\", \"Titre\", \"Hypothese\", \"Date_Debut\", \"Date_fin\", \"Status\", \"Id_projet\", "
+              " \"Disponibilite_Equipement\", \"Resultat\", \"Type_Experience\") "
+              "VALUES (:id, :t, :h, TO_DATE(:d,'YYYY-MM-DD'), TO_DATE(:df,'YYYY-MM-DD'), :s, :p, :de, :r, :te)");
     auto nullInt  = QVariant(QMetaType::fromType<int>());
     auto nullStr  = QVariant(QMetaType::fromType<QString>());
     const QString dbStatus = toDbStatus(in.status);
+    QString eqAvail = inferEquipAvailabilityForExperience(id, nullptr);
+    if (eqAvail.isEmpty()) eqAvail = normalizeEquipAvailability(in.disponibiliteEquipement);
+    if (eqAvail.isEmpty()) {
+        eqAvail = inferEquipAvailabilityFromEquipement(nullptr);
+    }
     q.bindValue(":id", id);
     q.bindValue(":t",  in.titre.isEmpty()     ? nullStr : QVariant(in.titre));
     q.bindValue(":h",  in.hypothese.isEmpty() ? nullStr : QVariant(in.hypothese));
@@ -194,6 +307,9 @@ bool ExperienceCrud::insertExperience(const ExperienceRecord& in, QString* error
     q.bindValue(":df", in.dateFin.isValid()   ? QVariant(in.dateFin.toString("yyyy-MM-dd"))   : nullStr);
     q.bindValue(":s",  dbStatus.isEmpty()      ? nullStr : QVariant(dbStatus));
     q.bindValue(":p",  (in.projetId.isNull() || !in.projetId.isValid()) ? nullInt : QVariant(in.projetId.toInt()));
+    q.bindValue(":de", eqAvail.isEmpty() ? nullStr : QVariant(eqAvail));
+    q.bindValue(":r",  in.resultat.isEmpty() ? nullStr : QVariant(in.resultat));
+    q.bindValue(":te", in.typeExperience.isEmpty() ? nullStr : QVariant(in.typeExperience));
     if (!q.exec()) {
         if (error) *error = q.lastError().text();
         return false;
@@ -207,21 +323,40 @@ bool ExperienceCrud::updateExperience(const ExperienceRecord& in, QString* error
     q.prepare("UPDATE \"Expérience\" "
               "SET \"Titre\" = :t, \"Hypothese\" = :h, "
               "    \"Date_Debut\" = TO_DATE(:d,'YYYY-MM-DD'), \"Date_fin\" = TO_DATE(:df,'YYYY-MM-DD'), "
-              "    \"Status\" = :s, \"Id_projet\" = :p "
+              "    \"Status\" = :s, \"Id_projet\" = :p, \"Disponibilite_Equipement\" = :de, "
+              "    \"Resultat\" = :r, \"Type_Experience\" = :te "
               "WHERE \"Id_exp\" = :id");
     auto nullInt  = QVariant(QMetaType::fromType<int>());
     auto nullStr  = QVariant(QMetaType::fromType<QString>());
     const QString dbStatus = toDbStatus(in.status);
+    QString eqAvail = inferEquipAvailabilityForExperience(in.id, nullptr);
+    if (eqAvail.isEmpty()) eqAvail = normalizeEquipAvailability(in.disponibiliteEquipement);
+    if (eqAvail.isEmpty()) {
+        eqAvail = inferEquipAvailabilityFromEquipement(nullptr);
+    }
     q.bindValue(":t",  in.titre.isEmpty()     ? nullStr : QVariant(in.titre));
     q.bindValue(":h",  in.hypothese.isEmpty() ? nullStr : QVariant(in.hypothese));
     q.bindValue(":d",  in.dateDebut.isValid() ? QVariant(in.dateDebut.toString("yyyy-MM-dd")) : nullStr);
     q.bindValue(":df", in.dateFin.isValid()   ? QVariant(in.dateFin.toString("yyyy-MM-dd"))   : nullStr);
     q.bindValue(":s",  dbStatus.isEmpty()      ? nullStr : QVariant(dbStatus));
     q.bindValue(":p",  (in.projetId.isNull() || !in.projetId.isValid()) ? nullInt : QVariant(in.projetId.toInt()));
+    q.bindValue(":de", eqAvail.isEmpty() ? nullStr : QVariant(eqAvail));
+    q.bindValue(":r",  in.resultat.isEmpty() ? nullStr : QVariant(in.resultat));
+    q.bindValue(":te", in.typeExperience.isEmpty() ? nullStr : QVariant(in.typeExperience));
     q.bindValue(":id", in.id);
     if (!q.exec()) {
         if (error) *error = q.lastError().text();
         return false;
     }
     return true;
+}
+
+QString ExperienceCrud::suggestedEquipAvailability(QString* error)
+{
+    QString err;
+    const QString v = inferEquipAvailabilityFromEquipement(&err);
+    if (!err.isEmpty() && error) {
+        *error = err;
+    }
+    return v.isEmpty() ? QString("Disponible") : v;
 }

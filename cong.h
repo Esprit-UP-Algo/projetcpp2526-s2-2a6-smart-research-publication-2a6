@@ -3,6 +3,7 @@
 
 #include <QDialog>
 #include <QWidget>
+#include <QCloseEvent>
 #include <QListWidget>
 #include <QLabel>
 #include <QLineEdit>
@@ -18,6 +19,7 @@
 #include <QVideoSink>
 #include <QVideoFrame>
 #include <QTextBrowser>
+#include <QTextToSpeech>
 #include "crudebiosimple.h"
 
 // ── Per-slot data (full sample info) ─────────────────────────
@@ -48,15 +50,18 @@ protected:
     void mouseMoveEvent(QMouseEvent*)    override;
     void mouseReleaseEvent(QMouseEvent*) override;
     void resizeEvent(QResizeEvent*)      override;
+    void closeEvent(QCloseEvent* event)  override;
 
 private:
-    QMediaPlayer* m_player;
-    QLabel*       m_videoBg;
-    QWidget*      m_overlay;
-    QTextBrowser* m_textBrowser;
-    QLabel*       m_statusLbl;
-    QPoint        m_dragPos;
-    bool          m_dragging = false;
+    QMediaPlayer*  m_player;
+    QLabel*        m_videoBg;
+    QWidget*       m_overlay;
+    QTextBrowser*  m_textBrowser;
+    QLabel*        m_statusLbl;
+    QPushButton*   m_speakBtn;
+    QTextToSpeech* m_tts = nullptr;
+    QPoint         m_dragPos;
+    bool           m_dragging = false;
 };
 
 // ── Custom-painted freezer visualization ─────────────────────
@@ -134,6 +139,9 @@ public:
     explicit CongelateurDialog(QWidget* parent = nullptr);
     void refresh();
 
+protected:
+    void paintEvent(QPaintEvent* event) override;
+
 private slots:
     void onFreezerClicked(QListWidgetItem* item);
     void onSlotClicked(int shelf, int slot);
@@ -182,6 +190,7 @@ private:
 
     QNetworkAccessManager* m_net;
     CrudeBioSimple*        m_crud;
+    QPixmap                m_bgPixmap;
 
     QString     m_currentCong;
     QString     m_lastContext;

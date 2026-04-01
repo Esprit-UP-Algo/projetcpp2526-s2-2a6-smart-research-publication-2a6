@@ -11,11 +11,15 @@ struct EmployeRecord {
     QString cin;
     QString nom;
     QString prenom;
+    QString email;
+    QString password;
     QString role;
     QString specialization;
     QString qualification;
     QString tempsTravail;
     QString laboratoire;
+    QString projetAffecte;
+    int     nbPublications = 0;
 };
 
 class EmployesCrud

@@ -15,8 +15,18 @@ void exportBioSamplePdf(const BasicBioInfo& bi, const QString& path)
 {
     auto val = [](const QString& s) -> QString { return s.isEmpty() ? "—" : s; };
     QString qtyStr  = QString::number(bi.quantite) + " µg";
+    // Convertir via double pour éliminer la notation scientifique Oracle (-8,0E+001 → -80)
     double  tempVal = bi.temperature.isEmpty() ? -80.0 : bi.temperature.toDouble();
-    QString tempStr = bi.temperature.isEmpty() ? "—" : bi.temperature + " °C";
+    QString tempStr;
+    if (bi.temperature.isEmpty()) {
+        tempStr = "—";
+    } else {
+        // Si la valeur est un entier (pas de décimale), afficher sans point
+        const int tempInt = static_cast<int>(tempVal);
+        tempStr = (tempVal == static_cast<double>(tempInt))
+                  ? QString::number(tempInt) + " °C"
+                  : QString::number(tempVal, 'f', 1) + " °C";
+    }
     QString dateStr = QDate::currentDate().toString("dd/MM/yyyy");
 
     QPrinter printer(QPrinter::HighResolution);
