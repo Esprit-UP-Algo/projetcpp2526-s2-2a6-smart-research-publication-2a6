@@ -1,6 +1,7 @@
 #include "employes.h"
 
 #include <QMetaType>
+<<<<<<< HEAD
 #include <QRegularExpression>
 #include <QCryptographicHash>
 #include <QStringList>
@@ -85,6 +86,8 @@ static void ensureEmployesExtraColumns()
         q.exec(stmt);
     }
 }
+=======
+>>>>>>> 75ff1937e10be8ff17a8fff274ccd6f6096fbdef
 
 bool EmployesCrud::loadEmployes(QList<EmployeRecord>& out,
                                 QString* error,
@@ -95,6 +98,7 @@ bool EmployesCrud::loadEmployes(QList<EmployeRecord>& out,
                                 const QString& specialization)
 {
     out.clear();
+<<<<<<< HEAD
     ensureEmployesExtraColumns();
 
     QSqlQuery q;
@@ -102,6 +106,12 @@ bool EmployesCrud::loadEmployes(QList<EmployeRecord>& out,
         "SELECT \"employee_id\", \"CIN\", \"nom\", \"prenom\", \"EMAIL\", \"ROLE\", \"specialization\", "
         "       NVL(\"QUALIFICATION\", ''), NVL(\"TEMPS_TRAVAIL\", ''), NVL(\"LABORATOIRE\", ''), "
         "       NVL(\"PROJET_AFFECTE\", ''), NVL(\"NB_PUBLICATIONS\", 0) "
+=======
+
+    QSqlQuery q;
+    q.prepare(
+        "SELECT \"employee_id\", \"CIN\", \"nom\", \"prenom\", \"ROLE\", \"specialization\" "
+>>>>>>> 75ff1937e10be8ff17a8fff274ccd6f6096fbdef
         "FROM \"Employés\" "
         "WHERE (:cin IS NULL OR :cin = '' OR LOWER(\"CIN\") LIKE '%' || LOWER(:cin) || '%') "
         "  AND (:nom IS NULL OR :nom = '' OR LOWER(\"nom\") LIKE '%' || LOWER(:nom) || '%') "
@@ -127,6 +137,7 @@ bool EmployesCrud::loadEmployes(QList<EmployeRecord>& out,
         rec.cin            = q.value(1).toString();
         rec.nom            = q.value(2).toString();
         rec.prenom         = q.value(3).toString();
+<<<<<<< HEAD
         rec.email          = q.value(4).toString();
         rec.role           = q.value(5).toString();
         rec.specialization = q.value(6).toString();
@@ -136,6 +147,13 @@ bool EmployesCrud::loadEmployes(QList<EmployeRecord>& out,
         rec.projetAffecte  = q.value(10).toString();
         rec.nbPublications = q.value(11).toInt();
         rec.password.clear();
+=======
+        rec.role           = q.value(4).toString();
+        rec.specialization = q.value(5).toString();
+        rec.qualification.clear();
+        rec.tempsTravail.clear();
+        rec.laboratoire.clear();
+>>>>>>> 75ff1937e10be8ff17a8fff274ccd6f6096fbdef
         out.push_back(rec);
     }
 
@@ -144,11 +162,16 @@ bool EmployesCrud::loadEmployes(QList<EmployeRecord>& out,
 
 bool EmployesCrud::fetchEmploye(int employeeId, EmployeRecord& out, QString* error)
 {
+<<<<<<< HEAD
     ensureEmployesExtraColumns();
     QSqlQuery q;
     q.prepare("SELECT \"CIN\", \"nom\", \"prenom\", \"EMAIL\", \"ROLE\", \"specialization\", "
               "       NVL(\"QUALIFICATION\", ''), NVL(\"TEMPS_TRAVAIL\", ''), NVL(\"LABORATOIRE\", ''), "
               "       NVL(\"PROJET_AFFECTE\", ''), NVL(\"NB_PUBLICATIONS\", 0) "
+=======
+    QSqlQuery q;
+    q.prepare("SELECT \"CIN\", \"nom\", \"prenom\", \"ROLE\", \"specialization\" "
+>>>>>>> 75ff1937e10be8ff17a8fff274ccd6f6096fbdef
               "FROM \"Employés\" WHERE \"employee_id\" = :id");
     q.bindValue(":id", employeeId);
 
@@ -161,6 +184,7 @@ bool EmployesCrud::fetchEmploye(int employeeId, EmployeRecord& out, QString* err
     out.cin            = q.value(0).toString();
     out.nom            = q.value(1).toString();
     out.prenom         = q.value(2).toString();
+<<<<<<< HEAD
     out.email          = q.value(3).toString();
     out.role           = q.value(4).toString();
     out.specialization = q.value(5).toString();
@@ -170,6 +194,13 @@ bool EmployesCrud::fetchEmploye(int employeeId, EmployeRecord& out, QString* err
     out.projetAffecte  = q.value(9).toString();
     out.nbPublications = q.value(10).toInt();
     out.password.clear();
+=======
+    out.role           = q.value(3).toString();
+    out.specialization = q.value(4).toString();
+    out.qualification.clear();
+    out.tempsTravail.clear();
+    out.laboratoire.clear();
+>>>>>>> 75ff1937e10be8ff17a8fff274ccd6f6096fbdef
 
     return true;
 }
@@ -201,7 +232,10 @@ int EmployesCrud::nextEmployeId(QString* error)
 
 bool EmployesCrud::insertEmploye(const EmployeRecord& in, QString* error)
 {
+<<<<<<< HEAD
     ensureEmployesExtraColumns();
+=======
+>>>>>>> 75ff1937e10be8ff17a8fff274ccd6f6096fbdef
     if (in.cin.trimmed().isEmpty()) {
         if (error) *error = "CIN est obligatoire.";
         return false;
@@ -214,6 +248,7 @@ bool EmployesCrud::insertEmploye(const EmployeRecord& in, QString* error)
         if (error) *error = "PRENOM est obligatoire.";
         return false;
     }
+<<<<<<< HEAD
     if (!isValidCin(in.cin)) {
         if (error) *error = "CIN invalide. Il doit contenir exactement 8 chiffres.";
         return false;
@@ -253,6 +288,8 @@ bool EmployesCrud::insertEmploye(const EmployeRecord& in, QString* error)
         if (error) *error = "ROLE invalide. Valeurs autorisées: Chercheur, Technicien, Responsable.";
         return false;
     }
+=======
+>>>>>>> 75ff1937e10be8ff17a8fff274ccd6f6096fbdef
 
     int employeeId = in.employeeId;
     if (employeeId <= 0) {
@@ -262,9 +299,14 @@ bool EmployesCrud::insertEmploye(const EmployeRecord& in, QString* error)
 
     QSqlQuery q;
     q.prepare("INSERT INTO \"Employés\" "
+<<<<<<< HEAD
               "(\"employee_id\", \"CIN\", \"nom\", \"prenom\", \"EMAIL\", \"USER_PASSWORD\", \"ROLE\", \"specialization\", "
               " \"QUALIFICATION\", \"TEMPS_TRAVAIL\", \"LABORATOIRE\", \"PROJET_AFFECTE\", \"NB_PUBLICATIONS\", \"ACTIVE\") "
               "VALUES (:id, :cin, :nom, :prenom, :email, :pwd, :role, :spec, :qualif, :temps, :lab, :proj, :pubs, 'O')");
+=======
+              "(\"employee_id\", \"CIN\", \"nom\", \"prenom\", \"ROLE\", \"specialization\") "
+              "VALUES (:id, :cin, :nom, :prenom, :role, :spec)");
+>>>>>>> 75ff1937e10be8ff17a8fff274ccd6f6096fbdef
 
     auto nullStr = QVariant(QMetaType::fromType<QString>());
 
@@ -272,6 +314,7 @@ bool EmployesCrud::insertEmploye(const EmployeRecord& in, QString* error)
     q.bindValue(":cin", in.cin.trimmed());
     q.bindValue(":nom", in.nom.trimmed());
     q.bindValue(":prenom", in.prenom.trimmed());
+<<<<<<< HEAD
     q.bindValue(":email", in.email.trimmed());
     q.bindValue(":pwd", hashPasswordSha256(password));
     q.bindValue(":role", role);
@@ -281,6 +324,10 @@ bool EmployesCrud::insertEmploye(const EmployeRecord& in, QString* error)
     q.bindValue(":lab", in.laboratoire.trimmed().isEmpty() ? nullStr : QVariant(in.laboratoire.trimmed()));
     q.bindValue(":proj", in.projetAffecte.trimmed().isEmpty() || in.projetAffecte.trimmed() == "-" ? nullStr : QVariant(in.projetAffecte.trimmed()));
     q.bindValue(":pubs", in.nbPublications < 0 ? 0 : in.nbPublications);
+=======
+    q.bindValue(":role", in.role.trimmed().isEmpty() ? nullStr : QVariant(in.role.trimmed()));
+    q.bindValue(":spec", in.specialization.trimmed().isEmpty() ? nullStr : QVariant(in.specialization.trimmed()));
+>>>>>>> 75ff1937e10be8ff17a8fff274ccd6f6096fbdef
 
     if (!q.exec()) {
         if (error) *error = q.lastError().text();
@@ -292,7 +339,10 @@ bool EmployesCrud::insertEmploye(const EmployeRecord& in, QString* error)
 
 bool EmployesCrud::updateEmploye(const EmployeRecord& in, QString* error)
 {
+<<<<<<< HEAD
     ensureEmployesExtraColumns();
+=======
+>>>>>>> 75ff1937e10be8ff17a8fff274ccd6f6096fbdef
     if (in.employeeId <= 0) {
         if (error) *error = "EMPLOYEE_ID invalide.";
         return false;
@@ -309,6 +359,7 @@ bool EmployesCrud::updateEmploye(const EmployeRecord& in, QString* error)
         if (error) *error = "PRENOM est obligatoire.";
         return false;
     }
+<<<<<<< HEAD
     if (!isValidCin(in.cin)) {
         if (error) *error = "CIN invalide. Il doit contenir exactement 8 chiffres.";
         return false;
@@ -342,13 +393,19 @@ bool EmployesCrud::updateEmploye(const EmployeRecord& in, QString* error)
         if (error) *error = "ROLE invalide. Valeurs autorisées: Chercheur, Technicien, Responsable.";
         return false;
     }
+=======
+>>>>>>> 75ff1937e10be8ff17a8fff274ccd6f6096fbdef
 
     QSqlQuery q;
     q.prepare("UPDATE \"Employés\" "
               "SET \"CIN\" = :cin, \"nom\" = :nom, \"prenom\" = :prenom, "
+<<<<<<< HEAD
               "    \"EMAIL\" = :email, \"ROLE\" = :role, \"specialization\" = :spec, "
               "    \"QUALIFICATION\" = :qualif, \"TEMPS_TRAVAIL\" = :temps, \"LABORATOIRE\" = :lab, "
               "    \"PROJET_AFFECTE\" = :proj, \"NB_PUBLICATIONS\" = :pubs "
+=======
+              "    \"ROLE\" = :role, \"specialization\" = :spec "
+>>>>>>> 75ff1937e10be8ff17a8fff274ccd6f6096fbdef
               "WHERE \"employee_id\" = :id");
 
     auto nullStr = QVariant(QMetaType::fromType<QString>());
@@ -356,6 +413,7 @@ bool EmployesCrud::updateEmploye(const EmployeRecord& in, QString* error)
     q.bindValue(":cin", in.cin.trimmed());
     q.bindValue(":nom", in.nom.trimmed());
     q.bindValue(":prenom", in.prenom.trimmed());
+<<<<<<< HEAD
     q.bindValue(":email", in.email.trimmed());
     q.bindValue(":role", role);
     q.bindValue(":spec", in.specialization.trimmed().isEmpty() ? nullStr : QVariant(in.specialization.trimmed()));
@@ -364,6 +422,10 @@ bool EmployesCrud::updateEmploye(const EmployeRecord& in, QString* error)
     q.bindValue(":lab", in.laboratoire.trimmed().isEmpty() ? nullStr : QVariant(in.laboratoire.trimmed()));
     q.bindValue(":proj", in.projetAffecte.trimmed().isEmpty() || in.projetAffecte.trimmed() == "-" ? nullStr : QVariant(in.projetAffecte.trimmed()));
     q.bindValue(":pubs", in.nbPublications < 0 ? 0 : in.nbPublications);
+=======
+    q.bindValue(":role", in.role.trimmed().isEmpty() ? nullStr : QVariant(in.role.trimmed()));
+    q.bindValue(":spec", in.specialization.trimmed().isEmpty() ? nullStr : QVariant(in.specialization.trimmed()));
+>>>>>>> 75ff1937e10be8ff17a8fff274ccd6f6096fbdef
     q.bindValue(":id", in.employeeId);
 
     if (!q.exec()) {
