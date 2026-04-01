@@ -4058,6 +4058,7 @@ MainWindow::MainWindow(QWidget *parent)
         }
     });
     left2L->addWidget(formRow(QStyle::SP_FileIcon, "Référence", leRef));
+    QLabel* errRef = mkErrLbl(); left2L->addWidget(errRef);
 
     // Real-time reference format validation — border highlight only (text shown in bioErrPanel on save)
     connect(leRef, &QLineEdit::textChanged, leRef, [=](const QString& text){
@@ -4099,7 +4100,9 @@ MainWindow::MainWindow(QWidget *parent)
     // keep pointers to the date edits so the lookup lambda can modify them
     QDateEdit *dCollect = nullptr, *dExpire = nullptr;
     left2L->addWidget(blueDateRow("Date de collecte", QDate::currentDate(), dCollect));
+    QLabel* errCollect = mkErrLbl(); left2L->addWidget(errCollect);
     left2L->addWidget(redDateRow("Date d'expiration", QDate::currentDate().addDays(30), dExpire));
+    QLabel* errExpire = mkErrLbl(); left2L->addWidget(errExpire);
 
     // ── Calendrier vert — nombres bleus (collecte) / rouges (expiration) ──
     auto applyGreenCalendar = [](QDateEdit* de, const QString& numColor) {
@@ -4171,6 +4174,7 @@ MainWindow::MainWindow(QWidget *parent)
     lbUg->setStyleSheet("color: rgba(0,0,0,0.50); font-weight:700;");
     qtyHL->addWidget(qty); qtyHL->addWidget(lbUg); qtyHL->addStretch(1);
     left2L->addWidget(formRow(QStyle::SP_ArrowUp, "Quantité", qtyFrame));
+    QLabel* errQty = mkErrLbl(); left2L->addWidget(errQty);
 
     // Température + unité °C
     QFrame* tempFrame = new QFrame;
@@ -4186,11 +4190,13 @@ MainWindow::MainWindow(QWidget *parent)
     lbDeg->setStyleSheet("color: rgba(0,0,0,0.50); font-weight:700;");
     tempHL->addWidget(cbTemp2); tempHL->addWidget(lbDeg); tempHL->addStretch(1);
     left2L->addWidget(formRow(QStyle::SP_BrowserStop, "Température", tempFrame));
+    QLabel* errTemp = mkErrLbl(); left2L->addWidget(errTemp);
 
     QComboBox* cbDanger = new QComboBox;
     cbDanger->addItems({"Niveau de danger", "BSL-1", "BSL-2", "BSL-3"});
     cbDanger->setFixedWidth(170);
     left2L->addWidget(formRow(QStyle::SP_MessageBoxWarning, "Niveau de danger", cbDanger));
+    QLabel* errDanger = mkErrLbl(); left2L->addWidget(errDanger);
 
     left2L->addStretch(1);
 
@@ -4385,6 +4391,7 @@ MainWindow::MainWindow(QWidget *parent)
     emplacPopupL->addWidget(leEtagere);
     emplacPopup->setVisible(false);
     right2L->addWidget(emplacPopup);
+    QLabel* errEmplac = mkErrLbl(); right2L->addWidget(errEmplac);
 
     // Toggle popup
     QObject::connect(emplacBtn, &QPushButton::clicked, [=]{
@@ -10404,6 +10411,16 @@ QPushButton:hover{ background: %2; }
 
     // ── ENREGISTRER : INSERT ou UPDATE selon le mode ──
     QObject::connect(saveBtn, &QPushButton::clicked, this, [=]{
+        // ── Reset all error labels ──
+        for (auto* e : {errRef, errCollect, errExpire, errQty, errTemp, errDanger,
+                        errType, errOrg, errEmplac, errProjet})
+            e->hide();
+
+        bool valid = true;
+        auto fail = [&](QLabel* lbl, const QString& msg){
+            lbl->setText("⚠  " + msg); lbl->show(); valid = false;
+        };
+
         QString ref = leRef->text().trimmed();
 
         // ① Référence
