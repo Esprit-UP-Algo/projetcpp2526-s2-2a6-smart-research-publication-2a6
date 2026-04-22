@@ -17,7 +17,7 @@
 #include <QTime>
 #include "apiconfig.h"
 
-// ─── Emplacement helpers ──────────────────────────────────────
+
 static QString parseCong(const QString& emp) {
     int s = emp.indexOf("Cong:") + 5, e = emp.indexOf("/", s);
     return (s >= 5 && e > s) ? emp.mid(s, e - s) : QString();
