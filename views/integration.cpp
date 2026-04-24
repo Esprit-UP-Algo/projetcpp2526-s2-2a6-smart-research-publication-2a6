@@ -4014,6 +4014,44 @@ MainWindow::MainWindow(QWidget *parent)
     QStackedWidget* stack = new QStackedWidget;
     rootLayout->addWidget(stack);
 
+    auto addStackPage = [=](QWidget* page) {
+        QScrollArea* pageScroll = new QScrollArea;
+        pageScroll->setObjectName("stackPageScroll");
+        pageScroll->setWidgetResizable(true);
+        pageScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        pageScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        pageScroll->setFrameShape(QFrame::NoFrame);
+        pageScroll->setStyleSheet(R"(
+            QScrollArea#stackPageScroll {
+                background: transparent;
+                border: none;
+            }
+            QScrollArea#stackPageScroll > QWidget > QWidget {
+                background: transparent;
+            }
+            QScrollBar:vertical {
+                background: rgba(0,0,0,0.06);
+                width: 6px;
+                border-radius: 3px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(45,212,191,0.50);
+                border-radius: 3px;
+                min-height: 30px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: rgba(45,212,191,0.80);
+            }
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical { height: 0px; }
+            QScrollBar::add-page:vertical,
+            QScrollBar::sub-page:vertical { background: none; }
+        )");
+        pageScroll->setWidget(page);
+        stack->addWidget(pageScroll);
+    };
+
     QObject::connect(EmailSender::instance(), &EmailSender::sent, this,
                      [=](const QString& to) {
         appendSmtpLog(QString("[UI] Email sent successfully to=%1").arg(maskSmtpIdentity(to)));
@@ -4045,7 +4083,7 @@ MainWindow::MainWindow(QWidget *parent)
     // PAGE 0 : LOGIN
     // ==========================================================
     LoginWindow* loginPage = new LoginWindow;
-    stack->addWidget(loginPage);
+    addStackPage(loginPage);
 
     SignupServer* signupServer = new SignupServer(this);
     signupServer->start();
@@ -4832,7 +4870,7 @@ MainWindow::MainWindow(QWidget *parent)
     bottom1L->addWidget(btnMore);
 
     p1->addWidget(bottom1);
-    stack->addWidget(page1);
+    addStackPage(page1);
 
     // ==========================================================
     // PAGE 1 : BioSimple - Ajouter / Modifier
@@ -5406,7 +5444,7 @@ MainWindow::MainWindow(QWidget *parent)
     bottom2L->addStretch(1);
     p2->addWidget(bottom2);
 
-    stack->addWidget(page2);
+    addStackPage(page2);
 
     // ==========================================================
     // PAGE 2 : BioSimple - Localisation & Stockage
@@ -5738,7 +5776,7 @@ MainWindow::MainWindow(QWidget *parent)
     bottom3L->addStretch(1);
 
     p3->addWidget(bottom3);
-    stack->addWidget(page3);
+    addStackPage(page3);
 
     // ==========================================================
     // PAGE 3 : BioSimple - Rack + Contraintes
@@ -5876,7 +5914,7 @@ MainWindow::MainWindow(QWidget *parent)
     bottom4L->addStretch(1);
 
     p4->addWidget(bottom4);
-    stack->addWidget(page4);
+    addStackPage(page4);
 
     // ==========================================================
     // PAGE 4 : BioSimple - STATISTIQUES (Dashboard analytique)
@@ -6111,7 +6149,7 @@ MainWindow::MainWindow(QWidget *parent)
     bottom5L->addStretch(1);
     p5->addWidget(bottom5);
 
-    stack->addWidget(page5);
+    addStackPage(page5);
 
     // ==========================================================
     // =====================  GESTION PROJET  ====================
@@ -6461,7 +6499,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     gp1->addWidget(projBottom);
 
-    stack->addWidget(proj1);
+    addStackPage(proj1);
 
     // ==========================================================
     // PAGE 6 : Gestion Projet - Widget 2 (AJOUT/MODIF)
@@ -6916,7 +6954,7 @@ MainWindow::MainWindow(QWidget *parent)
     p2BottomL->addStretch(1);
 
     gp2->addWidget(p2Bottom);
-    stack->addWidget(proj2);
+    addStackPage(proj2);
 
     // projFinancement and projBudgetSpin are read directly at save time
 
@@ -7093,9 +7131,44 @@ MainWindow::MainWindow(QWidget *parent)
     p3BottomL->addStretch(1);
 
     outP3L->addWidget(p3Bottom);
-    gp3->addWidget(outP3, 1);
 
-    stack->addWidget(proj3);
+    QScrollArea* proj3Scroll = new QScrollArea;
+    proj3Scroll->setObjectName("proj3Scroll");
+    proj3Scroll->setWidgetResizable(true);
+    proj3Scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    proj3Scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    proj3Scroll->setFrameShape(QFrame::NoFrame);
+    proj3Scroll->setStyleSheet(R"(
+        QScrollArea#proj3Scroll {
+            background: transparent;
+            border: none;
+        }
+        QScrollArea#proj3Scroll > QWidget > QWidget {
+            background: transparent;
+        }
+        QScrollBar:vertical {
+            background: rgba(0,0,0,0.06);
+            width: 6px;
+            border-radius: 3px;
+            margin: 0px;
+        }
+        QScrollBar::handle:vertical {
+            background: rgba(45,212,191,0.50);
+            border-radius: 3px;
+            min-height: 30px;
+        }
+        QScrollBar::handle:vertical:hover {
+            background: rgba(45,212,191,0.80);
+        }
+        QScrollBar::add-line:vertical,
+        QScrollBar::sub-line:vertical { height: 0px; }
+        QScrollBar::add-page:vertical,
+        QScrollBar::sub-page:vertical { background: none; }
+    )");
+    proj3Scroll->setWidget(outP3);
+    gp3->addWidget(proj3Scroll, 1);
+
+    addStackPage(proj3);
     // ==========================================================
     // =================  EXPERIENCES / PROTOCOLES  =============
     // ==========================================================
@@ -7323,7 +7396,7 @@ MainWindow::MainWindow(QWidget *parent)
     expBottomL->addWidget(eExportBtn);
 
     ep1->addWidget(expBottom);
-    stack->addWidget(exp1);
+    addStackPage(exp1);
     // ==========================================================
     // PAGE 9 : Expériences & Protocoles - Widget 2 (AJOUT/MODIF)
     // ==========================================================
@@ -7797,7 +7870,7 @@ MainWindow::MainWindow(QWidget *parent)
     e2BottomL->addStretch(1);
 
     ep2->addWidget(e2Bottom);
-    stack->addWidget(exp2);
+    addStackPage(exp2);
     // ==========================================================
     // PAGE 10 : Expériences & Protocoles - Widget 3 (STATISTIQUES)
     // ==========================================================
@@ -7879,9 +7952,44 @@ MainWindow::MainWindow(QWidget *parent)
     e3BottomL->addStretch(1);
 
     outE3L->addWidget(e3Bottom);
-    ep3->addWidget(outE3, 1);
 
-    stack->addWidget(exp3);
+    QScrollArea* exp3Scroll = new QScrollArea;
+    exp3Scroll->setObjectName("exp3Scroll");
+    exp3Scroll->setWidgetResizable(true);
+    exp3Scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    exp3Scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    exp3Scroll->setFrameShape(QFrame::NoFrame);
+    exp3Scroll->setStyleSheet(R"(
+        QScrollArea#exp3Scroll {
+            background: transparent;
+            border: none;
+        }
+        QScrollArea#exp3Scroll > QWidget > QWidget {
+            background: transparent;
+        }
+        QScrollBar:vertical {
+            background: rgba(0,0,0,0.06);
+            width: 6px;
+            border-radius: 3px;
+            margin: 0px;
+        }
+        QScrollBar::handle:vertical {
+            background: rgba(45,212,191,0.50);
+            border-radius: 3px;
+            min-height: 30px;
+        }
+        QScrollBar::handle:vertical:hover {
+            background: rgba(45,212,191,0.80);
+        }
+        QScrollBar::add-line:vertical,
+        QScrollBar::sub-line:vertical { height: 0px; }
+        QScrollBar::add-page:vertical,
+        QScrollBar::sub-page:vertical { background: none; }
+    )");
+    exp3Scroll->setWidget(outE3);
+    ep3->addWidget(exp3Scroll, 1);
+
+    addStackPage(exp3);
 
     auto updateExpStats = [=](){
         QList<ExperienceRecord> recs;
@@ -8258,7 +8366,7 @@ QPushButton:hover{ background: %2; }
     pubBottomL->addStretch(1);
 
     pb1->addWidget(pubBottom);
-    stack->addWidget(pub1);
+    addStackPage(pub1);
 
     // ==========================================================
     // PAGE 12 : Publications - AJOUT / MODIF (PUB_FORM)
@@ -8406,7 +8514,7 @@ QPushButton:hover{ background: %2; }
     pub2BottomL->addStretch(1);
 
     pb2->addWidget(pub2Bottom);
-    stack->addWidget(pub2);
+    addStackPage(pub2);
 
     // ==========================================================
     // PAGE 13 : Publications - STATISTIQUES (PUB_STATS)
@@ -8631,7 +8739,7 @@ QPushButton:hover{ background: %2; }
 
     pb3->addWidget(pub3Scroll, 1);
 
-    stack->addWidget(pub3);
+    addStackPage(pub3);
 
     auto refreshPublicationLegend = [=](const QList<DonutChart::Slice>& slices){
         while (QLayoutItem* item = piePUBLegendL->takeAt(0)) {
@@ -9158,7 +9266,7 @@ QPushButton:hover{ background: %2; }
     eqBottomL->addWidget(eqMore);
 
     eq1->addWidget(eqBottom);
-    stack->addWidget(equip1);
+    addStackPage(equip1);
 
     // ==========================================================
     // PAGE 15 : Équipements - AJOUT / MODIF (EQUIP_FORM)
@@ -9692,7 +9800,7 @@ QPushButton:hover{ background: %2; }
     eqBottom2L->addStretch(1);
     eq2->addWidget(eqBottom2);
 
-    stack->addWidget(equip2);
+    addStackPage(equip2);
 
     // ==========================================================
     // PAGE 16 : Équipements - STATISTIQUES (EQUIP_LOC)
@@ -9857,7 +9965,7 @@ QPushButton:hover{ background: %2; }
     eqBottom3L->addStretch(1);
 
     eq3->addWidget(eqBottom3);
-    stack->addWidget(equip3);
+    addStackPage(equip3);
 
     int* eqStatsSelectedId = new int(-1);
     QMap<int, EquipementRecord>* eqStatsCache = new QMap<int, EquipementRecord>();
@@ -10356,7 +10464,7 @@ QPushButton:hover{ background: %2; }
     eqBottom4L->addStretch(1);
 
     eq4->addWidget(eqBottom4);
-    stack->addWidget(equip4);
+    addStackPage(equip4);
 
     // ==========================================================
     // ======================  EMPLOYES  ========================
@@ -10655,7 +10763,7 @@ QPushButton:hover{ background: %2; }
     empBottomL->addWidget(empMore);
 
     emp1->addWidget(empBottom);
-    stack->addWidget(empListPage);
+    addStackPage(empListPage);
 
     // ==========================================================
     // PAGE 19 : Employés - CREER / MODIFIER (EMP_FORM)
@@ -10802,7 +10910,7 @@ QPushButton:hover{ background: %2; }
     empBottom2L->addStretch(1);
     emp2->addWidget(empBottom2);
 
-    stack->addWidget(empFormPage);
+    addStackPage(empFormPage);
 
     // ==========================================================
     // PAGE 20 : Employés - AFFECTATION INTELLIGENTE (EMP_AFF)
@@ -11485,7 +11593,7 @@ QPushButton:hover{ background: %2; }
     });
 
     emp3->addWidget(empBottom3);
-    stack->addWidget(empAffPage);
+    addStackPage(empAffPage);
 
     // ==========================================================
     // PAGE 27 : Employés - AFFECTATION INTELLIGENTE — EXPÉRIENCE (EMP_AFF_EXP)
@@ -11873,7 +11981,7 @@ QPushButton:hover{ background: %2; }
         stack->setCurrentIndex(EMP_LIST);
     });
 
-    stack->addWidget(empAffExpPage);
+    addStackPage(empAffExpPage);
 
     // ==========================================================
     // PAGE 21 : Employés - DISPONIBILITES (EMP_AVAIL)
@@ -12011,7 +12119,7 @@ QPushButton:hover{ background: %2; }
     empBottom4L->addStretch(1);
 
     emp4->addWidget(empBottom4);
-    stack->addWidget(empAvailPage);
+    addStackPage(empAvailPage);
 
     // ==========================================================
     // PAGE 22 : Employés - STATISTIQUES (EMP_STATS)
@@ -12082,7 +12190,42 @@ QPushButton:hover{ background: %2; }
     empDashL->addWidget(empBarCard, 1);
 
     empOuterStatsL->addWidget(empDash);
-    empS->addWidget(empOuterStats, 1);
+
+    QScrollArea* empStatsScroll = new QScrollArea;
+    empStatsScroll->setObjectName("empStatsScroll");
+    empStatsScroll->setWidgetResizable(true);
+    empStatsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    empStatsScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    empStatsScroll->setFrameShape(QFrame::NoFrame);
+    empStatsScroll->setStyleSheet(R"(
+        QScrollArea#empStatsScroll {
+            background: transparent;
+            border: none;
+        }
+        QScrollArea#empStatsScroll > QWidget > QWidget {
+            background: transparent;
+        }
+        QScrollBar:vertical {
+            background: rgba(0,0,0,0.06);
+            width: 6px;
+            border-radius: 3px;
+            margin: 0px;
+        }
+        QScrollBar::handle:vertical {
+            background: rgba(45,212,191,0.50);
+            border-radius: 3px;
+            min-height: 30px;
+        }
+        QScrollBar::handle:vertical:hover {
+            background: rgba(45,212,191,0.80);
+        }
+        QScrollBar::add-line:vertical,
+        QScrollBar::sub-line:vertical { height: 0px; }
+        QScrollBar::add-page:vertical,
+        QScrollBar::sub-page:vertical { background: none; }
+    )");
+    empStatsScroll->setWidget(empOuterStats);
+    empS->addWidget(empStatsScroll, 1);
 
     QFrame* empBottomStats = new QFrame;
     empBottomStats->setFixedHeight(64);
@@ -12094,7 +12237,7 @@ QPushButton:hover{ background: %2; }
     empBottomStatsL->addStretch(1);
     empS->addWidget(empBottomStats);
 
-    stack->addWidget(empStatsPage);
+    addStackPage(empStatsPage);
 
     auto updateEmpStatsFromTable = [=](){
         QMap<QString,int> roleCount;
@@ -12285,7 +12428,7 @@ QPushButton:hover{ background: %2; }
     pubDetailsBottomL->addStretch(1);
     pb4->addWidget(pubDetailsBottom);
 
-    stack->addWidget(pubDetailsPage);
+    addStackPage(pubDetailsPage);
 
     QNetworkAccessManager* pubDetailsQrManager = new QNetworkAccessManager(this);
     auto updatePubDetailsQr = [=](const QString& targetUrl){
@@ -12616,7 +12759,7 @@ QPushButton:hover{ background: %2; }
     expDetailsBottomL->addStretch(1);
     ep4->addWidget(expDetailsBottom);
 
-    stack->addWidget(expDetailsPage);
+    addStackPage(expDetailsPage);
 
     auto updateExpDetailsFromRow = [=]()->bool{
         int r = expTable->currentRow();
@@ -12745,7 +12888,7 @@ QPushButton:hover{ background: %2; }
     projDetailsBottomL->addStretch(1);
     gp4->addWidget(projDetailsBottom);
 
-    stack->addWidget(projDetailsPage);
+    addStackPage(projDetailsPage);
 
     // PAGE 28 — PROJ_ADVANCED
     QWidget* projAdvancedPage = new QWidget;
@@ -12980,7 +13123,7 @@ QPushButton:hover{ background: %2; }
     QPushButton* advBack = actionBtn("Retour","rgba(255,255,255,0.55)",C_TEXT_DARK,st->standardIcon(QStyle::SP_ArrowBack),true);
     advBottomL->addWidget(advBack); advBottomL->addStretch(1);
     gp5->addWidget(advBottom);
-    stack->addWidget(projAdvancedPage);
+    addStackPage(projAdvancedPage);
 
     // ── Dark / Light mode support for all Gestion Projet pages ──
     {
