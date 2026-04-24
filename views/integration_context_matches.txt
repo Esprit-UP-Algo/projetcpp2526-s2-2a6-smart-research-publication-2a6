@@ -1,0 +1,490 @@
+﻿===== Pattern: QWidget\* exp2 | Match line: 7238 =====
+  7158:             int row = expTable->rowCount();
+  7159:             expTable->insertRow(row);
+  7160:             QTableWidgetItem* nameItem = mk(rec.titre);
+  7161:             nameItem->setData(Qt::UserRole, rec.id);
+  7162:             expTable->setItem(row, 0, nameItem);
+  7163:             expTable->setItem(row, 1, mk(rec.hypothese));
+  7164:             expTable->setItem(row, 2, mk(rec.dateDebut.toString("dd/MM/yyyy")));
+  7165:             expTable->setItem(row, 3, mk(rec.dateFin.toString("dd/MM/yyyy")));
+  7166:             QTableWidgetItem* badge = new QTableWidgetItem;
+  7167:             const ExpStatus st = statusFromString(rec.status);
+  7168:             badge->setData(Qt::UserRole, (int)st);
+  7169:             badge->setData(Qt::UserRole + 1, expStatusText(st));
+  7170:             expTable->setItem(row, 4, badge);
+  7171:             expTable->setItem(row, 5, mk(rec.typeExperience));
+  7172:             const QString eqName = equipNameByExpId.value(rec.id).trimmed();
+  7173:             expTable->setItem(row, 6, mk(eqName.isEmpty() ? QString("-") : eqName));
+  7174:             expTable->setItem(row, 7, mk(rec.resultat));
+  7175:             expTable->setRowHeight(row, 46);
+  7176:         }
+  7177:         applyExpFilter();
+  7178:     };
+  7179:     loadExpTable();
+  7180: 
+  7181:     QObject::connect(stack, &QStackedWidget::currentChanged, expTable, [=](int idx){
+  7182:         if (idx == EXP_LIST) loadExpTable();
+  7183:     });
+  7184: 
+  7185:     // Search by titre or protocole
+  7186:     QObject::connect(eSearch, &QLineEdit::textChanged, this, [=](const QString&){
+  7187:         applyExpFilter();
+  7188:     });
+  7189: 
+  7190:     QObject::connect(eTrierCb, &QComboBox::currentIndexChanged, this, [=](int){
+  7191:         loadExpTable();
+  7192:     });
+  7193: 
+  7194:     expCardL->addWidget(expTable);
+  7195:     ep1->addWidget(expCard, 1);
+  7196: 
+  7197:     QFrame* expBottom = new QFrame;
+  7198:     expBottom->setFixedHeight(64);
+  7199:     expBottom->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+  7200:     QHBoxLayout* expBottomL = new QHBoxLayout(expBottom);
+  7201:     expBottomL->setContentsMargins(14,10,14,10);
+  7202:     expBottomL->setSpacing(12);
+  7203: 
+  7204:     QPushButton* expAdd     = actionBtn("Ajouter",      "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
+  7205:     QPushButton* expEdit    = actionBtn("Modifier",     "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
+  7206:     QPushButton* expDetails = actionBtn("Détails",      "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DesktopIcon), true);
+  7207:     QPushButton* expDel     = actionBtn("Supprimer",    "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
+  7208:     QPushButton* expStats   = actionBtn("Statistiques", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_MessageBoxInformation), true);
+  7209: 
+  7210:     QObject::connect(expDel, &QPushButton::clicked, this, [=](){
+  7211:         if (*currentRole != "Responsable") { showToast(this, "Accès refusé : seul le Responsable peut supprimer.", false); return; }
+  7212:         int r = expTable->currentRow();
+  7213:         if (r < 0) { showToast(this, "Sélectionnez une expérience.", false); return; }
+  7214:         int id = expTable->item(r, 0)->data(Qt::UserRole).toInt();
+  7215:         QString resume = QString("Expérience : %1 | Hypothèse : %2")
+  7216:                          .arg(expTable->item(r,0)->text(), expTable->item(r,1)->text());
+  7217:         ConfirmDeleteDialog confirm(style(), resume, this);
+  7218:         if (confirm.exec() != QDialog::Accepted) return;
+  7219:         QString err;
+  7220:         if (!expCrud->deleteExperience(id, &err)) { showToast(this, "Erreur : " + err, false); return; }
+  7221:         showToast(this, "Expérience supprimée.", true);
+  7222:         loadExpTable();
+  7223:     });
+  7224: 
+  7225:     expBottomL->addWidget(expAdd);
+  7226:     expBottomL->addWidget(expEdit);
+  7227:     expBottomL->addWidget(expDetails);
+  7228:     expBottomL->addWidget(expDel);
+  7229:     expBottomL->addStretch(1);
+  7230:     expBottomL->addWidget(expStats);
+  7231:     expBottomL->addWidget(eExportBtn);
+  7232: 
+  7233:     ep1->addWidget(expBottom);
+  7234:     stack->addWidget(exp1);
+  7235:     // ==========================================================
+  7236:     // PAGE 9 : Expériences & Protocoles - Widget 2 (AJOUT/MODIF)
+  7237:     // ==========================================================
+  7238:     QWidget* exp2 = new QWidget;
+  7239:     exp2->setObjectName("expFormPage");
+  7240:     exp2->setStyleSheet(
+  7241:         "QFrame#expFormPanel{"
+  7242:         " background: rgba(255,255,255,0.90);"
+  7243:         " border: 1px solid rgba(8,72,63,0.18);"
+  7244:         " border-radius: 16px;"
+  7245:         "}"
+  7246:         "QFrame#expFormSection{"
+  7247:         " background: rgba(255,255,255,0.80);"
+  7248:         " border: 1px solid rgba(12,75,68,0.12);"
+  7249:         " border-radius: 12px;"
+  7250:         "}"
+  7251:         "QLabel#expFormTitle{"
+  7252:         " color: rgba(0,0,0,0.72);"
+  7253:         " font-weight: 900;"
+  7254:         " font-size: 14px;"
+  7255:         "}"
+  7256:         "QFrame#expFormRow{"
+  7257:         " background: rgba(255,255,255,0.88);"
+  7258:         " border: 1px solid rgba(12,75,68,0.12);"
+  7259:         " border-radius: 12px;"
+  7260:         "}"
+  7261:         "QLabel#expFormRowLabel{"
+  7262:         " color: rgba(0,0,0,0.68);"
+  7263:         " font-weight: 900;"
+  7264:         " font-size: 13px;"
+  7265:         "}"
+  7266:         "QLineEdit#expFormInput, QComboBox#expFormInput, QDateEdit#expFormInput{"
+  7267:         " background: rgba(248,252,251,0.97);"
+  7268:         " color: #111827;"
+  7269:         " border: 1px solid rgba(12,75,68,0.18);"
+  7270:         " border-radius: 12px;"
+  7271:         " padding: 7px 12px;"
+  7272:         " font-weight: 800;"
+  7273:         " font-size: 13px;"
+  7274:         "}"
+  7275:         "QPushButton#expEquipPickBtn{"
+  7276:         " background: rgba(10,95,88,0.16);"
+  7277:         " color:#0A5F58;"
+  7278:         " border:1px solid rgba(10,95,88,0.35);"
+  7279:         " border-radius:10px;"
+  7280:         " padding:8px 12px;"
+  7281:         " font-weight:900;"
+  7282:         "}"
+  7283:         "QPushButton#expEquipPickBtn:hover{ background: rgba(10,95,88,0.22); }"
+  7284:         "QPushButton#expEquipPickBtn:pressed{ background: rgba(10,95,88,0.28); }"
+  7285:         "QLabel#expEquipSelectedLbl{"
+  7286:         " color: rgba(0,0,0,0.70);"
+  7287:         " background: rgba(248,252,251,0.97);"
+  7288:         " border: 1px solid rgba(12,75,68,0.15);"
+  7289:         " border-radius: 12px;"
+  7290:         " padding: 6px 12px;"
+  7291:         " font-weight: 800;"
+  7292:         " font-size: 13px;"
+  7293:         "}"
+  7294:     );
+  7295:     QVBoxLayout* ep2 = new QVBoxLayout(exp2);
+  7296:     ep2->setContentsMargins(22, 18, 22, 18);
+  7297:     ep2->setSpacing(14);
+  7298: 
+  7299:     ModulesBar barExpForm;
+  7300:     ep2->addWidget(makeHeaderBlock(st, "Ajouter / Modifier une expérience", ModuleTab::ExperiencesProtocoles, &barExpForm));
+  7301:     connectModulesSwitch(this, stack, barExpForm);
+  7302: 
+  7303:     QFrame* outE2 = new QFrame;
+  7304:     outE2->setObjectName("expFormPanel");
+  7305:     QHBoxLayout* outE2L = new QHBoxLayout(outE2);
+  7306:     outE2L->setContentsMargins(12,12,12,12);
+  7307:     outE2L->setSpacing(12);
+  7308: 
+  7309:     auto expTitle = [&](const QString& t){
+  7310:         QLabel* lab = new QLabel(t);
+  7311:         lab->setObjectName("expFormTitle");
+  7312:         return lab;
+  7313:     };
+  7314:     auto expRow = [&](QStyle::StandardPixmap sp, const QString& label, QWidget* input){
+  7315:         QFrame* r = softBox();
+  7316:         r->setObjectName("expFormRow");
+  7317:         QHBoxLayout* l = new QHBoxLayout(r);
+  7318:         l->setContentsMargins(10,8,10,8);
+
+===== Pattern: expFormPage | Match line: 7239 =====
+  7159:             expTable->insertRow(row);
+  7160:             QTableWidgetItem* nameItem = mk(rec.titre);
+  7161:             nameItem->setData(Qt::UserRole, rec.id);
+  7162:             expTable->setItem(row, 0, nameItem);
+  7163:             expTable->setItem(row, 1, mk(rec.hypothese));
+  7164:             expTable->setItem(row, 2, mk(rec.dateDebut.toString("dd/MM/yyyy")));
+  7165:             expTable->setItem(row, 3, mk(rec.dateFin.toString("dd/MM/yyyy")));
+  7166:             QTableWidgetItem* badge = new QTableWidgetItem;
+  7167:             const ExpStatus st = statusFromString(rec.status);
+  7168:             badge->setData(Qt::UserRole, (int)st);
+  7169:             badge->setData(Qt::UserRole + 1, expStatusText(st));
+  7170:             expTable->setItem(row, 4, badge);
+  7171:             expTable->setItem(row, 5, mk(rec.typeExperience));
+  7172:             const QString eqName = equipNameByExpId.value(rec.id).trimmed();
+  7173:             expTable->setItem(row, 6, mk(eqName.isEmpty() ? QString("-") : eqName));
+  7174:             expTable->setItem(row, 7, mk(rec.resultat));
+  7175:             expTable->setRowHeight(row, 46);
+  7176:         }
+  7177:         applyExpFilter();
+  7178:     };
+  7179:     loadExpTable();
+  7180: 
+  7181:     QObject::connect(stack, &QStackedWidget::currentChanged, expTable, [=](int idx){
+  7182:         if (idx == EXP_LIST) loadExpTable();
+  7183:     });
+  7184: 
+  7185:     // Search by titre or protocole
+  7186:     QObject::connect(eSearch, &QLineEdit::textChanged, this, [=](const QString&){
+  7187:         applyExpFilter();
+  7188:     });
+  7189: 
+  7190:     QObject::connect(eTrierCb, &QComboBox::currentIndexChanged, this, [=](int){
+  7191:         loadExpTable();
+  7192:     });
+  7193: 
+  7194:     expCardL->addWidget(expTable);
+  7195:     ep1->addWidget(expCard, 1);
+  7196: 
+  7197:     QFrame* expBottom = new QFrame;
+  7198:     expBottom->setFixedHeight(64);
+  7199:     expBottom->setStyleSheet("background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+  7200:     QHBoxLayout* expBottomL = new QHBoxLayout(expBottom);
+  7201:     expBottomL->setContentsMargins(14,10,14,10);
+  7202:     expBottomL->setSpacing(12);
+  7203: 
+  7204:     QPushButton* expAdd     = actionBtn("Ajouter",      "rgba(10,95,88,0.45)", "rgba(255,255,255,0.90)", st->standardIcon(QStyle::SP_DialogYesButton), true);
+  7205:     QPushButton* expEdit    = actionBtn("Modifier",     "rgba(198,178,154,0.55)", "rgba(255,255,255,0.85)", st->standardIcon(QStyle::SP_FileDialogContentsView), true);
+  7206:     QPushButton* expDetails = actionBtn("Détails",      "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_DesktopIcon), true);
+  7207:     QPushButton* expDel     = actionBtn("Supprimer",    "rgba(255,255,255,0.55)", "#B14A4A", st->standardIcon(QStyle::SP_TrashIcon), true);
+  7208:     QPushButton* expStats   = actionBtn("Statistiques", "rgba(255,255,255,0.55)", C_TEXT_DARK, st->standardIcon(QStyle::SP_MessageBoxInformation), true);
+  7209: 
+  7210:     QObject::connect(expDel, &QPushButton::clicked, this, [=](){
+  7211:         if (*currentRole != "Responsable") { showToast(this, "Accès refusé : seul le Responsable peut supprimer.", false); return; }
+  7212:         int r = expTable->currentRow();
+  7213:         if (r < 0) { showToast(this, "Sélectionnez une expérience.", false); return; }
+  7214:         int id = expTable->item(r, 0)->data(Qt::UserRole).toInt();
+  7215:         QString resume = QString("Expérience : %1 | Hypothèse : %2")
+  7216:                          .arg(expTable->item(r,0)->text(), expTable->item(r,1)->text());
+  7217:         ConfirmDeleteDialog confirm(style(), resume, this);
+  7218:         if (confirm.exec() != QDialog::Accepted) return;
+  7219:         QString err;
+  7220:         if (!expCrud->deleteExperience(id, &err)) { showToast(this, "Erreur : " + err, false); return; }
+  7221:         showToast(this, "Expérience supprimée.", true);
+  7222:         loadExpTable();
+  7223:     });
+  7224: 
+  7225:     expBottomL->addWidget(expAdd);
+  7226:     expBottomL->addWidget(expEdit);
+  7227:     expBottomL->addWidget(expDetails);
+  7228:     expBottomL->addWidget(expDel);
+  7229:     expBottomL->addStretch(1);
+  7230:     expBottomL->addWidget(expStats);
+  7231:     expBottomL->addWidget(eExportBtn);
+  7232: 
+  7233:     ep1->addWidget(expBottom);
+  7234:     stack->addWidget(exp1);
+  7235:     // ==========================================================
+  7236:     // PAGE 9 : Expériences & Protocoles - Widget 2 (AJOUT/MODIF)
+  7237:     // ==========================================================
+  7238:     QWidget* exp2 = new QWidget;
+  7239:     exp2->setObjectName("expFormPage");
+  7240:     exp2->setStyleSheet(
+  7241:         "QFrame#expFormPanel{"
+  7242:         " background: rgba(255,255,255,0.90);"
+  7243:         " border: 1px solid rgba(8,72,63,0.18);"
+  7244:         " border-radius: 16px;"
+  7245:         "}"
+  7246:         "QFrame#expFormSection{"
+  7247:         " background: rgba(255,255,255,0.80);"
+  7248:         " border: 1px solid rgba(12,75,68,0.12);"
+  7249:         " border-radius: 12px;"
+  7250:         "}"
+  7251:         "QLabel#expFormTitle{"
+  7252:         " color: rgba(0,0,0,0.72);"
+  7253:         " font-weight: 900;"
+  7254:         " font-size: 14px;"
+  7255:         "}"
+  7256:         "QFrame#expFormRow{"
+  7257:         " background: rgba(255,255,255,0.88);"
+  7258:         " border: 1px solid rgba(12,75,68,0.12);"
+  7259:         " border-radius: 12px;"
+  7260:         "}"
+  7261:         "QLabel#expFormRowLabel{"
+  7262:         " color: rgba(0,0,0,0.68);"
+  7263:         " font-weight: 900;"
+  7264:         " font-size: 13px;"
+  7265:         "}"
+  7266:         "QLineEdit#expFormInput, QComboBox#expFormInput, QDateEdit#expFormInput{"
+  7267:         " background: rgba(248,252,251,0.97);"
+  7268:         " color: #111827;"
+  7269:         " border: 1px solid rgba(12,75,68,0.18);"
+  7270:         " border-radius: 12px;"
+  7271:         " padding: 7px 12px;"
+  7272:         " font-weight: 800;"
+  7273:         " font-size: 13px;"
+  7274:         "}"
+  7275:         "QPushButton#expEquipPickBtn{"
+  7276:         " background: rgba(10,95,88,0.16);"
+  7277:         " color:#0A5F58;"
+  7278:         " border:1px solid rgba(10,95,88,0.35);"
+  7279:         " border-radius:10px;"
+  7280:         " padding:8px 12px;"
+  7281:         " font-weight:900;"
+  7282:         "}"
+  7283:         "QPushButton#expEquipPickBtn:hover{ background: rgba(10,95,88,0.22); }"
+  7284:         "QPushButton#expEquipPickBtn:pressed{ background: rgba(10,95,88,0.28); }"
+  7285:         "QLabel#expEquipSelectedLbl{"
+  7286:         " color: rgba(0,0,0,0.70);"
+  7287:         " background: rgba(248,252,251,0.97);"
+  7288:         " border: 1px solid rgba(12,75,68,0.15);"
+  7289:         " border-radius: 12px;"
+  7290:         " padding: 6px 12px;"
+  7291:         " font-weight: 800;"
+  7292:         " font-size: 13px;"
+  7293:         "}"
+  7294:     );
+  7295:     QVBoxLayout* ep2 = new QVBoxLayout(exp2);
+  7296:     ep2->setContentsMargins(22, 18, 22, 18);
+  7297:     ep2->setSpacing(14);
+  7298: 
+  7299:     ModulesBar barExpForm;
+  7300:     ep2->addWidget(makeHeaderBlock(st, "Ajouter / Modifier une expérience", ModuleTab::ExperiencesProtocoles, &barExpForm));
+  7301:     connectModulesSwitch(this, stack, barExpForm);
+  7302: 
+  7303:     QFrame* outE2 = new QFrame;
+  7304:     outE2->setObjectName("expFormPanel");
+  7305:     QHBoxLayout* outE2L = new QHBoxLayout(outE2);
+  7306:     outE2L->setContentsMargins(12,12,12,12);
+  7307:     outE2L->setSpacing(12);
+  7308: 
+  7309:     auto expTitle = [&](const QString& t){
+  7310:         QLabel* lab = new QLabel(t);
+  7311:         lab->setObjectName("expFormTitle");
+  7312:         return lab;
+  7313:     };
+  7314:     auto expRow = [&](QStyle::StandardPixmap sp, const QString& label, QWidget* input){
+  7315:         QFrame* r = softBox();
+  7316:         r->setObjectName("expFormRow");
+  7317:         QHBoxLayout* l = new QHBoxLayout(r);
+  7318:         l->setContentsMargins(10,8,10,8);
+  7319:         l->setSpacing(10);
+
+===== Pattern: expFormPage | Match line: 12736 =====
+ 12656:             for (auto* f : outer2->findChildren<QFrame*>())
+ 12657:                 f->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius:12px; }").arg(crudField, crudPanelBr));
+ 12658: 
+ 12659:             // Publication form theming
+ 12660:             outPUB2->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius:14px; }").arg(crudPanel, crudPanelBr));
+ 12661:             for (auto* f : outPUB2->findChildren<QFrame*>())
+ 12662:                 f->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius:12px; }").arg(crudField, crudPanelBr));
+ 12663: 
+ 12664:             // Equipment form theming
+ 12665:             eqOuter2->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius:14px; }").arg(crudPanel, crudPanelBr));
+ 12666:             for (auto* f : eqOuter2->findChildren<QFrame*>())
+ 12667:                 f->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius:12px; }").arg(crudField, crudPanelBr));
+ 12668: 
+ 12669:             // Project form theming
+ 12670:             outP2->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius:14px; }").arg(crudPanel, crudPanelBr));
+ 12671:             for (auto* f : outP2->findChildren<QFrame*>())
+ 12672:                 f->setStyleSheet(QString("QFrame{ background:%1; border:1px solid %2; border-radius:12px; }").arg(crudField, crudPanelBr));
+ 12673: 
+ 12674:             // Employee form dark-aware panel theming
+ 12675:             {
+ 12676:                 const QString empPanel   = dark ? "rgba(52,58,67,0.92)"    : QString("rgba(246,248,247,0.86)");
+ 12677:                 const QString empPanelBr = dark ? "rgba(210,218,226,0.22)" : QString("rgba(0,0,0,0.10)");
+ 12678:                 const QString empField   = dark ? "rgba(255,255,255,0.07)" : QString("rgba(244,246,245,0.78)");
+ 12679:                 const QString empTextClr = dark ? "#FFFFFF"                : "rgba(0,0,0,0.55)";
+ 12680: 
+ 12681:                 empOuter2->setStyleSheet(QString(
+ 12682:                     "QFrame{ background:%1; border:1px solid %2; border-radius: 14px; }")
+ 12683:                     .arg(empPanel, empPanelBr));
+ 12684:                 empRight2->setStyleSheet(QString(
+ 12685:                     "QFrame{ background:%1; border:1px solid %2; border-radius: 12px; }")
+ 12686:                     .arg(empField, empPanelBr));
+ 12687:                 for (auto* f : empRight2->findChildren<QFrame*>())
+ 12688:                     f->setStyleSheet(QString(
+ 12689:                         "QFrame{ background:%1; border:1px solid %2; border-radius: 12px; }")
+ 12690:                         .arg(empField, empPanelBr));
+ 12691:                 empDate->setStyleSheet(QString(
+ 12692:                     "QDateEdit{ background: transparent; border:0; font-weight: 900; color: %1; }")
+ 12693:                     .arg(empTextClr));
+ 12694:                 empAddDrop->setStyleSheet(QString(
+ 12695:                     "QToolButton{ color: %1; font-weight: 900; }").arg(empTextClr));
+ 12696:                 empBottom2->setStyleSheet(dark
+ 12697:                     ? "background: rgba(52,58,67,0.88); border: 1px solid rgba(210,218,226,0.22); border-radius: 14px;"
+ 12698:                     : "background: rgba(255,255,255,0.20); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px;");
+ 12699:             }
+ 12700: 
+ 12701:             // Employee list table — dark-aware (hardcoded stylesheet must be overridden here)
+ 12702:             empTable->setStyleSheet(QString(R"(
+ 12703:                 QTableWidget{
+ 12704:                     background: %1;
+ 12705:                     border: none;
+ 12706:                     gridline-color: %3;
+ 12707:                     color: %2;
+ 12708:                     font-size: 13px;
+ 12709:                 }
+ 12710:                 QTableWidget::item{
+ 12711:                     color: %2;
+ 12712:                     padding: 4px 6px;
+ 12713:                     border: none;
+ 12714:                 }
+ 12715:                 QTableWidget::item:selected{
+ 12716:                     background: rgba(10,95,88,0.25);
+ 12717:                     color: %2;
+ 12718:                 }
+ 12719:             )").arg(dark ? "#1A1E24" : "#F8FAF9",
+ 12720:                     dark ? "#E8ECF0" : "rgba(0,0,0,0.80)",
+ 12721:                     dark ? "rgba(210,218,226,0.15)" : "rgba(0,0,0,0.07)"));
+ 12722:             empTable->horizontalHeader()->setStyleSheet(QString(R"(
+ 12723:                 QHeaderView::section{
+ 12724:                     background: %1; color: %2;
+ 12725:                     border: none; border-right: 1px solid %3;
+ 12726:                     padding: 8px 6px; font-weight: 900;
+ 12727:                 }
+ 12728:                 QHeaderView::section:hover{ background: %4; }
+ 12729:             )").arg(dark ? "#3A4149" : C_TABLE_HDR,
+ 12730:                     dark ? "#E8ECF0" : "rgba(0,0,0,0.70)",
+ 12731:                     dark ? "rgba(210,218,226,0.15)" : "rgba(0,0,0,0.08)",
+ 12732:                     dark ? "#434B55" : C_BG));
+ 12733: 
+ 12734:             // exp2 : background + panneaux dark-aware (styles inline déclarés sur la page)
+ 12735:             exp2->setStyleSheet(QString(
+ 12736:                 "QWidget#expFormPage{"
+ 12737:                 "  border-image: url(%1) 0 0 0 0 stretch stretch;"
+ 12738:                 "}"
+ 12739:                 "QFrame#expFormPanel{"
+ 12740:                 "  background: %2;"
+ 12741:                 "  border: 1px solid %3;"
+ 12742:                 "  border-radius: 16px;"
+ 12743:                 "}"
+ 12744:                 "QFrame#expFormSection{"
+ 12745:                 "  background: %4;"
+ 12746:                 "  border: 1px solid %5;"
+ 12747:                 "  border-radius: 12px;"
+ 12748:                 "}"
+ 12749:                 "QLabel#expFormTitle{"
+ 12750:                 "  color: %6;"
+ 12751:                 "  font-weight: 900;"
+ 12752:                 "  font-size: 14px;"
+ 12753:                 "}"
+ 12754:                 "QFrame#expFormRow{"
+ 12755:                 "  background: %7;"
+ 12756:                 "  border: 1px solid %8;"
+ 12757:                 "  border-radius: 12px;"
+ 12758:                 "}"
+ 12759:                 "QLabel#expFormRowLabel{"
+ 12760:                 "  color: %9;"
+ 12761:                 "  font-weight: 900;"
+ 12762:                 "  font-size: 13px;"
+ 12763:                 "}"
+ 12764:                 "QLineEdit#expFormInput, QComboBox#expFormInput, QDateEdit#expFormInput, QLabel#expFormInput{"
+ 12765:                 "  background: %10;"
+ 12766:                 "  color: %11;"
+ 12767:                 "  border: 1px solid %12;"
+ 12768:                 "  border-radius: 12px;"
+ 12769:                 "  padding: 7px 12px;"
+ 12770:                 "  font-weight: 800;"
+ 12771:                 "  font-size: 13px;"
+ 12772:                 "}"
+ 12773:                 "QPushButton#expEquipPickBtn{"
+ 12774:                 "  background: rgba(10,95,88,0.16);"
+ 12775:                 "  color:#0A5F58;"
+ 12776:                 "  border:1px solid rgba(10,95,88,0.35);"
+ 12777:                 "  border-radius:10px;"
+ 12778:                 "  padding:8px 12px;"
+ 12779:                 "  font-weight:900;"
+ 12780:                 "}"
+ 12781:                 "QPushButton#expEquipPickBtn:hover{ background: rgba(10,95,88,0.22); }"
+ 12782:                 "QPushButton#expEquipPickBtn:pressed{ background: rgba(10,95,88,0.28); }"
+ 12783:                 "QLabel#expEquipSelectedLbl{"
+ 12784:                 "  color: %13;"
+ 12785:                 "  background: %10;"
+ 12786:                 "  border: 1px solid %12;"
+ 12787:                 "  border-radius: 12px;"
+ 12788:                 "  padding: 6px 12px;"
+ 12789:                 "  font-weight: 800;"
+ 12790:                 "  font-size: 13px;"
+ 12791:                 "}"
+ 12792:             ).arg(bgImg,
+ 12793:                   expPanel,   expPanelBr,
+ 12794:                   expSection, expSectBr,
+ 12795:                   expTitle,
+ 12796:                   expRow,     expRowBr,
+ 12797:                   expLabel,
+ 12798:                   expInputBg, expInputFg, expInputBr,
+ 12799:                   expEqLbl));
+ 12800: 
+ 12801:             // expDetails : même langage visuel que Ajouter / Modifier
+ 12802:             expDetailsPage->setStyleSheet(QString(
+ 12803:                 "QWidget#expDetailsPage{"
+ 12804:                 "  border-image: url(%1) 0 0 0 0 stretch stretch;"
+ 12805:                 "}"
+ 12806:                 "QFrame#expFormPanel{"
+ 12807:                 "  background: %2;"
+ 12808:                 "  border: 1px solid %3;"
+ 12809:                 "  border-radius: 16px;"
+ 12810:                 "}"
+ 12811:                 "QFrame#expFormSection{"
+ 12812:                 "  background: %4;"
+ 12813:                 "  border: 1px solid %5;"
+ 12814:                 "  border-radius: 12px;"
+ 12815:                 "}"
+ 12816:                 "QLabel#expFormTitle{"
+
+
