@@ -1,0 +1,8 @@
+build/
+*.o
+*.obj
+moc_*
+ui_*.h
+qrc_*.cpp
+*.mp4
+google_oauth_config.php

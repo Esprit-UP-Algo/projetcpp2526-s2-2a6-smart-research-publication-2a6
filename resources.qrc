@@ -1,0 +1,16 @@
+<RCC>
+    <qresource prefix="/image">
+        <file alias="background2.png">resources/background2.png</file>
+        <file alias="smartvision.png">resources/smartvision.png</file>
+        <file alias="chatia.png">resources/chatia.png</file>
+        <file alias="cong.png">resources/cong.png</file>
+        <file>crudeimagesombre.png</file>
+        <file>crudeimage.png</file>
+    </qresource>
+    <qresource prefix="/new/prefix1">
+        <file alias="backchatbot.mp4">resources/backchatbot.mp4</file>
+        <file alias="iconechatbot.mp4">resources/iconechatbot.mp4</file>
+        <file alias="msgbio.mp4">resources/msgbio.mp4</file>
+    </qresource>
+    <qresource prefix="/"/>
+</RCC>

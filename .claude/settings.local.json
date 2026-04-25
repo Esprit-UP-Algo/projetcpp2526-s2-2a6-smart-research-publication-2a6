@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash('C:/Qt/6.7.3/mingw_64/bin/moc.exe' --include 'debug/moc_predefs.h' -IC:/Qt/6.7.3/mingw_64/mkspecs/win32-g++ -I. -I./models -I./views -IC:/Qt/6.7.3/mingw_64/include -IC:/Qt/6.7.3/mingw_64/include/QtWidgets -IC:/Qt/6.7.3/mingw_64/include/QtCore models/cong.h -o /dev/null)",
+      "Bash('C:/Qt/6.7.3/mingw_64/bin/moc.exe' --include 'debug/moc_predefs.h' -IC:/Qt/6.7.3/mingw_64/mkspecs/win32-g++ -I. -I./models -I./views -IC:/Qt/6.7.3/mingw_64/include -IC:/Qt/6.7.3/mingw_64/include/QtPrintSupport -IC:/Qt/6.7.3/mingw_64/include/QtWidgets -IC:/Qt/6.7.3/mingw_64/include/QtTextToSpeech -IC:/Qt/6.7.3/mingw_64/include/QtMultimedia -IC:/Qt/6.7.3/mingw_64/include/QtGui -IC:/Qt/6.7.3/mingw_64/include/QtSql -IC:/Qt/6.7.3/mingw_64/include/QtNetwork -IC:/Qt/6.7.3/mingw_64/include/QtCore models/cong.h -o debug/moc_cong.cpp)",
+      "Bash('C:/Qt/6.7.3/mingw_64/bin/moc.exe' -DUNICODE -D_UNICODE -DWIN32 -DMINGW_HAS_SECURE_API=1 -DQT_PRINTSUPPORT_LIB -DQT_WIDGETS_LIB -DQT_TEXTTOSPEECH_LIB -DQT_MULTIMEDIA_LIB -DQT_GUI_LIB -DQT_SQL_LIB -DQT_NETWORK_LIB -DQT_CORE_LIB -DQT_NEEDS_QMAIN --include 'C:/Users/ayoub/Desktop/projet c++ qt/projet c++/biosimple/debug/moc_predefs.h' -IC:/Qt/6.7.3/mingw_64/mkspecs/win32-g++ -I'C:/Users/ayoub/Desktop/projet c++ qt/projet c++/biosimple' -I'C:/Users/ayoub/Desktop/projet c++ qt/projet c++/biosimple/models' -I'C:/Users/ayoub/Desktop/projet c++ qt/projet c++/biosimple/views' -IC:/Qt/6.7.3/mingw_64/include -IC:/Qt/6.7.3/mingw_64/include/QtPrintSupport -IC:/Qt/6.7.3/mingw_64/include/QtWidgets -IC:/Qt/6.7.3/mingw_64/include/QtTextToSpeech -IC:/Qt/6.7.3/mingw_64/include/QtMultimedia -IC:/Qt/6.7.3/mingw_64/include/QtGui -IC:/Qt/6.7.3/mingw_64/include/QtSql -IC:/Qt/6.7.3/mingw_64/include/QtNetwork -IC:/Qt/6.7.3/mingw_64/include/QtCore models/cong.h -o debug/moc_cong_test.cpp)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(\"C:/Qt/Tools/mingw1120_64/bin/mingw32-make.exe\" -f Makefile.Debug debug/moc_cong.cpp)",
+      "Bash(\"C:/Qt/Tools/mingw1120_64/bin/mingw32-make.exe\" -f Makefile.Debug)",
+      "Bash(\"C:/Qt/Tools/mingw1120_64/bin/mingw32-make.exe\" -f Makefile.Debug clean)",
+      "Bash(\"C:/Qt/Tools/mingw1120_64/bin/g++.exe\" -fno-keep-inline-dllexport -std=c++17 -g -std=gnu++1z -Wall -Wextra -Wextra -dM -E -o debug/moc_predefs.h \"C:/Qt/6.7.3/mingw_64/mkspecs/features/data/dummy.cpp\")",
+      "Bash('C:/Qt/6.7.3/mingw_64/bin/moc.exe' -DUNICODE -D_UNICODE -DWIN32 -DMINGW_HAS_SECURE_API=1 -DQT_WIDGETS_LIB -DQT_CORE_LIB --include debug/moc_predefs.h -IC:/Qt/6.7.3/mingw_64/mkspecs/win32-g++ -I. -I./models -I./views -IC:/Qt/6.7.3/mingw_64/include -IC:/Qt/6.7.3/mingw_64/include/QtWidgets -IC:/Qt/6.7.3/mingw_64/include/QtCore -IC:/Qt/6.7.3/mingw_64/include/QtGui -IC:/Qt/6.7.3/mingw_64/include/QtNetwork -IC:/Qt/6.7.3/mingw_64/include/QtMultimedia models/cong.h -o /dev/null)",
+      "Bash(grep -E \"\\\\.o$|\\\\.cpp$|\\\\.exe$\")",
+      "Bash(python -c ' *)",
+      "Bash(\"C:/Qt/Tools/mingw1120_64/bin/g++.exe\" -print-search-dirs)",
+      "Bash(\"C:/Qt/Tools/mingw1120_64/bin/g++.exe\" -v -E -x c++-header /dev/null)",
+      "Bash(\"C:/Qt/6.7.3/mingw_64/bin/qmake.exe\" integration.pro -spec win32-g++ \"CONFIG+=debug\")",
+      "Bash(python -c \"import sys; [print\\(l[:200]\\) for l in sys.stdin]\")"
+    ]
+  }
+}
