@@ -39,6 +39,9 @@
 #include <QPixmap>
 #include <QFont>
 #include <QColor>
+#include <QSqlQuery>
+#include <QSqlError>
+#include <QVariant>
 
 #include <cmath>
 #include <algorithm>
@@ -155,6 +158,25 @@ static QToolButton* topIconBtn(QStyle* st, QStyle::StandardPixmap sp, const QStr
         QToolButton:hover { background: rgba(255,255,255,0.10); }
     )");
     return b;
+}
+
+// Loads project names from the DB table used by Gestion Projet.
+static QStringList loadProjetNamesFromDb()
+{
+    QStringList names;
+    QSqlQuery q;
+    if (!q.exec("SELECT \"nom_du_projet\" FROM \"projet\" ORDER BY \"Id_projet\"")) {
+        return names;
+    }
+
+    while (q.next()) {
+        const QString name = q.value(0).toString().trimmed();
+        if (!name.isEmpty() && !names.contains(name)) {
+            names << name;
+        }
+    }
+
+    return names;
 }
 
 // Creates a styled action button with optional icon and enabled state.
@@ -3853,8 +3875,37 @@ MainWindow::MainWindow(QWidget *parent)
         {5, QColor("#9FBEB9"), "Terminée"}
     });
 
+    auto mkExpLegendItem = [](const QColor& color, const QString& text) {
+        QWidget* item = new QWidget;
+        QHBoxLayout* itemL = new QHBoxLayout(item);
+        itemL->setContentsMargins(0, 0, 0, 0);
+        itemL->setSpacing(6);
+
+        QLabel* dot = new QLabel;
+        dot->setFixedSize(10, 10);
+        dot->setStyleSheet(QString("background:%1; border-radius:5px;").arg(color.name()));
+
+        QLabel* lbl = new QLabel(text);
+        lbl->setStyleSheet("color: rgba(0,0,0,0.60); font-weight: 700;");
+
+        itemL->addWidget(dot);
+        itemL->addWidget(lbl);
+        return item;
+    };
+
+    QWidget* expLegend = new QWidget;
+    QHBoxLayout* expLegendL = new QHBoxLayout(expLegend);
+    expLegendL->setContentsMargins(0, 0, 0, 0);
+    expLegendL->setSpacing(14);
+    expLegendL->addWidget(mkExpLegendItem(W_GREEN, "En cours"));
+    expLegendL->addWidget(mkExpLegendItem(W_ORANGE, "Planifiée"));
+    expLegendL->addWidget(mkExpLegendItem(W_RED, "Suspendue"));
+    expLegendL->addWidget(mkExpLegendItem(QColor("#9FBEB9"), "Terminée"));
+    expLegendL->addStretch(1);
+
     pieEL->addWidget(pieET);
     pieEL->addWidget(donutE, 1);
+    pieEL->addWidget(expLegend);
 
     QFrame* barE = softBox();
     QVBoxLayout* barEL = new QVBoxLayout(barE);
@@ -5455,7 +5506,21 @@ QPushButton:hover{ background: %2; }
     empRight2L->addWidget(empComboRow(empPubs, empFtCb));
 
     QComboBox* empLabCb = new QComboBox; empLabCb->addItems({"Lab A","Lab B","Lab C"});
-    QComboBox* empProjCb = new QComboBox; empProjCb->addItems({"-","Projet GENOME","Projet AI-BIO","Projet PROTEO","Projet MATERIA"});
+    QComboBox* empProjCb = new QComboBox;
+    auto refreshEmpProjects = [=]() {
+        const QString current = empProjCb->currentText();
+        empProjCb->clear();
+        empProjCb->addItem("-");
+
+        const QStringList dbProjects = loadProjetNamesFromDb();
+        if (!dbProjects.isEmpty()) {
+            empProjCb->addItems(dbProjects);
+        }
+
+        const int previousIndex = empProjCb->findText(current, Qt::MatchFixedString);
+        empProjCb->setCurrentIndex(previousIndex >= 0 ? previousIndex : 0);
+    };
+    refreshEmpProjects();
     empRight2L->addWidget(empComboRow(empLabCb, empProjCb));
 
     QFrame* empDateRow = softBox();
@@ -6367,10 +6432,12 @@ QPushButton:hover{ background: %2; }
     // NAVIGATION Employés (5 widgets)
     // ==========================================================
     QObject::connect(empAdd, &QPushButton::clicked, this, [=](){
+        refreshEmpProjects();
         setWindowTitle("Creer / Modifier Employe");
         stack->setCurrentIndex(EMP_FORM);
     });
     QObject::connect(empEdit, &QPushButton::clicked, this, [=](){
+        refreshEmpProjects();
         setWindowTitle("Creer / Modifier Employe");
         stack->setCurrentIndex(EMP_FORM);
     });

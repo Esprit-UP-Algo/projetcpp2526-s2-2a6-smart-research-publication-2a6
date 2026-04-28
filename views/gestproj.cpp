@@ -29,6 +29,55 @@ static bool isSqlDangerous(const QString& s)
     return re.match(s).hasMatch();
 }
 
+static bool ensureProjetTable(QString* error = nullptr)
+{
+    static bool checked = false;
+    static bool ok = false;
+    if (checked) {
+        if (!ok && error && error->isEmpty()) {
+            *error = "La table projet est introuvable et n'a pas pu être créée.";
+        }
+        return ok;
+    }
+
+    QSqlQuery q;
+    q.prepare("SELECT COUNT(*) FROM USER_TABLES WHERE UPPER(TABLE_NAME) = UPPER('projet')");
+    if (!q.exec() || !q.next()) {
+        checked = true;
+        ok = false;
+        if (error) *error = q.lastError().text();
+        return false;
+    }
+
+    if (q.value(0).toInt() == 0) {
+        QSqlQuery create;
+        const QString ddl =
+            "CREATE TABLE \"projet\" ("
+            "\"Id_projet\" NUMBER NOT NULL, "
+            "\"nom_du_projet\" VARCHAR2(150) NOT NULL, "
+            "\"domaine_de_recherche\" VARCHAR2(150), "
+            "\"date_de_début\" DATE, "
+            "\"date_de_fin\" DATE, "
+            "\"budget\" NUMBER(14,2), "
+            "\"statut\" VARCHAR2(50), "
+            "\"source_de_financement\" VARCHAR2(150), "
+            "\"numéro_d_approbation_éthique\" VARCHAR2(100), "
+            "\"nombre_de_publications\" NUMBER DEFAULT 0, "
+            "CONSTRAINT PK_PROJET PRIMARY KEY (\"Id_projet\")"
+            ")";
+        if (!create.exec(ddl)) {
+            checked = true;
+            ok = false;
+            if (error) *error = create.lastError().text();
+            return false;
+        }
+    }
+
+    checked = true;
+    ok = true;
+    return true;
+}
+
 QString GestProjCrud::validateProjet(const ProjetRecord& in, bool /*isUpdate*/)
 {
     // ── Nom du projet ────────────────────────────────────────
@@ -127,6 +176,10 @@ bool GestProjCrud::loadProjets(QList<ProjetRecord>& out,
 {
     out.clear();
 
+    if (!ensureProjetTable(error)) {
+        return false;
+    }
+
     QSqlQuery q;
     q.prepare(
         "SELECT \"Id_projet\", \"nom_du_projet\", \"domaine_de_recherche\", "
@@ -168,6 +221,10 @@ bool GestProjCrud::loadProjets(QList<ProjetRecord>& out,
 
 bool GestProjCrud::fetchProjet(int idProjet, ProjetRecord& out, QString* error)
 {
+    if (!ensureProjetTable(error)) {
+        return false;
+    }
+
     QSqlQuery q;
     q.prepare("SELECT \"nom_du_projet\", \"domaine_de_recherche\", "
               "\"date_de_début\", \"date_de_fin\", \"budget\", \"statut\", "
@@ -197,6 +254,21 @@ bool GestProjCrud::fetchProjet(int idProjet, ProjetRecord& out, QString* error)
 
 bool GestProjCrud::deleteProjet(int idProjet, QString* error)
 {
+    if (!ensureProjetTable(error)) {
+        return false;
+    }
+
+    // Fetch project name before deletion so we can clear employee assignments
+    QString projectName;
+    {
+        QSqlQuery qGetName;
+        qGetName.prepare("SELECT \"nom_du_projet\" FROM \"projet\" WHERE \"Id_projet\" = :id");
+        qGetName.bindValue(":id", idProjet);
+        if (qGetName.exec() && qGetName.next()) {
+            projectName = qGetName.value(0).toString();
+        }
+    }
+
     // Supprimer d'abord les expériences liées (FK_EXPERIENCE_PROJET)
     // et leurs équipements enfants avant de supprimer le projet
     {
@@ -231,6 +303,14 @@ bool GestProjCrud::deleteProjet(int idProjet, QString* error)
         return false;
     }
 
+    // Clear the PROJET_AFFECTE field for all employees assigned to this project
+    if (!projectName.isEmpty()) {
+        QSqlQuery qClearEmp;
+        qClearEmp.prepare("UPDATE \"Employés\" SET \"PROJET_AFFECTE\" = NULL WHERE \"PROJET_AFFECTE\" = :proj");
+        qClearEmp.bindValue(":proj", projectName);
+        qClearEmp.exec(); // best-effort, ignore error
+    }
+
     QSqlQuery q;
     q.prepare("DELETE FROM \"projet\" WHERE \"Id_projet\" = :id");
     q.bindValue(":id", idProjet);
@@ -242,8 +322,30 @@ bool GestProjCrud::deleteProjet(int idProjet, QString* error)
     return true;
 }
 
+bool GestProjCrud::clearStaleProjetAffecte(QString* error)
+{
+    // Clears PROJET_AFFECTE for employees whose assigned project no longer exists
+    QSqlQuery q;
+    const QString sql =
+        "UPDATE \"Employés\" e "
+        "SET \"PROJET_AFFECTE\" = NULL "
+        "WHERE TRIM(NVL(\"PROJET_AFFECTE\", '')) IS NOT NULL "
+        "AND NOT EXISTS (SELECT 1 FROM \"projet\" p WHERE p.\"nom_du_projet\" = e.\"PROJET_AFFECTE\")";
+
+    if (!q.exec(sql)) {
+        if (error) *error = q.lastError().text();
+        return false;
+    }
+
+    return true;
+}
+
 int GestProjCrud::nextProjetId(QString* error)
 {
+    if (!ensureProjetTable(error)) {
+        return -1;
+    }
+
     QSqlQuery q;
     if (!q.exec("SELECT NVL(MAX(\"Id_projet\"),0)+1 FROM \"projet\"") || !q.next()) {
         if (error) *error = q.lastError().text();
@@ -255,6 +357,10 @@ int GestProjCrud::nextProjetId(QString* error)
 
 bool GestProjCrud::insertProjet(const ProjetRecord& in, QString* error)
 {
+    if (!ensureProjetTable(error)) {
+        return false;
+    }
+
     const QString valErr = validateProjet(in, false);
     if (!valErr.isEmpty()) {
         if (error) *error = valErr;
@@ -311,6 +417,10 @@ bool GestProjCrud::insertProjet(const ProjetRecord& in, QString* error)
 
 bool GestProjCrud::updateProjet(const ProjetRecord& in, QString* error)
 {
+    if (!ensureProjetTable(error)) {
+        return false;
+    }
+
     if (in.idProjet <= 0) {
         if (error) *error = "Id_projet invalide.";
         return false;

@@ -22,6 +22,7 @@
 #include "captchawidget.h"
 #include "emailsender.h"
 #include "LeconsApprises.h"
+#include "arduino.h"
 #include <QTextEdit>
 #include <QTextCharFormat>
 #include <QCalendarWidget>
@@ -112,6 +113,7 @@
 #include <QTextStream>
 #include <QVector>
 #include <QSet>
+#include <QSystemTrayIcon>
 #include <cmath>
 #include <algorithm>
 #include <functional>
@@ -635,101 +637,41 @@ static bool configureEmailSenderFromLocalConfig(QString* smtpConfigError)
 // ── Animated toast notification ─────────────────────────────────────────────
 static void showToast(QWidget* parent, const QString& msg, bool success = true)
 {
-    QWidget* toast = new QWidget(parent,
-        Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
-    toast->setAttribute(Qt::WA_TranslucentBackground);
-    toast->setAttribute(Qt::WA_DeleteOnClose);
+    QWidget* dlgParent = parent ? parent->window() : parent;
 
-    // ── Card container ──
-    QWidget* card = new QWidget(toast);
-    card->setObjectName("toastCard");
-    card->setStyleSheet(QString(
-        "QWidget#toastCard{"
-        " background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-        "   stop:0 %1, stop:1 %2);"
-        " border-radius: 14px;"
-        " border: 1.5px solid rgba(255,255,255,0.18);"
-        "}").arg(success ? "#0A5F58" : "#7B1D2A",
-                 success ? "#12443B" : "#5C1020"));
+    if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+        if (success) {
+            QMessageBox::information(dlgParent, "SmartVision", msg);
+        } else {
+            QMessageBox::warning(dlgParent, "SmartVision", msg);
+        }
+        return;
+    }
 
-    QHBoxLayout* lay = new QHBoxLayout(card);
-    lay->setContentsMargins(18, 14, 22, 14);
-    lay->setSpacing(14);
+    static QSystemTrayIcon* tray = nullptr;
+    if (!tray) {
+        QIcon appIcon = QApplication::windowIcon();
+        if (appIcon.isNull()) {
+            appIcon = QApplication::style()->standardIcon(QStyle::SP_ComputerIcon);
+        }
+        tray = new QSystemTrayIcon(appIcon, qApp);
+        tray->setToolTip("SmartVision");
+        tray->show();
+    }
 
-    // Icon circle
-    QLabel* icon = new QLabel(success ? "✓" : "✕");
-    icon->setFixedSize(38, 38);
-    icon->setAlignment(Qt::AlignCenter);
-    icon->setStyleSheet(QString(
-        "color:white; font-size:17px; font-weight:900;"
-        "background: rgba(255,255,255,0.20);"
-        "border-radius:19px; border:1.5px solid rgba(255,255,255,0.35);"));
+    if (!QSystemTrayIcon::supportsMessages()) {
+        if (success) {
+            QMessageBox::information(dlgParent, "SmartVision", msg);
+        } else {
+            QMessageBox::warning(dlgParent, "SmartVision", msg);
+        }
+        return;
+    }
 
-    // Text
-    QLabel* lbl = new QLabel(msg);
-    lbl->setWordWrap(true);
-    lbl->setMaximumWidth(340);
-    lbl->setStyleSheet(
-        "color:white; font-size:13px; font-weight:600;"
-        "background:transparent; border:none;");
-
-    lay->addWidget(icon);
-    lay->addWidget(lbl);
-
-    card->adjustSize();
-
-    // Outer toast is same size as card
-    QVBoxLayout* outerL = new QVBoxLayout(toast);
-    outerL->setContentsMargins(0,0,0,0);
-    outerL->addWidget(card);
-    toast->adjustSize();
-
-    // Position: centred, starts 40px above final position
-    QRect pr  = parent->geometry();
-    int   tx  = pr.left() + (pr.width() - toast->width()) / 2;
-    int   tyEnd = pr.top() + 88;
-    int   tyStart = tyEnd - 40;
-
-    toast->move(tx, tyStart);
-    toast->show();
-    toast->raise();
-
-    // ── Slide-down + fade-in ──
-    QGraphicsOpacityEffect* eff = new QGraphicsOpacityEffect(toast);
-    toast->setGraphicsEffect(eff);
-    eff->setOpacity(0.0);
-
-    QPropertyAnimation* fadeIn = new QPropertyAnimation(eff, "opacity", toast);
-    fadeIn->setDuration(280);
-    fadeIn->setStartValue(0.0);
-    fadeIn->setEndValue(1.0);
-    fadeIn->setEasingCurve(QEasingCurve::OutCubic);
-    fadeIn->start(QAbstractAnimation::DeleteWhenStopped);
-
-    QPropertyAnimation* slideIn = new QPropertyAnimation(toast, "pos", toast);
-    slideIn->setDuration(280);
-    slideIn->setStartValue(QPoint(tx, tyStart));
-    slideIn->setEndValue(QPoint(tx, tyEnd));
-    slideIn->setEasingCurve(QEasingCurve::OutCubic);
-    slideIn->start(QAbstractAnimation::DeleteWhenStopped);
-
-    // ── Auto-close: slide-up + fade-out after 2.5 s ──
-    QTimer::singleShot(2500, toast, [toast, eff, tx, tyEnd]{
-        QPropertyAnimation* fadeOut = new QPropertyAnimation(eff, "opacity", toast);
-        fadeOut->setDuration(400);
-        fadeOut->setStartValue(1.0);
-        fadeOut->setEndValue(0.0);
-        fadeOut->setEasingCurve(QEasingCurve::InCubic);
-        QObject::connect(fadeOut, &QPropertyAnimation::finished, toast, &QWidget::close);
-        fadeOut->start(QAbstractAnimation::DeleteWhenStopped);
-
-        QPropertyAnimation* slideOut = new QPropertyAnimation(toast, "pos", toast);
-        slideOut->setDuration(400);
-        slideOut->setStartValue(QPoint(tx, tyEnd));
-        slideOut->setEndValue(QPoint(tx, tyEnd - 30));
-        slideOut->setEasingCurve(QEasingCurve::InCubic);
-        slideOut->start(QAbstractAnimation::DeleteWhenStopped);
-    });
+    const QSystemTrayIcon::MessageIcon icon = success
+        ? QSystemTrayIcon::Information
+        : QSystemTrayIcon::Warning;
+    tray->showMessage("SmartVision", msg, icon, 5000);
 }
 
 // ===================== STACK INDEX =====================
@@ -3896,6 +3838,135 @@ MainWindow::MainWindow(QWidget *parent)
     QWidget* root = new QWidget(this);
     root->setObjectName("root");
     setCentralWidget(root);
+
+    // ── Arduino devices initialization (support two UNOs)
+    Arduino* arduinoBridge = nullptr;    // used for LAB/PRJ cycling
+    Arduino* arduinoCinBridge = nullptr; // used for CIN verification
+
+    constexpr quint16 kArduinoUnoVendorId = 9025;
+    constexpr quint16 kArduinoUnoProductId = 67;
+
+    QVector<QString> matchingPorts;
+    for (const QSerialPortInfo& serial_port_info : QSerialPortInfo::availablePorts()) {
+        if (serial_port_info.hasVendorIdentifier() && serial_port_info.hasProductIdentifier()) {
+            if (serial_port_info.vendorIdentifier() == kArduinoUnoVendorId &&
+                serial_port_info.productIdentifier() == kArduinoUnoProductId) {
+                matchingPorts.append(serial_port_info.portName());
+            }
+        }
+    }
+
+    if (matchingPorts.isEmpty()) {
+        qWarning() << "[ARDUINO] No Arduino UNO detected (VID:PID 9025:67).";
+    } else {
+        // Open first device for LAB/PRJ display (same behaviour as before)
+        arduinoBridge = new Arduino();
+        int state0 = arduinoBridge->connect_arduino(matchingPorts.at(0));
+        if (state0 == 0) {
+            qDebug() << "[ARDUINO] LCD connected on" << arduinoBridge->getarduino_port_name();
+
+            // Load lab/project pairs from database
+            QVector<QPair<QString, QString>> labProjPairs;
+            QSqlQuery q;
+            q.prepare(
+                "SELECT DISTINCT "
+                "  NVL(TRIM(e.\"LABORATOIRE\"), 'Sans lab') AS lab, "
+                "  NVL(TRIM(e.\"PROJET_AFFECTE\"), 'Sans proj') AS proj "
+                "FROM \"Employés\" e "
+                "WHERE NVL(e.\"ACTIVE\", 'O') = 'O' "
+                "ORDER BY lab, proj"
+            );
+            if (q.exec()) {
+                while (q.next()) {
+                    QString lab = q.value(0).toString().trimmed();
+                    QString proj = q.value(1).toString().trimmed();
+                    if (!lab.isEmpty() && !proj.isEmpty()) {
+                        labProjPairs.append(qMakePair(lab, proj));
+                    }
+                }
+                qDebug() << "[ARDUINO] Loaded" << labProjPairs.size() << "lab/project pairs";
+            } else {
+                qWarning() << "[ARDUINO] Database error:" << q.lastError().text();
+            }
+
+            if (!labProjPairs.isEmpty()) {
+                auto* frameIndex = new int(0);
+                auto* lcdTimer = new QTimer(this);
+                lcdTimer->setInterval(5000); // 5 seconds per frame
+
+                auto sendFrame = [=]() {
+                    if (*frameIndex >= labProjPairs.size()) *frameIndex = 0;
+                    const auto& pair = labProjPairs.at(*frameIndex);
+                    QString payload = QString("LAB: %1\nPRJ: %2\n---\n")
+                        .arg(pair.first.left(11), pair.second.left(11));
+                    arduinoBridge->write_to_arduino(payload.toUtf8());
+                    qDebug() << "[ARDUINO] TX:" << payload.trimmed();
+                    ++(*frameIndex);
+                };
+
+                sendFrame();
+                QObject::connect(lcdTimer, &QTimer::timeout, this, sendFrame);
+                lcdTimer->start();
+            } else {
+                qWarning() << "[ARDUINO] No lab/project pairs found in database";
+            }
+        } else if (state0 == 1) {
+            qWarning() << "[ARDUINO] LCD port detected but could not be opened.";
+        }
+
+        // If a second UNO is present, use it for CIN verification
+        if (matchingPorts.size() >= 2) {
+            arduinoCinBridge = new Arduino();
+            int state1 = arduinoCinBridge->connect_arduino(matchingPorts.at(1));
+            if (state1 == 0) {
+                qDebug() << "[ARDUINO] CIN device connected on" << arduinoCinBridge->getarduino_port_name();
+
+                // Buffer incoming bytes and process newline-terminated commands
+                QObject::connect(arduinoCinBridge->getserial(), &QSerialPort::readyRead, this, [=]() {
+                    static QByteArray cinBuf;
+                    cinBuf += arduinoCinBridge->read_from_arduino();
+                    int idx = -1;
+                    while ((idx = cinBuf.indexOf('\n')) >= 0) {
+                        QByteArray line = cinBuf.left(idx).trimmed();
+                        cinBuf.remove(0, idx + 1);
+                        if (line.startsWith("CIN:")) {
+                            QString cin = QString::fromUtf8(line.mid(4)).trimmed();
+                            qDebug() << "[ARDUINO-CIN] Received CIN request:" << cin;
+
+                            // Lookup employee full name by CIN
+                            QSqlQuery q2;
+                            q2.prepare(
+                                "SELECT TRIM(NVL(\"nom\", '') || ' ' || NVL(\"prenom\", '')) "
+                                "FROM \"Employés\" "
+                                "WHERE \"CIN\" = :cin AND NVL(\"ACTIVE\", 'O') = 'O' "
+                                "AND ROWNUM = 1"
+                            );
+                            q2.bindValue(":cin", cin);
+                            QString reply;
+                            if (q2.exec() && q2.next()) {
+                                QString name = q2.value(0).toString().trimmed();
+                                if (!name.isEmpty()) {
+                                    reply = QString("OK:%1\n").arg(name);
+                                } else {
+                                    reply = "DENIED\n";
+                                }
+                            } else {
+                                reply = "DENIED\n";
+                            }
+
+                            arduinoCinBridge->write_to_arduino(reply.toUtf8());
+                            qDebug() << "[ARDUINO-CIN] TX:" << reply.trimmed();
+                        }
+                    }
+                });
+
+            } else if (state1 == 1) {
+                qWarning() << "[ARDUINO] CIN port detected but could not be opened.";
+            }
+        } else {
+            qDebug() << "[ARDUINO] Only one UNO found; CIN functionality disabled.";
+        }
+    }
 
     QStyle* st = style();
 
@@ -7193,11 +7264,11 @@ MainWindow::MainWindow(QWidget *parent)
     eBarL->setSpacing(10);
 
     QLineEdit* eSearch = new QLineEdit;
-    eSearch->setPlaceholderText("Rechercher par statut, type, disponibilité, résultat");
+    eSearch->setPlaceholderText("Rechercher par statut, type, equipement utilise, resultat");
     eSearch->addAction(st->standardIcon(QStyle::SP_FileDialogContentsView), QLineEdit::LeadingPosition);
 
     QComboBox* eTrierCb = new QComboBox;
-    eTrierCb->addItems({"Aucun tri", "Trier par statut", "Trier par date", "Trier par disponibilité"});
+    eTrierCb->addItems({"Aucun tri", "Trier par statut", "Trier par date", "Trier par equipement utilise"});
 
     QPushButton* eExportBtn = new QPushButton(st->standardIcon(QStyle::SP_DialogSaveButton), "  Exporter (PDF / CSV)");
     eExportBtn->setCursor(Qt::PointingHandCursor);
@@ -7238,7 +7309,7 @@ MainWindow::MainWindow(QWidget *parent)
     };
 
     QTableWidget* expTable = new QTableWidget(0, 8);
-    expTable->setHorizontalHeaderLabels({"Nom", "Hypothèse", "Date début", "Date fin", "Statut", "Type expérience", "Disponibilité", "Résultat"});
+    expTable->setHorizontalHeaderLabels({"Nom", "Hypothèse", "Date début", "Date fin", "Statut", "Type expérience", "Equipement utilise", "Résultat"});
     expTable->verticalHeader()->setVisible(false);
     expTable->setShowGrid(true);
     expTable->setAlternatingRowColors(true);
@@ -7920,8 +7991,36 @@ MainWindow::MainWindow(QWidget *parent)
 
     DonutChart* donutE = new DonutChart;
 
+    auto mkExpLegendItem = [](const QColor& color, const QString& text) {
+        QWidget* item = new QWidget;
+        QHBoxLayout* itemL = new QHBoxLayout(item);
+        itemL->setContentsMargins(0, 0, 0, 0);
+        itemL->setSpacing(6);
+
+        QLabel* dot = new QLabel;
+        dot->setFixedSize(10, 10);
+        dot->setStyleSheet(QString("background:%1; border-radius:5px;").arg(color.name()));
+
+        QLabel* lbl = new QLabel(text);
+        lbl->setStyleSheet("color: rgba(0,0,0,0.60); font-weight: 700;");
+
+        itemL->addWidget(dot);
+        itemL->addWidget(lbl);
+        return item;
+    };
+
+    QWidget* expLegend = new QWidget;
+    QHBoxLayout* expLegendL = new QHBoxLayout(expLegend);
+    expLegendL->setContentsMargins(0, 0, 0, 0);
+    expLegendL->setSpacing(14);
+    expLegendL->addWidget(mkExpLegendItem(W_GREEN, "En cours"));
+    expLegendL->addWidget(mkExpLegendItem(W_RED, "Suspendue"));
+    expLegendL->addWidget(mkExpLegendItem(QColor("#3A7CA5"), "Terminée"));
+    expLegendL->addStretch(1);
+
     pieEL->addWidget(pieET);
     pieEL->addWidget(donutE, 1);
+    pieEL->addWidget(expLegend);
 
     QFrame* barE = softBox();
     QVBoxLayout* barEL = new QVBoxLayout(barE);
@@ -7991,7 +8090,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     addStackPage(exp3);
 
-    auto updateExpStats = [=](){
+     auto updateExpStats = [=](){
         QList<ExperienceRecord> recs;
         QString err;
         if (!expCrud->loadExperiences(recs, &err)) {
@@ -8005,7 +8104,6 @@ MainWindow::MainWindow(QWidget *parent)
         slices.push_back({(double)statusCounts.value("En cours"), W_GREEN, "En cours"});
         slices.push_back({(double)statusCounts.value("Suspendue"), W_RED, "Suspendue"});
         slices.push_back({(double)statusCounts.value("Terminée"), QColor("#3A7CA5"), "Terminée"});
-        slices.push_back({(double)statusCounts.value("En attente"), W_ORANGE, "En attente"});
         donutE->setData(slices);
 
         QList<BarChart::Bar> bars;
@@ -10657,9 +10755,10 @@ QPushButton:hover{ background: %2; }
             const QString qualif = rec.qualification.trimmed().isEmpty() ? "-" : rec.qualification.trimmed();
             const QString temps  = rec.tempsTravail.trimmed().isEmpty()  ? "Plein" : rec.tempsTravail.trimmed();
             const QString labo   = rec.laboratoire.trimmed().isEmpty()   ? "-" : rec.laboratoire.trimmed();
+            const QString proj   = rec.projetAffecte.trimmed().isEmpty() ? "-" : rec.projetAffecte.trimmed();
             const QString pubs   = QString::number(rec.nbPublications);
 
-            setEmpRow(rec, qualif, pubs, ftStatusFromText(temps), labo, "-");
+            setEmpRow(rec, qualif, pubs, ftStatusFromText(temps), labo, proj);
 
             // Apply solid alternating row colors (no alpha — avoids compositing issues)
             const bool incomplete = rec.cin.trimmed().isEmpty() && rec.nom.trimmed().isEmpty();
@@ -10856,7 +10955,26 @@ QPushButton:hover{ background: %2; }
     empRight2L->addWidget(empComboRow(empPubs, empFtCb));
 
     QComboBox* empLabCb = new QComboBox; empLabCb->addItems({"Lab A","Lab B","Lab C"});
-    QComboBox* empProjCb = new QComboBox; empProjCb->addItems({"-","Projet GENOME","Projet AI-BIO","Projet PROTEO","Projet MATERIA"});
+    QComboBox* empProjCb = new QComboBox;
+    auto refreshEmpProjects = [=]() {
+        const QString current = empProjCb->currentText();
+        empProjCb->clear();
+        empProjCb->addItem("-");
+
+        QSqlQuery q;
+        if (q.exec("SELECT \"nom_du_projet\" FROM \"projet\" ORDER BY \"Id_projet\"")) {
+            while (q.next()) {
+                const QString projectName = q.value(0).toString().trimmed();
+                if (!projectName.isEmpty() && empProjCb->findText(projectName, Qt::MatchFixedString) < 0) {
+                    empProjCb->addItem(projectName);
+                }
+            }
+        }
+
+        const int previousIndex = empProjCb->findText(current, Qt::MatchFixedString);
+        empProjCb->setCurrentIndex(previousIndex >= 0 ? previousIndex : 0);
+    };
+    refreshEmpProjects();
     empRight2L->addWidget(empComboRow(empLabCb, empProjCb));
 
     QFrame* empDateRow = softBox();
@@ -11749,7 +11867,12 @@ QPushButton:hover{ background: %2; }
         root->setFlags(Qt::ItemIsEnabled);
 
         QSqlQuery q;
-        if (q.exec("SELECT \"Id_exp\", \"Titre\", NVL(\"Type_Experience\",'') FROM \"Expérience\" ORDER BY \"Titre\"")) {
+        bool ok = q.exec("SELECT \"Id_exp\", \"Titre\", NVL(\"Type_Experience\",'') FROM \"Expérience\" ORDER BY \"Titre\"");
+        if (!ok) {
+            // Backward compatibility: some schemas do not have Type_Experience yet.
+            ok = q.exec("SELECT \"Id_exp\", \"Titre\", CAST(NULL AS VARCHAR2(1)) AS \"Type_Experience\" FROM \"Expérience\" ORDER BY \"Titre\"");
+        }
+        if (ok) {
             while (q.next()) {
                 QTreeWidgetItem* item = new QTreeWidgetItem(root);
                 const QString titre = q.value(1).toString().trimmed();
@@ -12148,16 +12271,21 @@ QPushButton:hover{ background: %2; }
     QFrame* empDonutCard = softBox();
     QVBoxLayout* empDcL = new QVBoxLayout(empDonutCard);
     empDcL->setContentsMargins(12,12,12,12);
-    QLabel* empTotalLbl = new QLabel("Total Employes:");
+    QLabel* empTotalLbl = new QLabel("Répartition des employés par rôle");
     empTotalLbl->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+    QLabel* empDistributionLbl = new QLabel("");
+    empDistributionLbl->setStyleSheet("color: rgba(0,0,0,0.65); font-size: 11px; line-height: 1.4;");
+    empDistributionLbl->setWordWrap(true);
     DonutChart* empDonutStats = new DonutChart;
     empDcL->addWidget(empTotalLbl);
+    empDcL->addWidget(empDistributionLbl);
     empDcL->addWidget(empDonutStats, 1);
 
     QFrame* empLegendCard = softBox();
     QVBoxLayout* empLgL = new QVBoxLayout(empLegendCard);
     empLgL->setContentsMargins(12,12,12,12);
     empLgL->setSpacing(10);
+    
     auto empLegendRow=[&](const QColor& c, const QString& t){
         QWidget* row = new QWidget;
         QHBoxLayout* h = new QHBoxLayout(row);
@@ -12173,16 +12301,26 @@ QPushButton:hover{ background: %2; }
         h->addStretch(1);
         return row;
     };
-    empLgL->addWidget(empLegendRow(W_GREEN, "Chercheurs"));
-    empLgL->addWidget(empLegendRow(QColor("#9FBEB9"), "Techniciens"));
-    empLgL->addWidget(empLegendRow(W_ORANGE, "Temps partiel"));
-    empLgL->addWidget(empLegendRow(W_RED, "Absents"));
+    
+    // Placeholder for dynamic legend - will be populated by updateEmpStatsFromTable
+    QWidget* empLegendContent = new QWidget;
+    QVBoxLayout* empLegendContentL = new QVBoxLayout(empLegendContent);
+    empLegendContentL->setContentsMargins(0,0,0,0);
+    empLegendContentL->setSpacing(0);
+    
+    empLgL->addWidget(empLegendContent, 1);
     empLgL->addStretch(1);
 
     QFrame* empBarCard = softBox();
     QVBoxLayout* empBcL = new QVBoxLayout(empBarCard);
     empBcL->setContentsMargins(12,12,12,12);
+    QLabel* empBarLbl = new QLabel("Répartition des employés par spécialisation");
+    empBarLbl->setStyleSheet("color: rgba(0,0,0,0.55); font-weight: 900;");
+    QLabel* empBarTotalLbl = new QLabel("Total: 0");
+    empBarTotalLbl->setStyleSheet("color: rgba(0,0,0,0.45); font-size: 12px;");
     BarChart* empBarStats = new BarChart;
+    empBcL->addWidget(empBarLbl);
+    empBcL->addWidget(empBarTotalLbl);
     empBcL->addWidget(empBarStats, 1);
 
     empDashL->addWidget(empDonutCard, 1);
@@ -12190,42 +12328,7 @@ QPushButton:hover{ background: %2; }
     empDashL->addWidget(empBarCard, 1);
 
     empOuterStatsL->addWidget(empDash);
-
-    QScrollArea* empStatsScroll = new QScrollArea;
-    empStatsScroll->setObjectName("empStatsScroll");
-    empStatsScroll->setWidgetResizable(true);
-    empStatsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    empStatsScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    empStatsScroll->setFrameShape(QFrame::NoFrame);
-    empStatsScroll->setStyleSheet(R"(
-        QScrollArea#empStatsScroll {
-            background: transparent;
-            border: none;
-        }
-        QScrollArea#empStatsScroll > QWidget > QWidget {
-            background: transparent;
-        }
-        QScrollBar:vertical {
-            background: rgba(0,0,0,0.06);
-            width: 6px;
-            border-radius: 3px;
-            margin: 0px;
-        }
-        QScrollBar::handle:vertical {
-            background: rgba(45,212,191,0.50);
-            border-radius: 3px;
-            min-height: 30px;
-        }
-        QScrollBar::handle:vertical:hover {
-            background: rgba(45,212,191,0.80);
-        }
-        QScrollBar::add-line:vertical,
-        QScrollBar::sub-line:vertical { height: 0px; }
-        QScrollBar::add-page:vertical,
-        QScrollBar::sub-page:vertical { background: none; }
-    )");
-    empStatsScroll->setWidget(empOuterStats);
-    empS->addWidget(empStatsScroll, 1);
+    empS->addWidget(empOuterStats, 1);
 
     QFrame* empBottomStats = new QFrame;
     empBottomStats->setFixedHeight(64);
@@ -12237,7 +12340,7 @@ QPushButton:hover{ background: %2; }
     empBottomStatsL->addStretch(1);
     empS->addWidget(empBottomStats);
 
-    addStackPage(empStatsPage);
+    stack->addWidget(empStatsPage);
 
     auto updateEmpStatsFromTable = [=](){
         QMap<QString,int> roleCount;
@@ -12254,24 +12357,62 @@ QPushButton:hover{ background: %2; }
             specCount[spec] += 1;
         }
 
-        empTotalLbl->setText(QString("Total Employes: %1").arg(total));
+        empTotalLbl->setText("repartition des employee par roles");
+
+        // Build distribution text for display above chart
+        QString distributionText = "";
+        if (total > 0) {
+            QStringList distParts;
+            for (auto it = roleCount.constBegin(); it != roleCount.constEnd(); ++it) {
+                int count = it.value();
+                int percentage = (int)std::round((count * 100.0) / total);
+                distParts.append(QString("%1: %2 (%3%)").arg(it.key()).arg(count).arg(percentage));
+            }
+            distributionText = distParts.join("  •  ");
+        }
+        empDistributionLbl->setText(distributionText);
 
         QList<DonutChart::Slice> slices;
-        auto colorForRole = [&](const QString& role)->QColor{
-            if (role == "Chercheur")  return W_GREEN;
-            if (role == "Technicien") return QColor("#9FBEB9");
-            return QColor("#7A8B8A");
+        auto colorForRole = [](const QString& role)->QColor{
+            if (role == "Chercheur" || role == "Chercheurs")  return QColor("#00D9FF");  // Bright Cyan
+            if (role == "Technicien" || role == "Techniciens") return QColor("#6A4FD9");  // Vibrant Purple
+            if (role == "Responsable" || role == "Responsables") return QColor("#007EFF");  // Bright Blue
+            if (role == "RH") return QColor("#FF6B9D");  // Vibrant Pink/Magenta
+            if (role == "Temps partiel") return QColor("#FF9E00");  // Vibrant Orange
+            if (role == "Absent" || role == "Absents") return QColor("#FF3D3D");  // Vibrant Red
+            if (role == "Stagiaire") return QColor("#9D5FFF");  // Vibrant Purple
+            if (role == "Doctorant" || role == "Doctorants") return QColor("#FFD700");  // Gold
+            // Default color for any other role
+            return QColor("#5A9FD9");
         };
+        
         for (auto it = roleCount.constBegin(); it != roleCount.constEnd(); ++it) {
             slices.push_back({(double)it.value(), colorForRole(it.key()), it.key()});
         }
         empDonutStats->setData(slices);
 
+        // Dynamically populate legend based on actual roles in pie chart
+        // First, clear existing legend items
+        QLayoutItem* item;
+        while ((item = empLegendContentL->takeAt(0)) != nullptr) {
+            delete item->widget();
+            delete item;
+        }
+        
+        // Add legend rows for each role in the pie chart
+        for (auto it = roleCount.constBegin(); it != roleCount.constEnd(); ++it) {
+            QColor roleColor = colorForRole(it.key());
+            empLegendContentL->insertWidget(empLegendContentL->count(), empLegendRow(roleColor, it.key()));
+        }
+
         QList<BarChart::Bar> bars;
         for (auto it = specCount.constBegin(); it != specCount.constEnd(); ++it) {
-            bars.push_back({(double)it.value(), it.key()});
+            QString label = it.key();
+            if (label.isEmpty()) label = "sans specialisation";
+            bars.push_back({(double)it.value(), label});
         }
         empBarStats->setData(bars);
+        empBarTotalLbl->setText(QString("Total: %1").arg(total));
     };
 
     // ==========================================================
@@ -12661,27 +12802,77 @@ QPushButton:hover{ background: %2; }
     // ==========================================================
     QWidget* expDetailsPage = new QWidget;
     expDetailsPage->setObjectName("expDetailsPage");
-    expDetailsPage->setStyleSheet(
-        "QFrame#expDetailsPanel{"
-        " background: rgba(255,255,255,0.90);"
-        " border: 1px solid rgba(8,72,63,0.18);"
-        " border-radius: 16px;"
-        "}"
-        "QFrame#expDetailsSection{"
-        " background: rgba(255,255,255,0.80);"
-        " border: 1px solid rgba(12,75,68,0.12);"
-        " border-radius: 12px;"
-        "}"
-        "QLabel#expDetailsValue{"
-        " background: rgba(248,252,251,0.97);"
-        " color: #111827;"
-        " border: 1px solid rgba(12,75,68,0.18);"
-        " border-radius: 12px;"
-        " padding: 7px 12px;"
-        " font-weight: 800;"
-        " font-size: 13px;"
-        "}"
-    );
+    auto applyExpDetailsTheme = [=](bool dark) {
+        const QString panelBg  = dark ? "rgba(18,28,38,0.92)"      : "rgba(255,255,255,0.88)";
+        const QString panelBr  = dark ? "rgba(158,184,204,0.30)"   : "rgba(8,72,63,0.14)";
+        const QString sectionBg= dark ? "rgba(14,22,31,0.45)"      : "transparent";
+        const QString titleClr = dark ? "rgba(230,239,247,0.98)"   : "rgba(0,0,0,0.74)";
+        const QString lineBg   = dark ? "rgba(24,36,48,0.92)"      : "rgba(248,252,251,0.72)";
+        const QString lineBr   = dark ? "rgba(150,176,196,0.30)"   : "rgba(12,75,68,0.10)";
+        const QString lineHover= dark ? "rgba(30,44,58,0.96)"      : "rgba(248,252,251,0.92)";
+        const QString lineHoverBr = dark ? "rgba(175,202,222,0.46)": "rgba(12,75,68,0.18)";
+        const QString keyBg    = dark ? "rgba(56,92,118,0.96)"     : "rgba(176,214,226,0.92)";
+        const QString keyClr   = dark ? "rgba(238,247,255,0.99)"   : "rgba(4,58,52,0.96)";
+        const QString sepClr   = dark ? "rgba(139,196,228,0.96)"   : "rgba(68,132,155,0.95)";
+        const QString valClr   = dark ? "rgba(243,248,252,0.98)"   : "rgba(15,23,42,0.96)";
+
+        expDetailsPage->setStyleSheet(QString(
+            "QFrame#expDetailsPanel{"
+            " background:%1;"
+            " border:1px solid %2;"
+            " border-radius:16px;"
+            "}"
+            "QFrame#expDetailsSection{"
+            " background:%3;"
+            " border:none;"
+            " border-radius:0px;"
+            "}"
+            "QWidget#expDetailsPage QLabel#expFormTitle{"
+            " color:%4;"
+            " font-weight:900;"
+            " font-size:13px;"
+            " background:transparent;"
+            " border:none;"
+            " padding:2px 2px;"
+            "}"
+            "QWidget#expDetailsLine{"
+            " background:%5;"
+            " border:1px solid %6;"
+            " border-radius:2px;"
+            "}"
+            "QWidget#expDetailsLine:hover{"
+            " background:%7;"
+            " border:1px solid %8;"
+            "}"
+            "QLabel#expDetailsKey{"
+            " background:%9;"
+            " color:%10;"
+            " border:none;"
+            " border-radius:14px;"
+            " padding:4px 10px;"
+            " font-weight:900;"
+            " font-size:11px;"
+            "}"
+            "QLabel#expDetailsSep{"
+            " color:%11;"
+            " font-weight:900;"
+            " font-size:14px;"
+            " background:transparent;"
+            " border:none;"
+            "}"
+            "QLabel#expDetailsValue{"
+            " background:transparent;"
+            " color:%12;"
+            " border:none;"
+            " border-radius:0px;"
+            " padding:3px 2px;"
+            " font-weight:800;"
+            " font-size:12px;"
+            "}")
+            .arg(panelBg, panelBr, sectionBg, titleClr,
+                 lineBg, lineBr, lineHover, lineHoverBr,
+                 keyBg, keyClr, sepClr, valClr));
+    };
     QVBoxLayout* ep4 = new QVBoxLayout(expDetailsPage);
     ep4->setContentsMargins(22, 18, 22, 18);
     ep4->setSpacing(14);
@@ -12716,6 +12907,27 @@ QPushButton:hover{ background: %2; }
     QLabel* expDetEquipement = mkExpDetValue();
     QLabel* expDetResultat = mkExpDetValue();
 
+    auto addExpDetRow = [&](QVBoxLayout* target, QStyle::StandardPixmap sp, const QString& label, QWidget* input) {
+        Q_UNUSED(sp);
+        QWidget* row = new QWidget;
+        row->setObjectName("expDetailsLine");
+        QHBoxLayout* h = new QHBoxLayout(row);
+        h->setContentsMargins(8, 4, 8, 4);
+        h->setSpacing(8);
+
+        QLabel* key = new QLabel(label + " :");
+        key->setObjectName("expDetailsKey");
+
+        QLabel* sep = new QLabel("|");
+        sep->setObjectName("expDetailsSep");
+
+        h->addWidget(key);
+        h->addWidget(sep);
+        h->addWidget(input, 1);
+
+        target->addWidget(row);
+    };
+
     QFrame* expDetLeft = softBox();
     expDetLeft->setObjectName("expDetailsSection");
     expDetLeft->setFixedWidth(420);
@@ -12724,12 +12936,12 @@ QPushButton:hover{ background: %2; }
     expDetLeftL->setSpacing(10);
 
     expDetLeftL->addWidget(expTitle("Informations"));
-    expDetLeftL->addWidget(expRow(QStyle::SP_DirIcon, "Expérience", expDetTitle));
-    expDetLeftL->addWidget(expRow(QStyle::SP_FileDialogDetailedView, "Hypothèse", expDetProto));
-    expDetLeftL->addWidget(expRow(QStyle::SP_DialogApplyButton, "Projet", expDetResp));
-    expDetLeftL->addWidget(expRow(QStyle::SP_FileDialogContentsView, "Type_Experience", expDetType));
-    expDetLeftL->addWidget(expRow(QStyle::SP_DirOpenIcon, "Nom projet", expDetProjet));
-    expDetLeftL->addWidget(expRow(QStyle::SP_FileDialogListView, "Resultat", expDetResultat));
+    addExpDetRow(expDetLeftL, QStyle::SP_DirIcon, "Expérience", expDetTitle);
+    addExpDetRow(expDetLeftL, QStyle::SP_FileDialogDetailedView, "Hypothèse", expDetProto);
+    addExpDetRow(expDetLeftL, QStyle::SP_DialogApplyButton, "Projet", expDetResp);
+    addExpDetRow(expDetLeftL, QStyle::SP_FileDialogContentsView, "Type_Experience", expDetType);
+    addExpDetRow(expDetLeftL, QStyle::SP_DirOpenIcon, "Nom projet", expDetProjet);
+    addExpDetRow(expDetLeftL, QStyle::SP_FileDialogListView, "Resultat", expDetResultat);
     expDetLeftL->addStretch(1);
 
     QFrame* expDetRight = softBox();
@@ -12739,10 +12951,10 @@ QPushButton:hover{ background: %2; }
     expDetRightL->setSpacing(10);
 
     expDetRightL->addWidget(expTitle("Planification"));
-    expDetRightL->addWidget(expRow(QStyle::SP_MessageBoxInformation, "Date", expDetDate));
-    expDetRightL->addWidget(expRow(QStyle::SP_MessageBoxInformation, "Statut", expDetStatus));
-    expDetRightL->addWidget(expRow(QStyle::SP_FileDialogListView, "Disponibilité équipement", expDetDisponibilite));
-    expDetRightL->addWidget(expRow(QStyle::SP_DriveHDIcon, "Équipement lié", expDetEquipement));
+    addExpDetRow(expDetRightL, QStyle::SP_MessageBoxInformation, "Date", expDetDate);
+    addExpDetRow(expDetRightL, QStyle::SP_MessageBoxInformation, "Statut", expDetStatus);
+    addExpDetRow(expDetRightL, QStyle::SP_FileDialogListView, "Equipement utilise", expDetDisponibilite);
+    addExpDetRow(expDetRightL, QStyle::SP_DriveHDIcon, "Équipement lié", expDetEquipement);
     expDetRightL->addStretch(1);
 
     expDetailsCardL->addWidget(expDetLeft);
@@ -12760,6 +12972,15 @@ QPushButton:hover{ background: %2; }
     ep4->addWidget(expDetailsBottom);
 
     addStackPage(expDetailsPage);
+
+    {
+        auto prevThemeFn = g_applyThemeFn;
+        g_applyThemeFn = [=](bool dark) {
+            if (prevThemeFn) prevThemeFn(dark);
+            applyExpDetailsTheme(dark);
+        };
+        g_applyThemeFn(g_darkThemeEnabled);
+    }
 
     auto updateExpDetailsFromRow = [=]()->bool{
         int r = expTable->currentRow();
@@ -15566,6 +15787,7 @@ QPushButton:hover{ background: %2; }
         empPubs->setValue(0);
         empFtCb->setCurrentIndex(0);
         empLabCb->setCurrentIndex(0);
+        refreshEmpProjects();
         empProjCb->setCurrentIndex(0);
         clearEmpErrors();
     };
@@ -15605,6 +15827,13 @@ QPushButton:hover{ background: %2; }
         if (empTable->item(row, 7)) empPubs->setValue(empTable->item(row, 7)->text().toInt());
         if (empTable->item(row, 8)) empFtCb->setCurrentText(empStatusText(static_cast<FTStatus>(empTable->item(row, 8)->data(Qt::UserRole).toInt())));
         if (empTable->item(row, 9)) empLabCb->setCurrentText(empTable->item(row, 9)->text());
+        refreshEmpProjects();
+        if (!rec.projetAffecte.trimmed().isEmpty()) {
+            const int projIndex = empProjCb->findText(rec.projetAffecte.trimmed(), Qt::MatchFixedString);
+            if (projIndex >= 0) {
+                empProjCb->setCurrentIndex(projIndex);
+            }
+        }
 
         setWindowTitle("Creer / Modifier Employe");
         stack->setCurrentIndex(EMP_FORM);
@@ -15700,6 +15929,7 @@ QPushButton:hover{ background: %2; }
         rec.nbPublications = empPubs->value();
         rec.tempsTravail   = empFtCb->currentText();
         rec.laboratoire    = empLabCb->currentText();
+        rec.projetAffecte  = empProjCb->currentText() == "-" ? QString() : empProjCb->currentText().trimmed();
 
         QString err;
         const bool ok = *empEditMode ? empCrud->updateEmploye(rec, &err)

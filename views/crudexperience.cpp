@@ -95,6 +95,29 @@ QString normalizeEquipAvailability(const QString& value)
     return QString();
 }
 
+bool experienceHasTypeColumn()
+{
+    static bool resolved = false;
+    static bool hasColumn = false;
+    if (resolved) return hasColumn;
+
+    QSqlQuery q;
+    q.prepare(
+        "SELECT COUNT(*) "
+        "FROM USER_TAB_COLUMNS "
+        "WHERE TABLE_NAME = :tbl "
+        "  AND COLUMN_NAME = 'Type_Experience'");
+    q.bindValue(":tbl", QString::fromUtf8("Expérience"));
+
+    if (q.exec() && q.next()) {
+        hasColumn = q.value(0).toInt() > 0;
+    } else {
+        hasColumn = false;
+    }
+    resolved = true;
+    return hasColumn;
+}
+
 }
 
 bool ExperienceCrud::loadProjects(QList<ProjectItem>& out, QString* error)
@@ -118,10 +141,14 @@ bool ExperienceCrud::loadProjects(QList<ProjectItem>& out, QString* error)
 bool ExperienceCrud::loadExperiences(QList<ExperienceRecord>& out, QString* error)
 {
     out.clear();
+    const bool hasTypeExp = experienceHasTypeColumn();
     QSqlQuery q;
-    q.prepare("SELECT \"Id_exp\", \"Titre\", \"Hypothese\", \"Date_Debut\", \"Date_fin\", \"Status\", "
-              "\"Disponibilite_Equipement\", \"Resultat\", \"Type_Experience\" "
-              "FROM \"Expérience\" ORDER BY \"Id_exp\" DESC");
+    const QString sql = QString(
+        "SELECT \"Id_exp\", \"Titre\", \"Hypothese\", \"Date_Debut\", \"Date_fin\", \"Status\", "
+        "\"Disponibilite_Equipement\", \"Resultat\", %1 "
+        "FROM \"Expérience\" ORDER BY \"Id_exp\" DESC")
+        .arg(hasTypeExp ? "\"Type_Experience\"" : "CAST(NULL AS VARCHAR2(1)) AS \"Type_Experience\"");
+    q.prepare(sql);
     if (!q.exec()) {
         if (error) *error = q.lastError().text();
         return false;
@@ -144,10 +171,14 @@ bool ExperienceCrud::loadExperiences(QList<ExperienceRecord>& out, QString* erro
 
 bool ExperienceCrud::fetchExperience(int id, ExperienceRecord& out, QString* error)
 {
+    const bool hasTypeExp = experienceHasTypeColumn();
     QSqlQuery q;
-    q.prepare("SELECT \"Titre\", \"Hypothese\", \"Date_Debut\", \"Date_fin\", \"Status\", \"Id_projet\", "
-              "\"Disponibilite_Equipement\", \"Resultat\", \"Type_Experience\" "
-              "FROM \"Expérience\" WHERE \"Id_exp\" = :id");
+    const QString sql = QString(
+        "SELECT \"Titre\", \"Hypothese\", \"Date_Debut\", \"Date_fin\", \"Status\", \"Id_projet\", "
+        "\"Disponibilite_Equipement\", \"Resultat\", %1 "
+        "FROM \"Expérience\" WHERE \"Id_exp\" = :id")
+        .arg(hasTypeExp ? "\"Type_Experience\"" : "CAST(NULL AS VARCHAR2(1)) AS \"Type_Experience\"");
+    q.prepare(sql);
     q.bindValue(":id", id);
     if (!q.exec() || !q.next()) {
         if (error) *error = q.lastError().text();
@@ -205,11 +236,20 @@ bool ExperienceCrud::insertExperience(const ExperienceRecord& in, QString* error
         if (id <= 0) return false;
     }
 
+    const bool hasTypeExp = experienceHasTypeColumn();
     QSqlQuery q;
-    q.prepare("INSERT INTO \"Expérience\" "
-              "(\"Id_exp\", \"Titre\", \"Hypothese\", \"Date_Debut\", \"Date_fin\", \"Status\", \"Id_projet\", "
-              " \"Disponibilite_Equipement\", \"Resultat\", \"Type_Experience\") "
-              "VALUES (:id, :t, :h, TO_DATE(:d,'YYYY-MM-DD'), TO_DATE(:df,'YYYY-MM-DD'), :s, :p, :de, :r, :te)");
+    const QString sql = hasTypeExp
+        ? QString(
+            "INSERT INTO \"Expérience\" "
+            "(\"Id_exp\", \"Titre\", \"Hypothese\", \"Date_Debut\", \"Date_fin\", \"Status\", \"Id_projet\", "
+            " \"Disponibilite_Equipement\", \"Resultat\", \"Type_Experience\") "
+            "VALUES (:id, :t, :h, TO_DATE(:d,'YYYY-MM-DD'), TO_DATE(:df,'YYYY-MM-DD'), :s, :p, :de, :r, :te)")
+        : QString(
+            "INSERT INTO \"Expérience\" "
+            "(\"Id_exp\", \"Titre\", \"Hypothese\", \"Date_Debut\", \"Date_fin\", \"Status\", \"Id_projet\", "
+            " \"Disponibilite_Equipement\", \"Resultat\") "
+            "VALUES (:id, :t, :h, TO_DATE(:d,'YYYY-MM-DD'), TO_DATE(:df,'YYYY-MM-DD'), :s, :p, :de, :r)");
+    q.prepare(sql);
     auto nullInt  = QVariant(QMetaType::fromType<int>());
     auto nullStr  = QVariant(QMetaType::fromType<QString>());
     const QString dbStatus = toDbStatus(in.status);
@@ -223,7 +263,9 @@ bool ExperienceCrud::insertExperience(const ExperienceRecord& in, QString* error
     q.bindValue(":p",  (in.projetId.isNull() || !in.projetId.isValid()) ? nullInt : QVariant(in.projetId.toInt()));
     q.bindValue(":de", eqAvail.isEmpty() ? nullStr : QVariant(eqAvail));
     q.bindValue(":r",  in.resultat.isEmpty() ? nullStr : QVariant(in.resultat));
-    q.bindValue(":te", in.typeExperience.isEmpty() ? nullStr : QVariant(in.typeExperience));
+    if (hasTypeExp) {
+        q.bindValue(":te", in.typeExperience.isEmpty() ? nullStr : QVariant(in.typeExperience));
+    }
     if (!q.exec()) {
         if (error) *error = q.lastError().text();
         return false;
@@ -233,13 +275,24 @@ bool ExperienceCrud::insertExperience(const ExperienceRecord& in, QString* error
 
 bool ExperienceCrud::updateExperience(const ExperienceRecord& in, QString* error)
 {
+    const bool hasTypeExp = experienceHasTypeColumn();
     QSqlQuery q;
-    q.prepare("UPDATE \"Expérience\" "
-              "SET \"Titre\" = :t, \"Hypothese\" = :h, "
-              "    \"Date_Debut\" = TO_DATE(:d,'YYYY-MM-DD'), \"Date_fin\" = TO_DATE(:df,'YYYY-MM-DD'), "
-              "    \"Status\" = :s, \"Id_projet\" = :p, \"Disponibilite_Equipement\" = :de, "
-              "    \"Resultat\" = :r, \"Type_Experience\" = :te "
-              "WHERE \"Id_exp\" = :id");
+    const QString sql = hasTypeExp
+        ? QString(
+            "UPDATE \"Expérience\" "
+            "SET \"Titre\" = :t, \"Hypothese\" = :h, "
+            "    \"Date_Debut\" = TO_DATE(:d,'YYYY-MM-DD'), \"Date_fin\" = TO_DATE(:df,'YYYY-MM-DD'), "
+            "    \"Status\" = :s, \"Id_projet\" = :p, \"Disponibilite_Equipement\" = :de, "
+            "    \"Resultat\" = :r, \"Type_Experience\" = :te "
+            "WHERE \"Id_exp\" = :id")
+        : QString(
+            "UPDATE \"Expérience\" "
+            "SET \"Titre\" = :t, \"Hypothese\" = :h, "
+            "    \"Date_Debut\" = TO_DATE(:d,'YYYY-MM-DD'), \"Date_fin\" = TO_DATE(:df,'YYYY-MM-DD'), "
+            "    \"Status\" = :s, \"Id_projet\" = :p, \"Disponibilite_Equipement\" = :de, "
+            "    \"Resultat\" = :r "
+            "WHERE \"Id_exp\" = :id");
+    q.prepare(sql);
     auto nullInt  = QVariant(QMetaType::fromType<int>());
     auto nullStr  = QVariant(QMetaType::fromType<QString>());
     const QString dbStatus = toDbStatus(in.status);
@@ -252,7 +305,9 @@ bool ExperienceCrud::updateExperience(const ExperienceRecord& in, QString* error
     q.bindValue(":p",  (in.projetId.isNull() || !in.projetId.isValid()) ? nullInt : QVariant(in.projetId.toInt()));
     q.bindValue(":de", eqAvail.isEmpty() ? nullStr : QVariant(eqAvail));
     q.bindValue(":r",  in.resultat.isEmpty() ? nullStr : QVariant(in.resultat));
-    q.bindValue(":te", in.typeExperience.isEmpty() ? nullStr : QVariant(in.typeExperience));
+    if (hasTypeExp) {
+        q.bindValue(":te", in.typeExperience.isEmpty() ? nullStr : QVariant(in.typeExperience));
+    }
     q.bindValue(":id", in.id);
     if (!q.exec()) {
         if (error) *error = q.lastError().text();

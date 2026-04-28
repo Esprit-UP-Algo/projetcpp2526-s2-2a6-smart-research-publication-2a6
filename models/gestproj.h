@@ -36,6 +36,9 @@ public:
     bool insertProjet(const ProjetRecord& in, QString* error = nullptr);
     bool updateProjet(const ProjetRecord& in, QString* error = nullptr);
 
+    // One-time migration: clear PROJET_AFFECTE in Employés when the referenced project no longer exists
+    bool clearStaleProjetAffecte(QString* error = nullptr);
+
     // Validation — returns empty string if valid, error message otherwise
     QString validateProjet(const ProjetRecord& in, bool isUpdate = false);
 

@@ -116,7 +116,6 @@ void exportExperiencePdf(const ExperiencePdfInfo& info, const QString& path)
     };
 
     secHdr(yL, mg, col1W, "Details de l'Experience :");
-    row(yL, mg, col1W, "ID Experience", QString::number(info.id));
     row(yL, mg, col1W, "Titre", info.titre);
     row(yL, mg, col1W, "Hypothese", info.hypothese);
     row(yL, mg, col1W, "Type experience", info.typeExperience);
@@ -126,7 +125,7 @@ void exportExperiencePdf(const ExperiencePdfInfo& info, const QString& path)
     secHdr(yL, mg, col1W, "Planification :");
     row(yL, mg, col1W, "Date debut", info.dateDebut);
     row(yL, mg, col1W, "Date fin", info.dateFin);
-    row(yL, mg, col1W, "Disponibilite", info.disponibilite);
+    row(yL, mg, col1W, "Equipement utilise", info.disponibilite);
 
     yL += H * 0.018f;
     secHdr(yL, mg, col1W, "Resultat :");
@@ -184,7 +183,7 @@ void exportExperiencePdf(const ExperiencePdfInfo& info, const QString& path)
 
     p.setFont(font(11));
     p.setPen(QColor(65,65,65));
-    const QString synth = QString("* Projet : %1\n* Type : %2\n* Disponibilite : %3\n* Periode : %4 -> %5")
+    const QString synth = QString("* Projet : %1\n* Type : %2\n* Equipement utilise : %3\n* Periode : %4 -> %5")
                               .arg(val(info.projet),
                                    val(info.typeExperience),
                                    val(info.disponibilite),

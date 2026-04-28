@@ -83,6 +83,9 @@ CREATE TABLE "Expérience" (
     "Date_Debut"  DATE,
     "Date_fin"    DATE,
     "Status"      VARCHAR2(50),
+    "Disponibilite_Equipement" VARCHAR2(50),
+    "Resultat"    VARCHAR2(500),
+    "Type_Experience" VARCHAR2(150),
     "Id_projet"   NUMBER NOT NULL,
 
     CONSTRAINT PK_EXPERIENCE PRIMARY KEY ("Id_exp"),
@@ -125,7 +128,7 @@ CREATE TABLE "Équipement" (
     "localisation"               VARCHAR2(150),
     "date_limite_calibration"    DATE,
     "disponibilité"              VARCHAR2(50),
-    "Id_exp"                     NUMBER NOT NULL
+    "Id_exp"                     NUMBER,
     CONSTRAINT PK_EQUIPEMENT PRIMARY KEY ("equipement_id"),
     CONSTRAINT FK_EQUIPEMENT_EXP FOREIGN KEY ("Id_exp")
         REFERENCES "Expérience" ("Id_exp")
