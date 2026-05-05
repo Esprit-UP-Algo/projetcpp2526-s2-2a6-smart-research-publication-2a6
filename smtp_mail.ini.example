@@ -1,0 +1,6 @@
+[smtp]
+host=smtp.gmail.com
+port=587
+username=votre.adresse@gmail.com
+password=votre_mot_de_passe_application
+sender_name=SmartVision BioSimple

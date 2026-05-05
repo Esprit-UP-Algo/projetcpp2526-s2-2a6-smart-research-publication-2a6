@@ -4,14 +4,10 @@
 #include <QMessageBox>
 int main(int argc, char *argv[])
 {
-    // Force software decode to avoid repeated d3d11 hwaccel failures on some GPUs/drivers.
-    qputenv("QT_FFMPEG_DECODING_HW_DEVICE_TYPES", "");
-
     QApplication a(argc, argv);
-
+    MainWindow w;
     Connection* c = Connection::instance();
     bool test=c->createConnect();
-    MainWindow w;
     if(test)
     {w.show();
         QMessageBox::information(nullptr, QObject::tr("database is open"),

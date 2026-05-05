@@ -1,13 +1,19 @@
 <RCC>
     <qresource prefix="/image">
-        <file>background2.png</file>
-        <file>smartvision.png</file>
-        <file>chatia.png</file>
-        <file>cong.png</file>
+        <file alias="background2.png">resources/background2.png</file>
+        <file alias="smartvision.png">resources/smartvision.png</file>
+        <file alias="chatia.png">resources/chatia.png</file>
+        <file alias="cong.png">resources/cong.png</file>
+        <file>crudeimagesombre.png</file>
+        <file>crudeimage.png</file>
+        <file>backnoirelogo.png</file>
+        <file>loginbacknv.png</file>
+        <file alias="checkbox_x.svg">resources/checkbox_x.svg</file>
     </qresource>
     <qresource prefix="/new/prefix1">
-        <file>backchatbot.mp4</file>
-        <file>iconechatbot.mp4</file>
-        <file>msgbio.mp4</file>
+        <file alias="backchatbot.mp4">resources/backchatbot.mp4</file>
+        <file alias="iconechatbot.mp4">resources/iconechatbot.mp4</file>
+        <file alias="msgbio.mp4">resources/msgbio.mp4</file>
     </qresource>
+    <qresource prefix="/"/>
 </RCC>

@@ -1,8 +1,16 @@
 build/
+debug/
+release/
 *.o
-*.obj
-moc_*
-ui_*.h
-qrc_*.cpp
-*.mp4
+*.exe
+*.pro.user
+.qmake.stash
+.qtcreator/
+cat >> .gitignore <<'EOF'
+
+# secrets
 google_oauth_config.php
+models/apiconfig.h
+apiconfig.h
+*.env
+EOF
