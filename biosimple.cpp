@@ -97,17 +97,6 @@ static const int EQUIP_FORM    = 16; // Page 2 : Ajouter / Modifier
 static const int EQUIP_LOC     = 17; // Page 3 : Localisation
 static const int EQUIP_DETAILS = 18; // Page 4 : Détails
 
-// Employés (5 pages)
-static const int EMP_LIST  = 19; // Page 1 : Liste / Gestion
-static const int EMP_FORM  = 20; // Page 2 : Créer / Modifier
-static const int EMP_AFF   = 21; // Page 3 : Affectations & Labs
-static const int EMP_AVAIL = 22; // Page 4 : Disponibilités
-static const int EMP_STATS = 23; // Page 5 : Statistiques
-
-// Détails (pages additionnelles)
-static const int PUB_DETAILS  = 24;
-static const int EXP_DETAILS  = 25;
-static const int PROJ_DETAILS = 26;
 
 // ===================== UI responsive margin =====================
 // Returns adaptive margins based on window width.
