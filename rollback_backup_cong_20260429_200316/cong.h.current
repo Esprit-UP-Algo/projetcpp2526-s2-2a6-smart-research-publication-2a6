@@ -1,0 +1,252 @@
+#ifndef CONG_H
+#define CONG_H
+
+#include <QDialog>
+#include <QWidget>
+#include <QCloseEvent>
+#include <QListWidget>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QComboBox>
+#include <QScrollArea>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QPropertyAnimation>
+#include <QPixmap>
+#include <QTimer>
+#include <QMap>
+#include <QDateTime>
+#include <QByteArray>
+#include <QMediaPlayer>
+#include <QVideoSink>
+#include <QVideoFrame>
+#include <QTextBrowser>
+#include <QTextToSpeech>
+#include <QSerialPort>
+#include "crudebiosimple.h"
+
+// ── Per-slot data (full sample info) ─────────────────────────
+struct SlotInfo {
+    QString reference;
+    QString type;
+    QString organisme;
+    QString emplacement;
+    QString temperature;
+    QString danger;
+    int     quantite       = 0;
+    QString dateCollecte;
+    QString dateExpiration;
+    QString etage;
+};
+
+// ── Floating draggable AI response bubble ─────────────────────
+class AiBubble : public QFrame
+{
+    Q_OBJECT
+public:
+    explicit AiBubble(QWidget* parent = nullptr);
+    ~AiBubble();
+    void showResponse(const QString& html);
+    void hideResponse();
+
+protected:
+    void mousePressEvent(QMouseEvent*)   override;
+    void mouseMoveEvent(QMouseEvent*)    override;
+    void mouseReleaseEvent(QMouseEvent*) override;
+    void resizeEvent(QResizeEvent*)      override;
+    void closeEvent(QCloseEvent* event)  override;
+
+private:
+    void          resetSpeechUi();
+    void          requestSpeechStop();
+    QMediaPlayer*  m_player;
+    QLabel*        m_videoBg;
+    QWidget*       m_overlay;
+    QTextBrowser*  m_textBrowser;
+    QLabel*        m_statusLbl;
+    QPushButton*   m_speakBtn;
+    QTextToSpeech* m_tts = nullptr;
+    bool           m_speechStopRequested = false;
+    QPoint         m_dragPos;
+    bool           m_dragging = false;
+};
+
+// ── Custom-painted freezer visualization ─────────────────────
+class FreezerWidget : public QWidget
+{
+    Q_OBJECT
+    Q_PROPERTY(float doorOpen READ doorOpen WRITE setDoorOpen)
+
+public:
+    static const int N_SHELVES = 5;
+    static const int N_SLOTS   = 8;
+
+    struct Slot {
+        bool    occupied  = false;
+        QString reference;
+        QString danger;
+    };
+
+    explicit FreezerWidget(QWidget* parent = nullptr);
+
+    void setData(const QVector<QVector<Slot>>& shelves);
+    void selectSlot(int shelf, int slot);
+    void clearSelection();
+    void setDoorState(bool open, bool animate = true);
+    void setCurrentTemperature(double celsius);
+
+    void setFreezerName(const QString& name) { m_freezerName = name; update(); }
+
+    float doorOpen() const { return m_doorOpen; }
+    void  setDoorOpen(float v) { m_doorOpen = qBound(0.0f, v, 1.0f); update(); }
+
+    QSize sizeHint()        const override { return {400, 620}; }
+    QSize minimumSizeHint() const override { return {320, 500}; }
+
+public slots:
+    void openDoor();
+    void closeDoor();
+
+signals:
+    void slotClicked(int shelf, int slot);
+    void openRequested();
+    void closeRequested();
+
+protected:
+    void paintEvent(QPaintEvent*)      override;
+    void mousePressEvent(QMouseEvent*) override;
+
+private:
+    QRectF bodyRect()              const;
+    QRectF innerRect()             const;
+    QRectF shelfBand(int row)      const;
+    QRectF slotRectF(int row, int col) const;
+    void   drawPin(QPainter& p, QRectF sr) const;
+
+    QVector<QVector<Slot>> m_data;
+    int m_selShelf = -1;
+    int m_selSlot  = -1;
+
+    // Door animation
+    float               m_doorOpen    = 0.0f;
+    QString             m_freezerName;
+    QPropertyAnimation* m_doorAnim;
+
+    // Clock & logo
+    QTimer*  m_clockTimer;
+    bool     m_colonVisible = true;
+    QPixmap  m_logoPixmap;
+    double   m_currentTemp = -80.0;
+    bool     m_hasTemp = false;
+
+    // Door button hit zones (set each paintEvent)
+    QRectF m_doorOpenBtnRect;
+    QRectF m_doorCloseBtnRect;
+};
+
+// ── Main dialog ───────────────────────────────────────────────
+class CongelateurDialog : public QDialog
+{
+    Q_OBJECT
+public:
+    explicit CongelateurDialog(QWidget* parent = nullptr);
+    void refresh();
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+
+private slots:
+    void onFreezerClicked(QListWidgetItem* item);
+    void onSlotClicked(int shelf, int slot);
+    void onSampleListClicked(QListWidgetItem* item);
+    void onSearchChanged(const QString& text);
+    void onAiSearch();
+    void onAiReply(QNetworkReply* reply);
+    void onManualOpenClicked();
+    void onManualCloseClicked();
+
+private:
+    void loadFreezers();
+    void loadFreezer(const QString& cong);
+    void rebuildSampleList(const QString& filter = QString());
+    void showDetails(int shelf, int slot);
+    void clearDetails();
+    void callGroq(const QString& msg, const QString& ctx);
+    void setupArduino();
+    void parseSerialLine(const QString& line);
+    void handleRfidScan(const QString& uid);
+    void handleAccessAuthorized(int doorNum);
+    void handleAccessDenied(int doorNum, const QString& reason, double temp);
+    void handleTempUpdate(int doorNum, double temp, double hum, double thr, bool ok);
+    void handleServoStatus(int doorNum, const QString& status);
+    void updateFrigoStatus(int frigoId, const QString& status);
+    int  badgeIdByUid(const QString& uid);
+    int  badgeFrigoId(const QString& uid);
+    QString frigoNameById(int frigoId);
+    int  frigoIdByName(const QString& name);
+    int  frigoIdByDoorNum(int doorNum) const;
+    int  doorNumByFrigoId(int frigoId) const;
+    int  currentDisplayedFrigoId() const;
+    double frigoThresholdById(int frigoId, double fallback) const;
+    void logAccess(int badgeId, int frigoId, const QString& action);
+    void insertAlert(int frigoId, double value, int badgeId);
+    void sendArduinoCommand(const QString& cmd);
+    void sendThresholdToArduino(int frigoId, double threshold);
+    void startAutoCloseTimer(int frigoId);
+    void cancelAutoCloseTimer(int frigoId);
+
+    // Left panel
+    QListWidget* m_freezerList;
+    QLineEdit*   m_searchEdit   = nullptr;
+    QComboBox*   m_searchFilter = nullptr;
+    QListWidget* m_sampleList;
+
+    // Center
+    FreezerWidget* m_freezerWidget;
+    QLabel*        m_statusBar;
+
+    // Right — details
+    QLabel* m_pinIcon;
+    QLabel* m_detId;
+    QLabel* m_detType;
+    QLabel* m_detOrg;
+    QLabel* m_detEtage;
+    QLabel* m_detSlot;
+    QLabel* m_detTemp;
+    QLabel* m_detDanger;
+    QLabel* m_detDateCol;
+    QLabel* m_detDateExp;
+
+    // Right — AI input
+    QLineEdit*   m_aiInput;
+    QPushButton* m_aiBtn;
+    QLabel*      m_aiResp;
+
+    // Floating AI response bubble
+    AiBubble* m_aiBubble = nullptr;
+
+    QNetworkAccessManager* m_net;
+    CrudeBioSimple*        m_crud;
+    QPixmap                m_bgPixmap;
+
+    QString     m_currentCong;
+    int         m_currentFrigoId = -1;
+    QString     m_lastContext;
+
+    QStringList                       m_shelfKeys;
+    QVector<QVector<SlotInfo>>        m_slotData;
+
+    QSerialPort*             m_arduino = nullptr;
+    QByteArray               m_serialBuffer;
+    QMap<int, double>        m_currentTemps;
+    QMap<int, double>        m_currentHumidities;
+    QMap<int, QDateTime>     m_lastAlertTime;
+    QMap<int, QTimer*>       m_autoCloseTimers;
+    QMap<int, QString>       m_pendingScanUid;
+    QMap<int, bool>          m_tempBlockedFrigos;
+    QMap<int, bool>          m_doorOpenStates;
+    QMap<int, double>        m_lastArduinoThresholds;
+};
+
+#endif // CONG_H

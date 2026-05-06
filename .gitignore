@@ -1,0 +1,16 @@
+build/
+debug/
+release/
+*.o
+*.exe
+*.pro.user
+.qmake.stash
+.qtcreator/
+cat >> .gitignore <<'EOF'
+
+# secrets
+google_oauth_config.php
+models/apiconfig.h
+apiconfig.h
+*.env
+EOF

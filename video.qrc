@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/new/prefix1">
+        <file alias="backchatbot.mp4">resources/backchatbot.mp4</file>
+        <file alias="iconechatbot.mp4">resources/iconechatbot.mp4</file>
+    </qresource>
+</RCC>
